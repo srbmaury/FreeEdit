@@ -3,7 +3,7 @@ services:
     name: freeedit
     runtime: docker
     plan: free
-    region: oregon
+    region: singapore
     healthCheckPath: /healthz
     autoDeploy: true
     domains:
