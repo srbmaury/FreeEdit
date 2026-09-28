@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: freeedit
+    runtime: docker
+    plan: free
+    region: oregon
+    healthCheckPath: /healthz
+    autoDeploy: true
+    domains:
+      - freeedit.srbmaury.com
+    envVars:
+      - key: MAX_UPLOAD_MB
+        value: "100"
+      - key: MAX_DURATION_MIN
+        value: "10"
+      - key: JOB_TTL_HOURS
+        value: "1"

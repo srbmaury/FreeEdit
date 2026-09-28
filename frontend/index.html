@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FreeEdit</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">FreeEdit</div>
+    <div class="tagline">Remove background noise, add text, and hide parts of a recording. Everything runs on this computer.</div>
+    <button id="newFileBtn" class="ghost hidden">New file</button>
+  </header>
+
+  <!-- 1. Upload -->
+  <section id="uploadView" class="view">
+    <label id="dropZone" class="dropzone">
+      <input id="fileInput" type="file" accept=".mov,.mp4,.m4v,.mkv,.webm,.avi,.wav,.mp3,.m4a,.aac,.flac,.ogg,video/*,audio/*" hidden />
+      <div class="dz-title">Drop a video or audio file here</div>
+      <div class="dz-sub">or click to choose a file</div>
+      <div class="dz-formats">MOV · MP4 · WEBM · MKV · WAV · MP3 · M4A · FLAC</div>
+      <div id="dzLimits" class="dz-formats"></div>
+    </label>
+    <div id="uploadProgress" class="progress hidden">
+      <div class="progress-label">Uploading… <span id="uploadPct">0%</span></div>
+      <div class="bar"><div id="uploadBar"></div></div>
+    </div>
+    <div id="uploadError" class="error hidden"></div>
+  </section>
+
+  <!-- 2. Editor -->
+  <section id="editorView" class="view hidden">
+    <div class="editor">
+      <div class="main">
+        <div id="toolbar" class="toolbar">
+          <button class="tool active" data-mode="select" title="Select and move (V)">Select</button>
+          <button class="tool" data-mode="hide" title="Drag over the area to hide (H)">Hide area</button>
+          <button class="tool" data-mode="text" title="Click where the text should go (T)">Add text</button>
+          <button id="cutBtn" class="cut-btn" title="Remove a part of the video (X)">✂ Remove part</button>
+          <span id="modeHint" class="hint">Click an edit to select it. Drag it to move it.</span>
+        </div>
+
+        <div id="stageWrap" class="stage-wrap">
+          <div id="stage" class="stage">
+            <video id="video" playsinline preload="auto"></video>
+            <canvas id="overlay"></canvas>
+          </div>
+          <audio id="audio" controls class="hidden"></audio>
+        </div>
+
+        <div id="transport" class="transport">
+          <button id="playBtn" class="icon" title="Play/Pause (Space)">▶</button>
+          <div class="scrub">
+            <div id="rangeTrack" class="range-track"></div>
+            <input id="scrubber" type="range" min="0" max="1000" value="0" step="1" />
+            <div id="cutTrack" class="cut-track"></div>
+          </div>
+          <span id="timeLabel" class="time">0:00.0 / 0:00.0</span>
+        </div>
+        <div id="fileMeta" class="meta"></div>
+      </div>
+
+      <aside class="side">
+        <div class="panel">
+          <h3>Audio</h3>
+          <div id="audioOpts">
+            <label class="check"><input id="denoise" type="checkbox" checked /> Remove background noise</label>
+            <label class="field">
+              <span>Strength</span>
+              <select id="strength">
+                <option value="">Maximum</option>
+                <option value="30">Strong</option>
+                <option value="18" selected>Natural</option>
+                <option value="10">Gentle</option>
+              </select>
+            </label>
+            <p class="small">DeepFilterNet3. Lower strength keeps more of the room sound, so voices sound less processed.</p>
+          </div>
+          <p id="noAudio" class="small hidden">This file has no audio track.</p>
+        </div>
+
+        <div id="editsPanel" class="panel">
+          <h3>Edits <span id="editCount" class="count">0</span></h3>
+          <div id="editsList" class="edits"></div>
+          <p id="editsEmpty" class="small">Nothing added yet. Use <b>✂ Remove part</b> to cut something out. Use <b>Hide area</b> to blur or cover something. Use <b>Add text</b> to write on the video.</p>
+        </div>
+
+        <div class="panel sticky">
+          <button id="processBtn" class="primary">Process</button>
+          <div id="procProgress" class="progress hidden">
+            <div class="progress-label"><span id="procStage">Starting…</span> <span id="procPct"></span></div>
+            <div class="bar"><div id="procBar"></div></div>
+          </div>
+          <div id="procError" class="error hidden"></div>
+        </div>
+
+        <div id="resultPanel" class="panel hidden">
+          <h3>Result</h3>
+          <video id="resultVideo" controls playsinline class="hidden"></video>
+          <audio id="resultAudio" controls class="hidden"></audio>
+          <div class="row">
+            <a id="downloadBtn" class="button primary" href="#">Download</a>
+            <button id="compareBtn" class="ghost">Play original</button>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <template id="hideCardTpl">
+    <div class="card">
+      <div class="card-head"><span class="badge hide">Hide</span><span class="card-title"></span><button class="del" title="Delete">✕</button></div>
+      <label class="field"><span>Style</span>
+        <select data-k="style">
+          <option value="blur">Blur</option>
+          <option value="pixelate">Pixelate</option>
+          <option value="black">Black box</option>
+        </select>
+      </label>
+      <div class="times"></div>
+    </div>
+  </template>
+
+  <template id="textCardTpl">
+    <div class="card">
+      <div class="card-head"><span class="badge text">Text</span><span class="card-title"></span><button class="del" title="Delete">✕</button></div>
+      <textarea data-k="text" rows="2"></textarea>
+      <div class="grid2">
+        <label class="field"><span>Size</span><input data-k="fontSize" type="number" min="8" max="400" /></label>
+        <label class="field"><span>Color</span><input data-k="color" type="color" /></label>
+        <label class="field"><span>Font</span>
+          <select data-k="font">
+            <option value="sans">Sans</option>
+            <option value="serif">Serif</option>
+            <option value="mono">Mono</option>
+          </select>
+        </label>
+        <label class="field"><span>Background</span>
+          <select data-k="bg">
+            <option value="none">None</option>
+            <option value="dark">Dark box</option>
+            <option value="light">Light box</option>
+          </select>
+        </label>
+      </div>
+      <label class="check"><input data-k="bold" type="checkbox" /> Bold</label>
+      <div class="times"></div>
+    </div>
+  </template>
+
+  <template id="cutCardTpl">
+    <div class="card">
+      <div class="card-head"><span class="badge cut">Remove</span><span class="card-title"></span><button class="del" title="Delete">✕</button></div>
+      <div class="times"></div>
+    </div>
+  </template>
+
+  <template id="timesTpl">
+    <div class="grid2">
+      <label class="field"><span>From (s)</span>
+        <div class="with-btn"><input data-k="start" type="number" min="0" step="0.1" /><button class="mini" data-now="start" title="Use current time">now</button></div>
+      </label>
+      <label class="field"><span>To (s)</span>
+        <div class="with-btn"><input data-k="end" type="number" min="0" step="0.1" /><button class="mini" data-now="end" title="Use current time">now</button></div>
+      </label>
+    </div>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
