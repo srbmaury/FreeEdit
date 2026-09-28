@@ -39,7 +39,7 @@ Why it's set up this way (from the DeepFilterNet macOS guide):
 
 ```bash
 /opt/homebrew/bin/python3.12 -m venv .venv
-.venv/bin/python -m pip install fastapi uvicorn python-multipart
+.venv/bin/python -m pip install fastapi uvicorn
 DEEPFILTER_PYTHON=~/Desktop/.venv312/bin/python ./run.sh
 ```
 
@@ -85,9 +85,18 @@ These environment variables set limits for the public site. Locally they default
 | `MAX_DURATION_MIN` | 10 | none | Length limit |
 | `JOB_TTL_HOURS` | 1 | 24 | Files are deleted after this |
 | `DF_CHUNK_SECONDS` | 3 | 5 | Denoise chunk size (lower uses less RAM) |
-| `FFMPEG_THREADS` / `OMP_NUM_THREADS` | 1 | auto | On one CPU, extra threads only add memory and contention |
+| `FFMPEG_THREADS` / `OMP_NUM_THREADS` | 1 | auto | Single-threaded decode, filter and encode, with a short x264 lookahead. On one CPU, extra threads only add memory and contention |
+| `MAX_OUTPUT_SIDE` | 1600 | none | Edited videos are downscaled so the long side fits. Edit positions scale with them |
 
-Measured in the container with a hard 512 MB limit: a 60 s 720p clip with noise removal, all edit types and two cuts peaked at **348 MB** and finished in **19 s** on one CPU. The free plan has less CPU than that, so expect it to be several times slower there. It also sleeps after 15 minutes idle, so the first request after that takes about a minute.
+**Memory on the 512 MB free plan.** Mac screen recordings are Retina-sized (about 3000×1900), and the first hosted version ran out of memory on them. Measured in the container with a hard 512 MB limit, two back-to-back 308 MB 3024×1964 60 fps recordings, each with noise removal, all edit types and two cuts, peaked at **391 MB** of non-reclaimable memory. Three things made that fit:
+
+- Cuts use `select` + `setpts`, which streams frame by frame. The earlier split + trim + concat approach queued every frame of the later segments, about 1 GB at 1080p60.
+- Text images are single-frame inputs that `overlay` holds on screen. An endless `-loop 1` input made ffmpeg buffer 1.7 GB once cuts shifted the output timeline.
+- The output is capped at 1600 px, and ffmpeg is single-threaded. Decoding the full-resolution source still costs about 300 MB.
+
+Uploads stream straight to disk as the raw request body, and the write cache is flushed as they go, because on small containers the page cache counts toward the memory limit.
+
+The free plan has less CPU than my test machine, so expect jobs to take a few times longer than the file's duration. It also sleeps after 15 minutes idle, so the first request after that takes about a minute.
 
 Before promoting the site widely, check the DeepFilterNet license and consider rate limiting.
 

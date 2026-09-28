@@ -15,7 +15,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request, UploadFile
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -63,10 +63,24 @@ def _cleanup_old_jobs() -> None:
                 jobs.pop(d.name, None)
 
 
+def _drop_cache(f) -> None:
+    """Flush written pages and evict them from the page cache (Linux).
+
+    On small containers the page cache counts toward the memory limit, and a
+    fast upload can fill it with dirty pages before they're written back.
+    """
+    f.flush()
+    if hasattr(os, "posix_fadvise"):
+        os.fsync(f.fileno())
+        os.posix_fadvise(f.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
+
+
 @app.post("/api/upload")
-async def upload(file: UploadFile):
+async def upload(request: Request, filename: str):
+    """Raw request body = the file. Streamed straight to disk (no multipart
+    temp file, so large uploads aren't written twice)."""
     _cleanup_old_jobs()
-    ext = Path(file.filename or "").suffix.lower()
+    ext = Path(filename).suffix.lower()
     if ext not in ALLOWED_EXT:
         raise HTTPException(400, f"Unsupported file type '{ext}'.")
 
@@ -74,15 +88,26 @@ async def upload(file: UploadFile):
     work = JOBS_DIR / job_id
     work.mkdir()
     source = work / f"source{ext}"
-    size = 0
-    with source.open("wb") as f:
-        while chunk := await file.read(1024 * 1024):
-            size += len(chunk)
-            if size > MAX_UPLOAD_MB * 1024 * 1024:
-                f.close()
-                shutil.rmtree(work, ignore_errors=True)
-                raise HTTPException(413, f"File is larger than {MAX_UPLOAD_MB} MB.")
-            f.write(chunk)
+    size = since_flush = 0
+    limit = MAX_UPLOAD_MB * 1024 * 1024
+    try:
+        with source.open("wb") as f:
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > limit:
+                    raise HTTPException(413, f"File is larger than {MAX_UPLOAD_MB} MB.")
+                f.write(chunk)
+                since_flush += len(chunk)
+                if since_flush > 16 * 1024 * 1024:
+                    _drop_cache(f)
+                    since_flush = 0
+            _drop_cache(f)
+    except BaseException:
+        shutil.rmtree(work, ignore_errors=True)
+        raise
+    if size == 0:
+        shutil.rmtree(work, ignore_errors=True)
+        raise HTTPException(400, "The file is empty.")
 
     try:
         info = pipeline.probe(source)
@@ -96,14 +121,16 @@ async def upload(file: UploadFile):
     with jobs_lock:
         jobs[job_id] = {
             "id": job_id,
-            "filename": file.filename,
+            "filename": filename,
             "status": "uploaded",
             "stage": None,
             "progress": None,
             "error": None,
             "output": None,
         }
-    return {"id": job_id, "filename": file.filename, **info.__dict__}
+    print(f"[job {job_id}] upload {size / 1e6:.1f} MB, {info.width}x{info.height}, "
+          f"{info.duration:.1f}s, audio={info.has_audio}", flush=True)
+    return {"id": job_id, "filename": filename, **info.__dict__}
 
 
 class ProcessRequest(BaseModel):
@@ -123,6 +150,8 @@ def _run(job_id: str, req: ProcessRequest) -> None:
     shutil.rmtree(work / "denoised", ignore_errors=True)
 
     def progress(stage: str, pct: float | None) -> None:
+        if stage != jobs[job_id].get("stage"):
+            print(f"[job {job_id}] {stage}", flush=True)
         _update(job_id, stage=stage, progress=pct)
 
     _update(job_id, status="processing", stage="Starting", progress=None, error=None, output=None)
@@ -134,6 +163,7 @@ def _run(job_id: str, req: ProcessRequest) -> None:
         )
         _update(job_id, status="done", stage="Done", progress=1.0, output=out.name)
     except pipeline.PipelineError as e:
+        print(f"[job {job_id}] failed: {e}", flush=True)
         _update(job_id, status="error", error=str(e))
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()
@@ -152,7 +182,11 @@ def start_processing(job_id: str, req: ProcessRequest):
 
 @app.get("/api/limits")
 def limits():
-    return {"max_upload_mb": MAX_UPLOAD_MB, "max_duration_min": MAX_DURATION_MIN}
+    return {
+        "max_upload_mb": MAX_UPLOAD_MB,
+        "max_duration_min": MAX_DURATION_MIN,
+        "max_output_side": int(os.environ.get("MAX_OUTPUT_SIDE", 0)),
+    }
 
 
 @app.get("/healthz")

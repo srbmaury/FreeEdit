@@ -65,7 +65,9 @@ api("/api/limits").then((l) => {
   const parts = [];
   if (l.max_upload_mb < 1024) parts.push(`up to ${l.max_upload_mb} MB`);
   if (l.max_duration_min) parts.push(`${l.max_duration_min} min`);
-  if (parts.length) $("dzLimits").textContent = "Max " + parts.join(", ");
+  let text = parts.length ? "Max " + parts.join(", ") : "";
+  if (l.max_output_side) text += `${text ? " · " : ""}Edited videos are saved at up to ${l.max_output_side}px`;
+  $("dzLimits").textContent = text;
 }).catch(() => {});
 
 function upload(file) {
@@ -76,8 +78,6 @@ function upload(file) {
   show($("uploadProgress"));
   show(dropZone, false);
   const xhr = new XMLHttpRequest();
-  const fd = new FormData();
-  fd.append("file", file);
   xhr.upload.onprogress = (e) => {
     if (!e.lengthComputable) return;
     const pct = Math.round((e.loaded / e.total) * 100);
@@ -91,8 +91,10 @@ function upload(file) {
     else uploadFailed(body.detail || `Upload failed (${xhr.status})`);
   };
   xhr.onerror = () => uploadFailed("Upload failed. Is the server running?");
-  xhr.open("POST", "/api/upload");
-  xhr.send(fd);
+  // Raw body upload: the server streams it straight to disk
+  xhr.open("POST", `/api/upload?filename=${encodeURIComponent(file.name)}`);
+  xhr.setRequestHeader("Content-Type", "application/octet-stream");
+  xhr.send(file);
 }
 
 function uploadFailed(msg) {

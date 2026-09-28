@@ -35,6 +35,7 @@ COPY frontend frontend
 ENV PYTHONUNBUFFERED=1 \
     OMP_NUM_THREADS=1 \
     DF_CHUNK_SECONDS=3 \
-    FFMPEG_THREADS=1
+    FFMPEG_THREADS=1 \
+    MAX_OUTPUT_SIDE=1600
 EXPOSE 10000
 CMD ["sh", "-c", "uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-10000}"]

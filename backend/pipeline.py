@@ -142,20 +142,35 @@ def _enable(item: dict, duration: float) -> str:
     return f"between(t,{start:.3f},{end:.3f})"
 
 
+def output_scale(info: MediaInfo) -> float:
+    """Downscale factor so the long side fits MAX_OUTPUT_SIDE (unset = full size).
+
+    Small hosts can't decode + filter + encode Retina-size frames in 512 MB.
+    """
+    limit = int(os.environ.get("MAX_OUTPUT_SIDE", 0))
+    longest = max(info.width, info.height)
+    return limit / longest if limit and longest > limit else 1.0
+
+
 def build_video_edits(
-    edits: list[dict], info: MediaInfo, work: Path
+    edits: list[dict], info: MediaInfo, work: Path, scale: float = 1.0
 ) -> tuple[list[str], list[Path], str]:
     """Filter chains for hide regions and text overlays.
 
     Returns (filter_parts, text_images, final_label). Text images are referenced
     as [IMG<n>] placeholders; the caller swaps them for real input indices once
     the input order is known. Times are on the original (uncut) timeline.
+    Edit coordinates are in source pixels and get multiplied by `scale`.
     """
     W, H = info.width, info.height
     parts: list[str] = []
     images: list[Path] = []
     cur = "[0:v]"
     n = 0
+    if scale < 1:
+        W, H = _even(W * scale), _even(H * scale)
+        parts.append(f"[0:v]scale={W}:{H}[v0]")
+        cur = "[v0]"
 
     def next_label() -> str:
         nonlocal n
@@ -166,9 +181,9 @@ def build_video_edits(
         kind = e.get("type")
         en = _enable(e, info.duration)
         if kind == "hide":
-            x, y = _even(e["x"]), _even(e["y"])
-            w = _even(min(e["w"], W - x))
-            h = _even(min(e["h"], H - y))
+            x, y = _even(e["x"] * scale), _even(e["y"] * scale)
+            w = _even(min(e["w"] * scale, W - x))
+            h = _even(min(e["h"] * scale, H - y))
             if w < 4 or h < 4:
                 continue
             style = e.get("style", "blur")
@@ -200,8 +215,16 @@ def build_video_edits(
             img_path = work / f"text_{i}.png"
             img_path.write_bytes(base64.b64decode(png.split(",", 1)[1]))
             images.append(img_path)
+            img = f"[IMG{len(images) - 1}]"
+            if scale < 1:
+                parts.append(f"{img}scale=iw*{scale:.5f}:-1[t{i}]")
+                img = f"[t{i}]"
             out = next_label()
-            parts.append(f"{cur}[IMG{len(images) - 1}]overlay={int(e['x'])}:{int(e['y'])}:shortest=1:enable='{en}'{out}")
+            x, y = int(e["x"] * scale), int(e["y"] * scale)
+            # Single-frame input; overlay's default eof_action=repeat keeps it on
+            # screen. (A `-loop 1` input is an endless stream that ffmpeg reads
+            # ahead of, buffering gigabytes once cuts shift the output timeline.)
+            parts.append(f"{cur}{img}overlay={x}:{y}:enable='{en}'{out}")
             cur = out
 
     return parts, images, cur
@@ -237,26 +260,34 @@ def kept_ranges(cuts: list[dict], duration: float) -> list[tuple[float, float]] 
 def build_cuts(
     vlabel: str, alabel: str | None, keep: list[tuple[float, float]]
 ) -> tuple[list[str], str, str | None]:
-    """trim + concat so the kept ranges play back to back. Works with VFR input."""
-    k = len(keep)
+    """Drop the removed ranges and close the gaps.
+
+    Video uses select + setpts, which streams frame by frame. (split + trim +
+    concat would queue every frame of the later segments while the first is
+    being encoded: ~1 GB for a 5 s gap at 1080p60.) Timestamps are shifted by
+    the total length removed before each frame, so VFR input stays in sync.
+    Audio is small, so plain atrim + concat is fine there.
+    """
     parts: list[str] = []
-    vsrc = [f"[vs{i}]" for i in range(k)]
-    asrc = [f"[as{i}]" for i in range(k)]
+    keep_expr = "+".join(f"between(t,{a:.3f},{b:.3f})" for a, b in keep)
+    # STARTPTS drops any leading removed range; each later gap is subtracted
+    # once a frame is past it
+    shift = "+".join(
+        f"gte(T,{keep[i + 1][0]:.3f})*{keep[i + 1][0] - keep[i][1]:.3f}"
+        for i in range(len(keep) - 1)
+    ) or "0"
+    parts.append(f"{vlabel}select='{keep_expr}',setpts='PTS-STARTPTS-({shift})/TB'[vcut]")
+
+    if not alabel:
+        return parts, "[vcut]", None
+    k = len(keep)
+    asrc = [f"[as{i}]" for i in range(k)] if k > 1 else [alabel]
     if k > 1:
-        parts.append(f"{vlabel}split={k}{''.join(vsrc)}")
-        if alabel:
-            parts.append(f"{alabel}asplit={k}{''.join(asrc)}")
-    else:
-        vsrc, asrc = [vlabel], [alabel or ""]
-    segs = ""
+        parts.append(f"{alabel}asplit={k}{''.join(asrc)}")
     for i, (a, b) in enumerate(keep):
-        parts.append(f"{vsrc[i]}trim=start={a:.3f}:end={b:.3f},setpts=PTS-STARTPTS[vt{i}]")
-        segs += f"[vt{i}]"
-        if alabel:
-            parts.append(f"{asrc[i]}atrim=start={a:.3f}:end={b:.3f},asetpts=PTS-STARTPTS[at{i}]")
-            segs += f"[at{i}]"
-    parts.append(f"{segs}concat=n={k}:v=1:a={1 if alabel else 0}[vcut]" + ("[aout]" if alabel else ""))
-    return parts, "[vcut]", "[aout]" if alabel else None
+        parts.append(f"{asrc[i]}atrim=start={a:.3f}:end={b:.3f},asetpts=PTS-STARTPTS[at{i}]")
+    parts.append(f"{''.join(f'[at{i}]' for i in range(k))}concat=n={k}:v=0:a=1[aout]")
+    return parts, "[vcut]", "[aout]"
 
 
 def process(
@@ -289,17 +320,22 @@ def process(
         shutil.move(str(clean_wav), out)
         return out
 
-    parts, images, vlabel = build_video_edits(edits, info, work)
     keep = kept_ranges(cuts, info.duration) if info.duration else None
+    # Only downscale when we re-encode anyway; a denoise-only job copies the video
+    scale = output_scale(info) if (edits or keep) else 1.0
+    parts, images, vlabel = build_video_edits(edits, info, work, scale)
     if not parts and not keep and not do_denoise:
         raise PipelineError("Nothing to do: turn on noise removal, remove a part, or add an edit.")
 
-    args = ["-i", str(source)]
+    # Low-memory mode (hosting): single-threaded decode/filter/encode
+    threads = os.environ.get("FFMPEG_THREADS")
+    args = ["-threads", threads, "-filter_threads", threads] if threads else []
+    args += ["-i", str(source)]
     if clean_wav:
         args += ["-i", str(clean_wav)]
     img_offset = 2 if clean_wav else 1
     for img in images:
-        args += ["-loop", "1", "-i", str(img)]
+        args += ["-i", str(img)]
     audio_in = "[1:a]" if clean_wav else ("[0:a]" if info.has_audio else None)
 
     out_duration = info.duration
@@ -317,9 +353,10 @@ def process(
             graph = graph.replace(f"[IMG{idx}]", f"[{img_offset + idx}:v]")
         args += ["-filter_complex", graph, "-map", "[vout]"]
         args += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20"]
-        # Fewer encoder threads = much less RAM (x264 720p: ~390 MB -> ~230 MB at 1 thread)
-        if os.environ.get("FFMPEG_THREADS"):
-            args += ["-threads", os.environ["FFMPEG_THREADS"]]
+        # Fewer encoder threads and a short lookahead keep x264's frame buffers small
+        # (1080p: fits in ~370 MB total; defaults can exceed 512 MB)
+        if threads:
+            args += ["-threads", threads, "-rc-lookahead", "5"]
         out = work / "output.mp4"
     else:
         # Audio-only change: keep the original video stream bit-for-bit
