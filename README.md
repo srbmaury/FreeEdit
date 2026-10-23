@@ -52,7 +52,7 @@ Denoising runs `backend/df_worker.py` with `DEEPFILTER_PYTHON`, which defaults t
 1. Drop in a file (MOV, MP4, WEBM, MKV, WAV, MP3, M4A, …).
 2. **Audio:** leave *Remove background noise* on and pick a strength. *Natural* caps the reduction at 18 dB, which sounds less processed. *Maximum* applies no cap.
 3. **✂ Remove part** (`X`): marks 3 seconds from the playhead as a red block on the timeline under the scrubber. Drag the block's edges to adjust it, or drag the whole block. Add as many as you need. Playback skips removed parts, and the final length is shown next to the time.
-4. **Hide area** (`H`): drag over the part to hide. Solid redaction is the default. Choose Blur or Pixelate only for non-sensitive details.
+4. **Hide area** (`H`): drag over the part to hide. Solid cover is the default. Choose Blur or Pixelate only for non-sensitive details.
 5. **Add text** (`T`): click on the video, then type in the sidebar.
 6. Each edit has a **From/To** time on the original timeline. The **now** buttons set it to the playhead. New text and hide edits start at the current playhead and run to the end of the video.
 7. Select an edit to move it. For hide boxes, drag the corner handle to resize. `Delete` removes the selected edit.
@@ -64,11 +64,11 @@ Keyboard: `Space` plays/pauses, `←`/`→` steps one frame (hold `Shift` for 1 
 
 ### Timeline
 
-The timeline includes a waveform of the original audio and separate rows for suggested pauses, cuts, masks, and text. Click the waveform to seek; shaded sections show applied cuts. The waveform is normalized for display, not a loudness meter. Overlapping edits stack within their row. Click a time marker to seek, or select an edit block to open its settings. Drag any block to move its time range; drag either edge to change its start or end. **+ / −** zoom between 1× and 16× around the playhead; scroll horizontally to move through the zoomed timeline, and use **Fit** to see the entire recording. All times refer to the original recording. The server builds at most 4096 amplitude peaks using temporary disk storage; the browser draws only the visible portion at any zoom level. Waveform failure does not block editing.
+The timeline includes a waveform of the original audio and separate rows for suggested pauses, cuts, masks, and text. Click the waveform to seek; shaded sections show applied cuts. The waveform is normalized for display, not a loudness meter. Overlapping edits stack within their row. Click a time marker to seek, or select an edit block to open its settings. Drag any block to move its time range; drag either edge to change its start or end. **+ / −** zoom between 1× and 16× around the playhead; scroll horizontally to move through the zoomed timeline, and use **Show entire recording** to see the entire recording. All times refer to the original recording. The server builds at most 4096 amplitude peaks using temporary disk storage; the browser draws only the visible portion at any zoom level. Waveform failure does not block editing.
 
 ### Silence removal
 
-Open **Shorten pauses → Detect pauses**. Suggestions start unselected and appear above the cut timeline. Use **Listen** to hear each pause with surrounding audio, select the ones to remove, then **Add selected cuts**. Added cuts can be resized, edited, deleted, or undone. Audio-only files support the same cut controls.
+Open **Shorten pauses → Detect pauses**. Suggestions start unselected and appear above the cut timeline. Use **Listen** to hear each pause with surrounding audio, select the ones to remove, then **Remove selected pauses**. Added cuts can be resized, edited, deleted, or undone. Audio-only files support the same cut controls.
 
 Detection defaults to −40 dB, a minimum 0.8-second pause, and 0.2 seconds kept on each side. Raise the threshold to detect more quiet sections, with a greater risk of including quiet speech. Up to 100 suggestions are returned per pass. Detection and export share the bounded processing queue.
 
@@ -125,6 +125,10 @@ The dependency/license findings and outstanding release decisions are documented
 API failures return a stable error code and request ID alongside the message. Processing failures show recovery guidance; raw FFmpeg diagnostics stay in server logs. Interrupted uploads offer **Retry upload**, and expired files offer **Upload a replacement file**. Status checks resume when the browser comes back online.
 
 Server application events are JSON lines: request failures, uploads, queue admission and wait time, processing stages, export duration/size, silence detection, and cleanup. Application request events use route templates and omit query strings, original filenames, and client IP addresses. The provided launch script and Docker command disable Uvicorn's separate access log, which would otherwise include upload filenames in query strings. No external analytics service is configured.
+
+## Editor layout
+
+The workspace keeps the preview and timeline together, with edit settings, Audio cleanup, and Export in the sidebar. Select an edit to expand its controls. After export, the **Original / Exported** switch compares corresponding positions above the preview. **Back to editing** returns to the timeline. The **⋯** menu contains Appearance (System, Light, or Dark), keyboard shortcuts, storage information, About, and repository links. Appearance defaults to System and is remembered in this browser. Narrow screens stack the workspace and settings vertically.
 
 ## Keyboard and small-screen editing
 

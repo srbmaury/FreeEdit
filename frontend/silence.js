@@ -102,5 +102,5 @@ $("applyPausesBtn").onclick = () => {
   S.selected = S.edits.at(-1)?.id;
   setReview(false);
   renderSilenceReview(); renderList(); render(); updateTransport();
-  $("silenceStatus").textContent = "Cuts added. Adjust their times in Edits or use Undo to restore them.";
+  $("silenceStatus").textContent = "Selected pauses marked for removal. Adjust them in Edits, or choose Undo to keep them.";
 };

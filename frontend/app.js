@@ -80,6 +80,7 @@ dropZone.addEventListener("drop", (e) => e.dataTransfer.files[0] && upload(e.dat
 let LIMITS = { max_upload_mb: 0, max_duration_min: 0 };
 api("/api/limits").then((l) => {
   LIMITS = l;
+  $("storageDetails").textContent = `Temporary files expire after ${l.job_ttl_hours} hours of inactivity. Active processing is protected.`;
   $("retentionNote").textContent = `Processed on this server. Files expire after ${l.job_ttl_hours} hours when inactive.`;
   const parts = [];
   if (l.max_upload_mb < 1024) parts.push(`up to ${l.max_upload_mb} MB`);
@@ -132,6 +133,8 @@ function uploadFailed(msg, retry = false) {
 // ---------- editor setup ----------
 function openEditor(job) {
   S.pendingUpload = null;
+  S.resultSrc = null;
+  S.compareOriginal = false;
   S.job = job;
   S.edits = [];
   S.undo = []; S.redo = [];
@@ -588,7 +591,7 @@ function cardTitle(e) {
   const range = `${fmt(e.start)}–${fmt(e.end)}`;
   if (e.type === "cut") return `${range} (${(e.end - e.start).toFixed(1)}s)`;
   if (e.type === "text") return `${(e.text || "").split("\n")[0]} · ${range}`;
-  return `${{ blur: "Blur", pixelate: "Pixelate", black: "Solid redaction" }[e.style]} · ${range}`;
+  return `${{ blur: "Blur", pixelate: "Pixelate", black: "Solid cover" }[e.style]} · ${range}`;
 }
 
 function renderList() {
@@ -660,6 +663,7 @@ function renderList() {
 }
 
 document.addEventListener("keydown", (ev) => {
+  if (document.querySelector("dialog[open]")) return;
   if (!S.job || $("editorView").classList.contains("hidden")) return;
   if (ev.target.closest("input, textarea, select")) return;
   if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "z") { ev.preventDefault(); restoreHistory(ev.shiftKey); return; }
@@ -710,7 +714,7 @@ function refreshExportState() {
   $("exportSummary").textContent = `${fmt(Math.max(0, duration() - removed))} output · ${S.edits.filter(e => e.type === "cut").length} cuts · ${S.edits.filter(e => e.type === "hide").length} masks · Noise reduction ${$("denoise").checked ? "on" : "off"}`;
   const stale = S.exportSignature !== null && S.exportSignature !== editSignature();
   $("resultNote").textContent = stale ? "Edits changed. Export again to include them; this download is the previous result." : "Rendered export ready to review.";
-  $("previewLabel").textContent = S.reviewing ? `${S.compareOriginal ? "Original recording" : "Rendered export"}${stale ? " · edits changed since export" : ""}` : "Edit preview · export to hear noise reduction";
+  $("previewLabel").textContent = S.reviewing ? `${S.compareOriginal ? "Original recording" : "Rendered export"}${stale ? " · edits changed since export" : ""}` : "Edits preview · noise reduction is heard after export";
 }
 $("denoise").addEventListener("change", refreshExportState);
 $("strength").addEventListener("change", refreshExportState);
@@ -726,6 +730,9 @@ function setReview(reviewing) {
   show($("resultVideo"), reviewing && !audioResult);
   show($("resultAudio"), reviewing && audioResult);
   $("editsPanel").inert = reviewing;
+  show($("previewSwitch"), reviewing && !!S.resultSrc);
+  $("originalPreviewBtn").setAttribute("aria-pressed", String(S.compareOriginal));
+  $("exportedPreviewBtn").setAttribute("aria-pressed", String(!S.compareOriginal));
   refreshExportState();
 }
 $("backToEditBtn").onclick = () => setReview(false);
@@ -877,7 +884,7 @@ function procFailed(msg, replaceFile = false, reference = null) {
 
 function processDone(job) {
   setBusy(null);
-  $("processBtn").textContent = "Export again";
+  $("processBtn").textContent = "Export updated file";
   show($("procProgress"), false);
   const isAudio = job.output.endsWith(".wav");
   S.resultIsAudio = isAudio;
@@ -887,7 +894,7 @@ function processDone(job) {
   S.resultSrc = `/api/jobs/${S.job.id}/result?t=${Date.now()}`;
   S.compareOriginal = false;
   player.src = S.resultSrc;
-  $("compareBtn").textContent = "Play original";
+
   $("downloadBtn").href = `/api/jobs/${S.job.id}/result?download=1`;
   show($("resultPanel"));
   setReview(true);
@@ -896,25 +903,29 @@ function processDone(job) {
 }
 
 // A/B toggle between the original and cleaned file at the same playback position
-$("compareBtn").onclick = () => {
+function comparePreview(original) {
+  if (S.compareOriginal === original) { setReview(true); return; }
   const player = S.resultIsAudio ? $("resultAudio") : $("resultVideo");
   const t = mapComparisonTime(player.currentTime, S.compareOriginal);
   const playing = !player.paused;
   setReview(true);
-  S.compareOriginal = !S.compareOriginal;
-  $("compareBtn").textContent = S.compareOriginal ? "Play cleaned" : "Play original";
+  S.compareOriginal = original;
   player.addEventListener("loadedmetadata", () => {
     player.currentTime = Math.min(t, player.duration || t);
     if (playing) player.play().catch(() => {});
   }, { once: true });
   player.src = S.compareOriginal ? `/api/jobs/${S.job.id}/source` : S.resultSrc;
   refreshExportState();
-};
+  $("originalPreviewBtn").setAttribute("aria-pressed", String(original));
+  $("exportedPreviewBtn").setAttribute("aria-pressed", String(!original));
+}
+$("originalPreviewBtn").onclick = () => comparePreview(true);
+$("exportedPreviewBtn").onclick = () => comparePreview(false);
 
 // ---------- reset ----------
 $("newFileBtn").onclick = () => {
   $("newFileWarning").textContent = S.operation
-    ? "Processing will continue on the server, but you will leave this file and lose access to its result here. Your current edits will be discarded."
+    ? "Processing will continue, but you will leave this file and lose access to its result here. Your current edits will be discarded."
     : "Your current file, edits, and export settings will be cleared. Download any result you want to keep before continuing.";
   $("newFileDialog").returnValue = "cancel";
   $("newFileDialog").showModal();
@@ -938,7 +949,7 @@ function resetFile() {
   $("audio").removeAttribute("src");
   $("resultVideo").removeAttribute("src");
   $("resultAudio").removeAttribute("src");
-  $("processBtn").textContent = "Export";
+  $("processBtn").textContent = "Export file";
   $("processBtn").disabled = false;
   show($("editorView"), false);
   show($("newFileBtn"), false);

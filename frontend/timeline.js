@@ -227,4 +227,4 @@ $("waveformCanvas").onclick = event => {
   const x = event.clientX - viewport.getBoundingClientRect().left + viewport.scrollLeft;
   sourcePlayer().currentTime = clamp(x / $("timelineContent").clientWidth * duration(), 0, duration());
 };
-window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderWaveform);
+window.addEventListener("freeedit:themechange", renderWaveform);
