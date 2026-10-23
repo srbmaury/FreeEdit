@@ -321,3 +321,17 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 .app-menu nav .appearance-picker { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border); border-radius: 0; margin-bottom: 4px; }
 .appearance-picker select { width: 100px; font-size: 12px; }
+
+.resume-panel { margin-bottom: 28px; padding: 18px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; text-align: left; }
+.resume-panel .row { flex-wrap: wrap; }
+.project-status { margin: 0 0 12px; color: var(--muted); font-size: 11px; }
+.project-status:empty { display: none; }
+#projectDialog .row { flex-wrap: wrap; }
+#newFileDialog .row { flex-wrap: wrap; }
+#newFileDialog .row > * { min-width: 100px; }
+.processing-meta { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; color: var(--muted); font-size: 11px; }
+.processing-meta button { padding: 4px 8px; font-size: 12px; }
+.diagnostic-check { display: grid; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.diagnostic-check strong { color: var(--text); }
+.project-recovery { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.project-recovery .project-status { margin: 0; }

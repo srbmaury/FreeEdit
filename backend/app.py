@@ -21,6 +21,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import pipeline
+from .diagnostics import inspect_setup, require_export_space
+from .execution import Cancelled, JobControl, cancellation_scope
 from .models import ProcessRequest, SilenceRequest
 from .observability import event, install_error_handling, public_processing_error
 
@@ -64,6 +66,8 @@ install_error_handling(app)
 executor = ThreadPoolExecutor(max_workers=1)
 jobs: dict[str, dict] = {}
 jobs_lock = threading.Lock()
+job_controls = {}
+job_futures = {}
 active_uploads: set[str] = set()
 MAX_PENDING_JOBS = max(1, int(os.environ.get("MAX_PENDING_JOBS", 4)))
 
@@ -89,7 +93,7 @@ def _cleanup_old_jobs() -> None:
             if not d.is_dir() or d.name in active_uploads:
                 continue
             job = jobs.get(d.name)
-            if job and job["status"] in ("queued", "processing"):
+            if d.name in job_controls or (job and job["status"] in ("queued", "processing", "cancelling")):
                 continue
             touched = job.get("updated_at", d.stat().st_mtime) if job else d.stat().st_mtime
             if touched < cutoff:
@@ -191,10 +195,12 @@ def _run(job_id: str, req: ProcessRequest, previous: dict) -> None:
         _update(job_id, stage=stage, progress=pct)
 
     started = time.monotonic()
+    _update(job_id, started_at=time.time())
     event("export_started", job_id=job_id, queue_ms=round((time.time() - previous["queued_at"]) * 1000), preset=req.preset)
     _update(job_id, status="processing", stage="Starting", progress=None, error=None, error_code=None, output=None)
     try:
         source = next(work.glob("source.*"))
+        require_export_space(work, previous["media"]["duration"])
         for stale in [*work.glob("output.*"), *work.glob("text_*.png"), work / "raw.wav"]:
             stale.unlink(missing_ok=True)
         shutil.rmtree(work / "denoised", ignore_errors=True)
@@ -206,10 +212,51 @@ def _run(job_id: str, req: ProcessRequest, previous: dict) -> None:
         )
         _update(job_id, status="done", stage="Done", progress=1.0, output=out.name)
         event("export_ready", job_id=job_id, duration_ms=round((time.monotonic() - started) * 1000), bytes=out.stat().st_size)
+    except Cancelled:
+        raise
     except Exception as exc:
         code, message = public_processing_error(exc)
         event("export_failed", job_id=job_id, code=code, exception=type(exc).__name__, detail=str(exc))
         _update(job_id, status="error", error=message, error_code=code)
+
+
+def _execute(worker, job_id, req, previous, control):
+    try:
+        with cancellation_scope(control):
+            worker(job_id, req, previous)
+    except Cancelled:
+        work = JOBS_DIR / job_id
+        if worker is _run:
+            for path in [*work.glob("output.*"), *work.glob("text_*.png"), work / "raw.wav"]:
+                path.unlink(missing_ok=True)
+            shutil.rmtree(work / "denoised", ignore_errors=True)
+        _update(job_id, status="cancelled", stage="Stopped", progress=None, error=None, output=None if worker is _run else previous.get("output"))
+        event("job_cancelled", job_id=job_id)
+    finally:
+        with jobs_lock:
+            job_controls.pop(job_id, None)
+            job_futures.pop(job_id, None)
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+def cancel_processing(job_id: str):
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            raise HTTPException(404, "Job not found")
+        control = job_controls.get(job_id)
+        if not control or job["status"] not in ("queued", "processing", "cancelling"):
+            raise HTTPException(409, "Processing has already finished.")
+        control.cancel()
+        future = job_futures.get(job_id)
+        job.update(cancel_requested=True, stage="Stopping…", updated_at=time.time())
+        if future and future.cancel():
+            job.update(status="cancelled", stage="Stopped", progress=None, error=None)
+            job_controls.pop(job_id, None)
+            job_futures.pop(job_id, None)
+        else:
+            job["status"] = "cancelling"
+    return {"ok": True}
 
 
 @app.post("/api/jobs/{job_id}/process")
@@ -222,27 +269,33 @@ def _submit(job_id, req, worker):
         job = jobs.get(job_id)
         if not job:
             raise HTTPException(404, "Job not found")
-        if job["status"] in ("queued", "processing"):
+        if job_id in job_controls or job["status"] in ("queued", "processing", "cancelling"):
             raise HTTPException(409, "This file is already being processed.")
         req.validate_media(job["media"])
-        if sum(j["status"] in ("queued", "processing") for j in jobs.values()) >= MAX_PENDING_JOBS:
+        if sum(j["status"] in ("queued", "processing", "cancelling") for j in jobs.values()) >= MAX_PENDING_JOBS:
             raise HTTPException(429, "The processing queue is full. Please try again shortly.", headers={"Retry-After": "5"})
         previous = dict(job)
         previous["queued_at"] = time.time()
+        control = JobControl()
+        job_controls[job_id] = control
         event("job_queued", job_id=job_id, operation="silence" if worker is _analyze_silence else "export")
-        job.update(status="queued", stage="Waiting in queue", progress=None, error=None, updated_at=time.time())
+        job.update(status="queued", stage="Waiting in queue", progress=None, error=None, updated_at=time.time(),
+                   operation="silence" if worker is _analyze_silence else "export",
+                   queued_at=time.time(), started_at=None, cancel_requested=False)
         if worker is _analyze_silence:
             job["silence"] = None
         try:
-            executor.submit(worker, job_id, req, previous)
+            job_futures[job_id] = executor.submit(_execute, worker, job_id, req, previous, control)
         except RuntimeError as exc:
             job.update(previous)
+            job_controls.pop(job_id, None)
             raise HTTPException(503, "Export is temporarily unavailable. Please retry.") from exc
     return {"ok": True}
 
 
 def _analyze_silence(job_id: str, req: SilenceRequest, previous: dict) -> None:
     started = time.monotonic()
+    _update(job_id, started_at=time.time())
     event("silence_started", job_id=job_id, queue_ms=round((time.time() - previous["queued_at"]) * 1000))
     _update(job_id, status="processing", stage="Detecting pauses", silence=None)
     try:
@@ -251,11 +304,13 @@ def _analyze_silence(job_id: str, req: SilenceRequest, previous: dict) -> None:
         result["error"] = None
         result["settings"] = req.model_dump()
         event("silence_ready", job_id=job_id, segments=len(result["segments"]), duration_ms=round((time.monotonic() - started) * 1000))
+    except Cancelled:
+        raise
     except Exception as exc:
         code, message = public_processing_error(exc)
         event("silence_failed", job_id=job_id, code=code, exception=type(exc).__name__, detail=str(exc))
         result = {"segments": [], "error": message, "error_code": code}
-    _update(job_id, status=previous["status"], stage=previous.get("stage"),
+    _update(job_id, status=previous["status"] if previous["status"] != "cancelled" else "uploaded", stage=previous.get("stage"),
             progress=previous.get("progress"), error=previous.get("error"), silence=result)
 
 
@@ -275,6 +330,11 @@ def limits():
     }
 
 
+@app.get("/api/diagnostics")
+def diagnostics():
+    return inspect_setup(JOBS_DIR)
+
+
 @app.get("/healthz")
 def healthz():
     return {"ok": True}
@@ -285,16 +345,16 @@ def job_status(job_id: str):
     return _job(job_id)
 
 
-@app.get("/api/jobs/{job_id}/source")
+@app.api_route("/api/jobs/{job_id}/source", methods=["GET", "HEAD"])
 def job_source(job_id: str):
     _job(job_id)
     return FileResponse(next((JOBS_DIR / job_id).glob("source.*")))
 
 
-@app.get("/api/jobs/{job_id}/result")
+@app.api_route("/api/jobs/{job_id}/result", methods=["GET", "HEAD"])
 def job_result(job_id: str, request: Request):
     job = _job(job_id)
-    if job["status"] != "done" or not job["output"]:
+    if job["status"] not in ("done", "cancelled") or not job.get("output"):
         raise HTTPException(400, "Result not ready.")
     path = JOBS_DIR / job_id / job["output"]
     stem = Path(job["filename"] or "recording").stem
@@ -310,7 +370,7 @@ def delete_job(job_id: str):
         job = jobs.get(job_id)
         if not job:
             raise HTTPException(404, "Job not found")
-        if job["status"] in ("queued", "processing"):
+        if job_id in job_controls or job["status"] in ("queued", "processing", "cancelling"):
             raise HTTPException(409, "Can't delete while processing.")
         shutil.rmtree(JOBS_DIR / job_id, ignore_errors=True)
         jobs.pop(job_id, None)

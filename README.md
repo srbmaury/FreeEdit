@@ -120,11 +120,33 @@ The free plan has less CPU than my test machine, so expect jobs to take a few ti
 
 The dependency/license findings and outstanding release decisions are documented in [docs/LICENSE_AUDIT.md](docs/LICENSE_AUDIT.md). DeepFilterNet code licensing and pretrained-model licensing are tracked separately.
 
+## Processing and review
+
+**Cancel** appears only while an export or pause detection is running. Queued work is removed from the queue; active FFmpeg/DeepFilterNet subprocesses are stopped and incomplete export files are removed. The original recording and edits remain. Elapsed time includes waiting in the queue; the stage label distinguishes waiting from processing. Percentages apply to the current rendering stage, not a promised overall ETA.
+
+Pause detection offers **Conservative**, **Balanced**, and **More pauses** presets, with numeric settings under Advanced. These change threshold, minimum length, and speech padding; every suggestion still needs review. Select an edit and choose **Review selection** to loop a short original-timeline section (up to about nine seconds) with its live overlays. Cuts are shown rather than skipped during this review. Noise reduction still requires export to hear it.
+
+Audio-only export with visual edits asks for confirmation that masks/text will be excluded. Small-file exports with text show a readability reminder. Other exports proceed directly.
+
+**⋯ → Check setup** runs on-demand checks for FFmpeg/FFprobe, denoising dependencies, the standard model cache, and available disk. It does not download a model or import the neural network runtime. A disk-space preflight protects exports; the estimate is a conservative allowance rather than a guarantee of maximum disk use. Model-cache detection reports only the default DeepFilterNet3 location; it does not prove the weights can load.
+
 ## Errors and server logs
 
 API failures return a stable error code and request ID alongside the message. Processing failures show recovery guidance; raw FFmpeg diagnostics stay in server logs. Interrupted uploads offer **Retry upload**, and expired files offer **Upload a replacement file**. Status checks resume when the browser comes back online.
 
 Server application events are JSON lines: request failures, uploads, queue admission and wait time, processing stages, export duration/size, silence detection, and cleanup. Application request events use route templates and omit query strings, original filenames, and client IP addresses. The provided launch script and Docker command disable Uvicorn's separate access log, which would otherwise include upload filenames in query strings. No external analytics service is configured.
+
+## Save and resume a project
+
+Use **⋯ → Save project…** to download a `.freeedit.json` file containing cuts, masks, text, noise-reduction settings, and the export preset. This is an editable project, separate from an exported video/audio file. **The recording is not included:** keep the original with your project file.
+
+Use **⋯ → Open project…**, then select the original recording. FreeEdit compares its size and a fingerprint of every byte before restoring edits. Renaming the recording is fine; changing or re-encoding its contents is not. Project format version 1 uses `sha256-chunks-4m-v1`: SHA-256 of the concatenated SHA-256 digests of consecutive 4 MiB chunks. Hashing uses bounded memory. Project files are validated and limited to 2 MB.
+
+FreeEdit also saves one recovery copy automatically in browser storage. On return, choose **Resume editing**. If the server still holds the temporary recording, it can be reused. After expiry or a server restart, choose the original recording again. Recovery keeps edits/settings, not the video/audio itself; closing the browser does not keep the server's temporary media forever.
+
+Browser recovery belongs to the same browser profile and exact site address (including port). Private browsing, clearing site data, storage restrictions, or using another browser/computer can remove or hide it. Text overlays and edit settings are stored locally, so use **Discard recovery** when sharing the computer. Downloaded project files are the reliable way to transfer or retain work. Only one session is retained per browser/site; starting another recording replaces it after confirmation. Browser recovery uses a short-lived tab ownership lease. A second active tab does not overwrite the first tab’s recovery; it offers an explicit takeover action. Download project files to retain work from multiple tabs. Recovery also restores the playhead and timeline zoom.
+
+Leaving a project with changes not yet downloaded prompts the browser's standard unsaved-work warning. Starting another file has a separate confirmation with **Save project**. Browser recovery is a convenience, not a backup. Portable bundles that include the original recording are not implemented.
 
 ## Editor layout
 

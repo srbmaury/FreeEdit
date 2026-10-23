@@ -22,6 +22,10 @@ def event(name, **fields):
 
 
 def public_processing_error(exc):
+    if "not found. Install it or set" in str(exc):
+        return "media_tools_unavailable", "A media tool is missing. Open Check setup in the menu for configuration details."
+    if "disk space" in str(exc):
+        return "disk_space_low", "Not enough temporary disk space. Free disk space or use a shorter recording."
     if "No module named" in str(exc):
         return "processor_unavailable", "Noise reduction is not configured on this server. Turn it off to export other edits, or configure the denoising environment."
     if "timed out" in str(exc).lower():

@@ -22,6 +22,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from .execution import check_cancelled, run_process, start_process
+
 ProgressFn = Callable[[str, float | None], None]
 
 HIDE_STYLES = {"blur", "pixelate", "black"}
@@ -68,7 +70,7 @@ class MediaInfo:
 
 def probe(path: Path) -> MediaInfo:
     try:
-        out = subprocess.run(
+        out = run_process(
             [FFPROBE(), "-v", "error", "-print_format", "json", "-show_streams", "-show_format", str(path)],
             capture_output=True, text=True, timeout=30,
         )
@@ -120,7 +122,7 @@ def _run_ffmpeg(args: list[str], duration: float, label: str, progress: Progress
     expired = threading.Event()
     # stderr must drain independently of progress or FFmpeg can deadlock.
     with tempfile.TemporaryFile(mode="w+t") as errors:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=errors, text=True, stdin=subprocess.DEVNULL)
+        proc = start_process(cmd, stdout=subprocess.PIPE, stderr=errors, text=True, stdin=subprocess.DEVNULL)
         def terminate():
             expired.set()
             proc.kill()
@@ -143,6 +145,7 @@ def _run_ffmpeg(args: list[str], duration: float, label: str, progress: Progress
             proc.wait()
             if proc.stdout:
                 proc.stdout.close()
+        check_cancelled()
         if expired.is_set():
             raise PipelineError(f"Export timed out during '{label}'. Try a shorter recording.")
         if code != 0:
@@ -161,7 +164,7 @@ def denoise(wav_in: Path, out_dir: Path, atten_lim: int | None, duration: float)
     python = os.environ.get("DEEPFILTER_PYTHON", sys.executable)
     cmd = [python, str(WORKER), str(wav_in), str(out), str(atten_lim or "")]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL,
+        proc = run_process(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL,
                               timeout=300 + duration * 5)
     except subprocess.TimeoutExpired:
         raise PipelineError("DeepFilterNet timed out.")
@@ -354,7 +357,7 @@ def audio_waveform(source: Path, duration: float) -> list[float]:
            "-af", f"aresample={rate}:async=1:first_pts=0", "-t", str(duration), "-f", "s16le", "pipe:1"]
     with tempfile.TemporaryFile() as audio:
         try:
-            result = subprocess.run(cmd, stdout=audio, stderr=subprocess.PIPE, timeout=30 + duration)
+            result = run_process(cmd, stdout=audio, stderr=subprocess.PIPE, timeout=30 + duration)
         except subprocess.TimeoutExpired as exc:
             raise PipelineError("Waveform generation timed out.") from exc
         if result.returncode:
@@ -377,7 +380,7 @@ def detect_silence(source: Path, duration: float, threshold_db: float, min_durat
     cmd = [FFMPEG(), "-hide_banner", "-nostdin", "-i", str(source), "-map", "0:a:0",
            "-af", f"silencedetect=noise={threshold_db}dB:d={min_duration}", "-f", "null", "-"]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60 + duration * 2)
+        result = run_process(cmd, capture_output=True, text=True, timeout=60 + duration * 2)
     except subprocess.TimeoutExpired as exc:
         raise PipelineError("Silence detection timed out. Try a shorter recording.") from exc
     if result.returncode:

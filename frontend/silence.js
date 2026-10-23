@@ -40,6 +40,7 @@ function silenceDone(result) {
   $("retryPausesBtn").textContent = `Try ${nextThreshold} dB`;
   $("retryPausesBtn").onclick = () => {
     $("silenceThreshold").value = nextThreshold;
+    $("pausePreset").value = "custom";
     $("detectSilenceBtn").click();
   };
   $("silenceStatus").textContent = noResults
@@ -104,3 +105,16 @@ $("applyPausesBtn").onclick = () => {
   renderSilenceReview(); renderList(); render(); updateTransport();
   $("silenceStatus").textContent = "Selected pauses marked for removal. Adjust them in Edits, or choose Undo to keep them.";
 };
+
+const pausePresets = {
+  conservative: [-40, 0.8, 0.2],
+  balanced: [-35, 0.7, 0.2],
+  more: [-30, 0.5, 0.15],
+};
+$("pausePreset").onchange = () => {
+  const values = pausePresets[$("pausePreset").value];
+  if (values) ["silenceThreshold", "silenceDuration", "silencePadding"].forEach((id, i) => $(id).value = values[i]);
+};
+["silenceThreshold", "silenceDuration", "silencePadding"].forEach(id => {
+  $(id).addEventListener("input", () => { $("pausePreset").value = "custom"; });
+});

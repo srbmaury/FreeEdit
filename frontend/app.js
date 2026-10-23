@@ -20,6 +20,9 @@ const S = {
   resultIsAudio: false,
   auditionUntil: null,
   pendingUpload: null,
+  elapsedTimer: null,
+  busySince: null,
+  reviewLoop: null,
 };
 
 const video = $("video");
@@ -90,12 +93,27 @@ api("/api/limits").then((l) => {
   $("dzLimits").textContent = text;
 }).catch(() => {});
 
-function upload(file) {
+async function upload(file, knownIdentity = null) {
   S.pendingUpload = file;
-  show($("retryUploadBtn"), false);
   if (LIMITS.max_upload_mb && file.size > LIMITS.max_upload_mb * 1024 * 1024) {
     return uploadFailed(`File is larger than ${LIMITS.max_upload_mb} MB.`);
   }
+  let identity;
+  try {
+    $("uploadPct").textContent = "Checking recording…";
+    show($("uploadProgress"));
+    show(dropZone, false);
+    identity = knownIdentity || await fingerprintSource(file);
+    if (projects.pending && (identity.size !== projects.pending.source.size || identity.fingerprint !== projects.pending.source.fingerprint)) {
+      uploadFailed("Choose the original recording for this project, or cancel opening the project.");
+      return;
+    }
+  } catch {
+    uploadFailed("Could not read the recording. Select the original file and try again.");
+    return;
+  }
+  show($("retryUploadBtn"), false);
+
   show($("uploadError"), false);
   show($("uploadProgress"));
   show(dropZone, false);
@@ -109,7 +127,16 @@ function upload(file) {
   xhr.onload = () => {
     let body = {};
     try { body = JSON.parse(xhr.responseText); } catch { /* empty */ }
-    if (xhr.status >= 200 && xhr.status < 300) openEditor(body);
+    if (xhr.status >= 200 && xhr.status < 300) {
+      if (projects.pending && !projectMediaMatches(projects.pending.source, body)) {
+        uploadFailed("This project's media details do not match the recording. The project may be damaged or unsupported.");
+        projects.pending = null;
+        api(`/api/jobs/${body.id}`, {method: "DELETE"}).catch(() => {});
+        return;
+      }
+      openEditor(body);
+      projectSourceReady(identity);
+    }
     else uploadFailed(body.detail || `Upload failed (${xhr.status})`, xhr.status === 429 || xhr.status >= 500);
   };
   xhr.onerror = () => uploadFailed("Connection interrupted. Check your connection and retry the upload.", true);
@@ -228,6 +255,13 @@ function skipCuts() {
 }
 
 function tick() {
+  if (S.reviewLoop) {
+    const loop = S.reviewLoop;
+    if (sourcePlayer().currentTime >= loop.end) sourcePlayer().currentTime = loop.start;
+    render(); updateTransport();
+    if (!sourcePlayer().paused && !sourcePlayer().ended) requestAnimationFrame(tick);
+    return;
+  }
   if (S.auditionUntil !== null) {
     if (sourcePlayer().currentTime >= S.auditionUntil) sourcePlayer().pause();
   } else if (!sourcePlayer().paused) skipCuts();
@@ -252,6 +286,7 @@ function updateTransport() {
     $("scrubber").value = d ? (sourcePlayer().currentTime / d) * 1000 : 0;
   }
   const sel = getEdit(S.selected);
+  show($("reviewSelectionBtn"), !!sel && !S.reviewing);
   const track = $("rangeTrack");
   if (sel && d) {
     track.style.left = (sel.start / d) * 100 + "%";
@@ -576,6 +611,7 @@ function deleteEdit(id) {
 }
 
 function select(id) {
+  stopReviewLoop();
   S.selected = id;
   document.querySelectorAll(".card").forEach((c) => {
     const selected = +c.dataset.id === id;
@@ -707,6 +743,7 @@ function editSignature() {
 }
 function refreshExportState() {
   if (!S.job) return;
+  if (typeof scheduleProjectSave === "function") scheduleProjectSave();
   updatePresetInfo();
   $("undoBtn").disabled = !S.undo.length;
   $("redoBtn").disabled = !S.redo.length;
@@ -719,6 +756,7 @@ function refreshExportState() {
 $("denoise").addEventListener("change", refreshExportState);
 $("strength").addEventListener("change", refreshExportState);
 function setReview(reviewing) {
+  stopReviewLoop();
   S.reviewing = reviewing;
   video.pause(); $("audio").pause(); $("resultVideo").pause(); $("resultAudio").pause();
   show($("stage"), !reviewing && S.job.has_video);
@@ -757,11 +795,23 @@ function mapComparisonTime(t, fromOriginal) {
 }
 
 function setBusy(operation) {
+  const wasBusy = !!S.operation;
   S.operation = operation;
   $("processBtn").disabled = !!operation;
   $("detectSilenceBtn").disabled = !!operation;
   $("retryPausesBtn").disabled = !!operation;
+  $("cancelProcessingBtn").disabled = false;
+  $("cancelProcessingBtn").textContent = "Cancel";
+  if (operation && !wasBusy) {
+    S.busySince = Date.now();
+    clearInterval(S.elapsedTimer);
+    const update = () => { $("elapsedTime").textContent = `Elapsed ${fmt((Date.now() - S.busySince) / 1000)}`; };
+    update(); S.elapsedTimer = setInterval(update, 1000);
+  } else if (!operation) {
+    clearInterval(S.elapsedTimer); S.elapsedTimer = null;
+  }
 }
+
 function updatePresetInfo() {
   const preset = $("exportPreset").value;
   if (!S.job.has_video || preset === "audio_only") {
@@ -802,7 +852,7 @@ function buildPayload() {
   };
 }
 
-$("processBtn").onclick = async () => {
+async function startExport() {
   show($("procError"), false);
   show($("procReference"), false);
   show($("recoverFileBtn"), false);
@@ -835,7 +885,7 @@ $("processBtn").onclick = async () => {
       poll();
     } else procFailed(err.message, false, err.requestId);
   }
-};
+}
 
 function setProgress(stage, pct) {
   $("procStage").textContent = stage || "Working…";
@@ -853,9 +903,18 @@ function poll(delay = 800) {
     try {
       const j = await api(`/api/jobs/${id}`);
       if (S.job?.id !== id) return;
+      if (j.queued_at) S.busySince = j.queued_at * 1000;
+      if (j.status === "cancelled") {
+        const wasSilence = S.operation === "silence";
+        setBusy(null); show($("procProgress"), false);
+        if (wasSilence) $("silenceStatus").textContent = "Detection stopped. Your edits are unchanged.";
+        else { $("procError").textContent = "Export stopped. Your recording and edits are ready to try again."; show($("procError")); }
+        return;
+      }
+      if (j.status === "cancelling") { setProgress("Stopping…", null); poll(); return; }
       if (S.operation === "silence") {
         if (j.silence) return silenceDone(j.silence);
-        if (!["queued", "processing"].includes(j.status)) return silenceDone({error: "Detection was not started. Please retry."});
+        if (!["queued", "processing", "cancelling"].includes(j.status)) return silenceDone({error: "Detection was not started. Please retry."});
       } else if (j.status === "done") return processDone(j);
       if (j.status === "error") return procFailed(j.error, false, j.id);
       if (j.status === "uploaded") return procFailed("Export was not started. Please try again.");
@@ -926,7 +985,7 @@ $("exportedPreviewBtn").onclick = () => comparePreview(false);
 $("newFileBtn").onclick = () => {
   $("newFileWarning").textContent = S.operation
     ? "Processing will continue, but you will leave this file and lose access to its result here. Your current edits will be discarded."
-    : "Your current file, edits, and export settings will be cleared. Download any result you want to keep before continuing.";
+    : "Your current file, edits, and export settings will be cleared, including browser recovery. Save a project to continue later, or download your export before continuing.";
   $("newFileDialog").returnValue = "cancel";
   $("newFileDialog").showModal();
 };
@@ -936,8 +995,10 @@ $("newFileDialog").addEventListener("close", () => {
 });
 
 function resetFile() {
+  resetProject();
   clearTimeout(S.pollTimer);
   const id = S.job?.id;
+  stopReviewLoop();
   video.pause(); $("audio").pause(); $("resultVideo").pause(); $("resultAudio").pause();
   S.job = null;
   S.edits = []; S.suggestions = [];
@@ -966,3 +1027,41 @@ window.addEventListener("online", () => { if (S.operation) poll(0); });
 window.addEventListener("offline", () => {
   if (S.operation) setProgress("You are offline. Processing can continue on the server; reconnect to see its status.", null);
 });
+
+function stopReviewLoop() {
+  S.reviewLoop = null;
+  $("reviewSelectionBtn").setAttribute("aria-pressed", "false");
+  $("reviewSelectionBtn").textContent = "Review selection";
+}
+$("reviewSelectionBtn").onclick = () => {
+  if (S.reviewLoop) { sourcePlayer().pause(); stopReviewLoop(); return; }
+  const edit = getEdit(S.selected);
+  if (!edit) return;
+  const start = Math.max(0, edit.start - 0.7);
+  const end = Math.min(duration(), Math.min(edit.end, edit.start + 8) + 0.7);
+  S.reviewLoop = {start, end};
+  sourcePlayer().currentTime = start;
+  $("reviewSelectionBtn").setAttribute("aria-pressed", "true");
+  $("reviewSelectionBtn").textContent = "Stop review";
+  sourcePlayer().play().catch(stopReviewLoop);
+};
+$("cancelProcessingBtn").onclick = async () => {
+  if (!S.job || !S.operation) return;
+  const id = S.job.id;
+  $("cancelProcessingBtn").disabled = true;
+  $("cancelProcessingBtn").textContent = "Stopping…";
+  try { await api(`/api/jobs/${id}/cancel`, {method: "POST"}); }
+  catch (error) {
+    if (S.job?.id !== id) return;
+    if (error.status !== 409) { $("cancelProcessingBtn").disabled = false; $("cancelProcessingBtn").textContent = "Retry cancel"; }
+  }
+  if (S.job?.id === id) poll(0);
+};
+
+$("processBtn").onclick = () => {
+  const warnings = [];
+  if ($("exportPreset").value === "audio_only" && S.edits.some(e => e.type !== "cut")) warnings.push("Audio-only export excludes your text and hidden areas. Audio and cuts are included.");
+  if ($("exportPreset").value === "small" && S.edits.some(e => e.type === "text")) warnings.push("Small file compression can make text less readable. Review the exported result before sharing.");
+  if (warnings.length) showProjectMessage("Check before exporting", warnings.join(" "), () => { $("projectDialog").close(); startExport(); }, "Export file");
+  else startExport();
+};

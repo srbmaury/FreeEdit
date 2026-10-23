@@ -40,6 +40,8 @@
     <details id="appMenu" class="app-menu">
       <summary aria-label="FreeEdit menu">⋯</summary>
       <nav aria-label="Help and information">
+        <button id="saveProjectBtn" disabled>Save project…</button>
+        <button id="openProjectBtn">Open project…</button>
         <label class="appearance-picker" for="appearanceSelect">Appearance
           <select id="appearanceSelect">
             <option value="system">System</option>
@@ -49,6 +51,7 @@
         </label>
         <button data-dialog="shortcutsDialog">Keyboard shortcuts</button>
         <button data-dialog="storageDialog">Storage and cleanup</button>
+        <button id="diagnosticsBtn">Check setup</button>
         <button data-dialog="aboutDialog">About FreeEdit</button>
         <a href="https://github.com/srbmaury/FreeEdit" target="_blank" rel="noopener noreferrer">View on GitHub ↗</a>
         <a href="https://github.com/srbmaury/FreeEdit/issues" target="_blank" rel="noopener noreferrer">Report an issue ↗</a>
@@ -58,6 +61,10 @@
 
   <!-- 1. Upload -->
   <section id="uploadView" class="view">
+    <div id="resumePanel" class="resume-panel hidden">
+      <div><strong>Continue your last project</strong><p id="resumeDetails" class="small"></p></div>
+      <div class="row"><button id="resumeProjectBtn" class="primary">Resume editing</button><button id="discardRecoveryBtn" class="ghost">Discard recovery</button></div>
+    </div>
     <h1>Make your recording ready to share.</h1>
     <p class="upload-intro">Clean up noise, shorten pauses, hide private details.</p>
     <div id="dropZone" class="dropzone">
@@ -81,6 +88,7 @@
   <section id="editorView" class="view hidden">
     <div class="editor">
       <div class="main">
+        <div class="project-recovery"><p id="projectStatus" class="project-status" role="status" aria-live="polite"></p><button id="takeRecoveryBtn" class="mini hidden">Use recovery for this tab</button></div>
         <div class="preview-heading">
           <div><h2 class="workspace-title">Your recording</h2><span id="previewLabel" role="status">Edits preview · noise reduction is heard after export</span></div>
           <div class="preview-actions">
@@ -98,6 +106,7 @@
           <button id="cutBtn" class="cut-btn" title="Remove a part of the video (X)">✂ Cut section</button>
           <button id="undoBtn" disabled title="Undo (⌘/Ctrl+Z)">Undo</button><button id="redoBtn" disabled title="Redo (⌘/Ctrl+Shift+Z)">Redo</button>
           <button id="placeEditBtn" class="ghost hidden">Place in center</button>
+          <button id="reviewSelectionBtn" class="ghost hidden" aria-pressed="false">Review selection</button>
           <span id="modeHint" class="hint">Click an edit to select it. Drag it to move it.</span>
         </div>
 
@@ -185,6 +194,9 @@
         <div id="silencePanel" class="panel">
           <h3>Shorten pauses</h3>
           <p class="small">Detect quiet sections, listen, then choose which to remove. Quiet speech can be mistaken for silence.</p>
+          <label class="field"><span>Pause detection</span>
+            <select id="pausePreset"><option value="conservative">Conservative · fewer cuts</option><option value="balanced">Balanced</option><option value="more">More pauses</option><option value="custom">Custom</option></select>
+          </label>
           <details>
             <summary>Advanced detection settings</summary>
             <label class="field"><span>Pause sensitivity (dB)</span><input id="silenceThreshold" type="number" value="-40" min="-70" max="-15" step="1" /></label>
@@ -219,6 +231,7 @@
           <div id="procProgress" class="progress hidden" role="status" aria-live="polite">
             <div class="progress-label"><span id="procStage">Starting…</span> <span id="procPct"></span></div>
             <div class="bar"><div id="procBar"></div></div>
+            <div class="processing-meta"><span id="elapsedTime"></span><button id="cancelProcessingBtn" class="ghost">Cancel</button></div>
           </div>
           <div id="procError" class="error hidden" role="alert"></div>
           <p id="procReference" class="small hidden"></p>
@@ -229,7 +242,7 @@
           <button id="reviewBtn" class="ghost">Review export</button>
           <p id="resultNote" class="small" role="status">Rendered export ready to review.</p>
           <div class="row">
-            <a id="downloadBtn" class="button primary" href="#">Download</a>
+            <a id="downloadBtn" class="button primary" href="#" download>Download</a>
 
           </div>
         </div>
@@ -314,6 +327,7 @@
       <p id="newFileWarning"></p>
       <div class="row">
         <button value="cancel" autofocus>Keep editing</button>
+        <button id="saveBeforeResetBtn" type="button">Save project</button>
         <button value="discard" class="discard">Discard and start over</button>
       </div>
     </form>
@@ -329,15 +343,26 @@
     <form method="dialog"><h2 id="storageTitle">Storage and cleanup</h2>
       <p>Files are processed by the computer running FreeEdit. If you opened a hosted instance, that computer is its server.</p>
       <p id="storageDetails">Temporary files expire automatically. Active processing is protected.</p>
-      <p>Your original file stays unchanged. Download your export before leaving. Starting another file discards this editing session.</p>
+      <p>Your original file stays unchanged. Use Save project to keep edits for another day, and keep the original recording. Browser recovery stores your latest session on this browser only. Starting another file discards that recovery.</p>
       <button class="primary">Done</button></form>
   </dialog>
   <dialog id="aboutDialog" class="info-dialog" aria-labelledby="aboutTitle">
     <form method="dialog"><h2 id="aboutTitle">About FreeEdit</h2><p>A focused, open-source utility for cleaning up audio and video recordings.</p><p>Noise reduction uses DeepFilterNet3. Media analysis and export use FFmpeg.</p><p class="small">No account required. For setup, source code, and known limitations, visit the GitHub repository.</p><button class="primary">Done</button></form>
   </dialog>
+  <input id="projectInput" type="file" accept=".json,.freeedit.json" hidden />
+  <input id="projectSourceInput" type="file" accept="video/*,audio/*,.mov,.mkv,.wav,.mp3,.m4a,.flac" hidden />
+  <dialog id="projectDialog" class="info-dialog" aria-labelledby="projectDialogTitle">
+    <h2 id="projectDialogTitle">Open project</h2>
+    <p id="projectMessage" role="status" aria-live="polite"></p>
+    <div class="row"><button id="cancelProjectBtn">Cancel</button><button id="confirmProjectBtn" class="primary">Continue</button></div>
+  </dialog>
+  <dialog id="diagnosticsDialog" class="info-dialog" aria-labelledby="diagnosticsTitle">
+    <form method="dialog"><h2 id="diagnosticsTitle">Check setup</h2><div id="diagnosticsResults" role="status" aria-live="polite"></div><button class="primary">Done</button></form>
+  </dialog>
   <script src="ui.js"></script>
   <script src="app.js"></script>
   <script src="silence.js"></script>
   <script src="timeline.js"></script>
+  <script src="projects.js"></script>
 </body>
 </html>
