@@ -11,6 +11,15 @@ const S = {
   nextId: 1,
   pollTimer: null,
   compareOriginal: false,
+  reviewing: false,
+  undo: [], redo: [],
+  exportSignature: null,
+  submittedRanges: [],
+  operation: null,
+  suggestions: [],
+  resultIsAudio: false,
+  auditionUntil: null,
+  pendingUpload: null,
 };
 
 const video = $("video");
@@ -37,21 +46,30 @@ const fmt = (t) => {
   const s = (t - m * 60).toFixed(1).padStart(4, "0");
   return `${m}:${s}`;
 };
+const sourcePlayer = () => S.job?.has_video ? video : $("audio");
 const duration = () => S.job?.duration || video.duration || 0;
 const getEdit = (id) => S.edits.find((e) => e.id === id);
 const isActive = (e, t = video.currentTime) => t >= e.start && t <= e.end;
 const show = (el, on = true) => el.classList.toggle("hidden", !on);
 
 async function api(path, opts = {}) {
-  const res = await fetch(path, opts);
+  const res = await fetch(path, { ...opts, signal: AbortSignal.timeout(15000) });
   let body = null;
   try { body = await res.json(); } catch { /* empty */ }
-  if (!res.ok) throw new Error(body?.detail || `Request failed (${res.status})`);
+  if (!res.ok) {
+    const detail = Array.isArray(body?.detail) ? body.detail.map((e) => `${e.loc.slice(1).join(".")}: ${e.msg}`).join("; ") : body?.detail;
+    const error = new Error(detail || `Request failed (${res.status})`);
+    error.status = res.status;
+    error.code = body?.error?.code;
+    error.requestId = body?.error?.request_id;
+    throw error;
+  }
   return body;
 }
 
 // ---------- upload ----------
 const dropZone = $("dropZone");
+$("chooseFileBtn").onclick = (event) => { event.preventDefault(); $("fileInput").click(); };
 $("fileInput").addEventListener("change", (e) => e.target.files[0] && upload(e.target.files[0]));
 ["dragenter", "dragover"].forEach((ev) =>
   dropZone.addEventListener(ev, (e) => { e.preventDefault(); dropZone.classList.add("drag"); }));
@@ -62,6 +80,7 @@ dropZone.addEventListener("drop", (e) => e.dataTransfer.files[0] && upload(e.dat
 let LIMITS = { max_upload_mb: 0, max_duration_min: 0 };
 api("/api/limits").then((l) => {
   LIMITS = l;
+  $("retentionNote").textContent = `Processed on this server. Files expire after ${l.job_ttl_hours} hours when inactive.`;
   const parts = [];
   if (l.max_upload_mb < 1024) parts.push(`up to ${l.max_upload_mb} MB`);
   if (l.max_duration_min) parts.push(`${l.max_duration_min} min`);
@@ -71,6 +90,8 @@ api("/api/limits").then((l) => {
 }).catch(() => {});
 
 function upload(file) {
+  S.pendingUpload = file;
+  show($("retryUploadBtn"), false);
   if (LIMITS.max_upload_mb && file.size > LIMITS.max_upload_mb * 1024 * 1024) {
     return uploadFailed(`File is larger than ${LIMITS.max_upload_mb} MB.`);
   }
@@ -88,16 +109,19 @@ function upload(file) {
     let body = {};
     try { body = JSON.parse(xhr.responseText); } catch { /* empty */ }
     if (xhr.status >= 200 && xhr.status < 300) openEditor(body);
-    else uploadFailed(body.detail || `Upload failed (${xhr.status})`);
+    else uploadFailed(body.detail || `Upload failed (${xhr.status})`, xhr.status === 429 || xhr.status >= 500);
   };
-  xhr.onerror = () => uploadFailed("Upload failed. Is the server running?");
+  xhr.onerror = () => uploadFailed("Connection interrupted. Check your connection and retry the upload.", true);
   // Raw body upload: the server streams it straight to disk
   xhr.open("POST", `/api/upload?filename=${encodeURIComponent(file.name)}`);
   xhr.setRequestHeader("Content-Type", "application/octet-stream");
   xhr.send(file);
 }
 
-function uploadFailed(msg) {
+$("retryUploadBtn").onclick = () => { if (S.pendingUpload) upload(S.pendingUpload); };
+
+function uploadFailed(msg, retry = false) {
+  show($("retryUploadBtn"), retry && !!S.pendingUpload);
   show($("uploadProgress"), false);
   show(dropZone);
   $("uploadError").textContent = msg;
@@ -107,22 +131,39 @@ function uploadFailed(msg) {
 
 // ---------- editor setup ----------
 function openEditor(job) {
+  S.pendingUpload = null;
   S.job = job;
   S.edits = [];
+  S.undo = []; S.redo = [];
+  S.exportSignature = null; S.reviewing = false;
+  S.operation = null; S.suggestions = [];
+  resetTimeline();
+  show($("silenceReview"), false);
+  $("silenceStatus").textContent = "";
+  show($("retryPausesBtn"), false);
+  $("detectSilenceBtn").disabled = false;
+  $("exportPreset").value = job.has_video ? "balanced" : "audio_only";
+  $("exportPreset").querySelector('[value="audio_only"]').disabled = !job.has_audio;
+  show($("silencePanel"), job.has_audio);
   S.selected = null;
   show($("uploadView"), false);
   show($("editorView"));
   show($("newFileBtn"));
   show($("resultPanel"), false);
+  setReview(false);
   show($("procError"), false);
+  show($("procReference"), false);
+  show($("recoverFileBtn"), false);
   show($("procProgress"), false);
 
   const src = `/api/jobs/${job.id}/source`;
   const isVideo = job.has_video;
-  show($("toolbar"), isVideo);
+  show($("toolbar"));
+  document.querySelectorAll(".tool").forEach(b => show(b, isVideo));
+  show($("modeHint"), isVideo);
   show($("stage"), isVideo);
-  show($("transport"), isVideo);
-  show($("editsPanel"), isVideo);
+  show($("transport"));
+  show($("editsPanel"));
   show($("audio"), !isVideo);
   if (isVideo) {
     video.src = src;
@@ -140,6 +181,7 @@ function openEditor(job) {
 
   setMode("select");
   renderList();
+  updateTransport();
   requestAnimationFrame(layoutStage);
 }
 
@@ -164,41 +206,47 @@ function layoutStage() {
 window.addEventListener("resize", layoutStage);
 
 video.addEventListener("loadeddata", render);
+$("audio").addEventListener("timeupdate", updateTransport);
+$("audio").addEventListener("play", () => { $("playBtn").textContent = "❚❚"; tick(); });
+$("audio").addEventListener("pause", () => { S.auditionUntil = null; $("playBtn").textContent = "▶"; });
 video.addEventListener("seeked", render);
 video.addEventListener("timeupdate", () => { updateTransport(); if (video.paused) render(); });
 video.addEventListener("play", () => { $("playBtn").textContent = "❚❚"; tick(); });
-video.addEventListener("pause", () => { $("playBtn").textContent = "▶"; render(); });
+video.addEventListener("pause", () => { S.auditionUntil = null; $("playBtn").textContent = "▶"; render(); });
 video.addEventListener("error", () => {
   $("fileMeta").textContent += " · This browser can't preview this format. You can still process it, but you can't place edits here. Try Safari, or upload an MP4.";
 });
 
 // While playing, jump over removed parts so the preview matches the result
 function skipCuts() {
-  const t = video.currentTime;
+  const t = sourcePlayer().currentTime;
   const c = S.edits.find((e) => e.type === "cut" && t >= e.start && t < e.end - 0.02);
-  if (c) video.currentTime = Math.min(c.end, duration());
+  if (c) sourcePlayer().currentTime = Math.min(c.end, duration());
 }
 
 function tick() {
-  if (!video.paused) skipCuts();
+  if (S.auditionUntil !== null) {
+    if (sourcePlayer().currentTime >= S.auditionUntil) sourcePlayer().pause();
+  } else if (!sourcePlayer().paused) skipCuts();
   render();
   updateTransport();
-  if (!video.paused && !video.ended) requestAnimationFrame(tick);
+  if (!sourcePlayer().paused && !sourcePlayer().ended) requestAnimationFrame(tick);
 }
 
 // ---------- transport ----------
-$("playBtn").onclick = () => (video.paused ? video.play() : video.pause());
+$("playBtn").onclick = () => (sourcePlayer().paused ? sourcePlayer().play() : sourcePlayer().pause());
 $("scrubber").addEventListener("input", (e) => {
-  video.currentTime = (e.target.value / 1000) * duration();
+  sourcePlayer().currentTime = (e.target.value / 1000) * duration();
 });
 
 function updateTransport() {
+  updateTimelinePlayhead();
   const d = duration();
   const removed = cutRanges().reduce((sum, [a, b]) => sum + (b - a), 0);
-  $("timeLabel").innerHTML = `${fmt(video.currentTime)} / ${fmt(d)}` +
+  $("timeLabel").innerHTML = `${fmt(sourcePlayer().currentTime)} / ${fmt(d)}` +
     (removed > 0 ? `<br><span class="final-len">Final ${fmt(d - removed)}</span>` : "");
   if (document.activeElement !== $("scrubber")) {
-    $("scrubber").value = d ? (video.currentTime / d) * 1000 : 0;
+    $("scrubber").value = d ? (sourcePlayer().currentTime / d) * 1000 : 0;
   }
   const sel = getEdit(S.selected);
   const track = $("rangeTrack");
@@ -281,6 +329,7 @@ function paintHide(e) {
 }
 
 function render() {
+  refreshExportState();
   if (!S.job?.has_video) return;
   const W = S.job.width, H = S.job.height;
   ctx.clearRect(0, 0, W, H);
@@ -377,11 +426,7 @@ canvas.addEventListener("pointerdown", (ev) => {
     return;
   }
   if (S.mode === "text") {
-    const e = addEdit({
-      type: "text", text: "Your text", x: Math.round(p.x), y: Math.round(p.y),
-      fontSize: Math.max(16, Math.round(S.job.height * 0.055)),
-      color: "#ffffff", font: "sans", bg: "dark", bold: true,
-    });
+    const e = addTextAt(p.x, p.y);
     setMode("select");
     // Stop the canvas click from stealing focus back from the text box
     ev.preventDefault();
@@ -391,6 +436,7 @@ canvas.addEventListener("pointerdown", (ev) => {
     return;
   }
   const hit = hitTest(p);
+  if (hit) checkpoint();
   if (!hit) { select(null); return; }
   select(hit.edit.id);
   S.drag = hit.part === "resize"
@@ -432,16 +478,34 @@ canvas.addEventListener("pointerup", () => {
   if (d?.kind === "new") {
     const r = normRect(d);
     if (r.w >= 8 && r.h >= 8) {
-      addEdit({ type: "hide", style: "blur", x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w), h: Math.round(r.h) });
+      addEdit({ type: "hide", style: "black", x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w), h: Math.round(r.h) });
       setMode("select");
     }
   }
   render();
 });
 
+function addTextAt(x, y) {
+  return addEdit({type: "text", text: "Your text", x: Math.round(x), y: Math.round(y),
+    fontSize: Math.max(16, Math.round(S.job.height * 0.055)),
+    color: "#ffffff", font: "sans", bg: "dark", bold: true});
+}
+$("placeEditBtn").onclick = () => {
+  const {width, height} = S.job;
+  if (S.mode === "hide") {
+    addEdit({type: "hide", style: "black", x: Math.floor(width / 4), y: Math.floor(height / 3),
+      w: Math.max(8, Math.floor(width / 2)), h: Math.max(8, Math.floor(height / 5))});
+  } else if (S.mode === "text") addTextAt(width / 3, height / 2);
+  setMode("select");
+};
+
 function setMode(mode) {
   S.mode = mode;
-  document.querySelectorAll(".tool").forEach((b) => b.classList.toggle("active", b.dataset.mode === mode));
+  show($("placeEditBtn"), mode !== "select" && !!S.job?.has_video);
+  document.querySelectorAll(".tool").forEach((b) => {
+    b.classList.toggle("active", b.dataset.mode === mode);
+    b.setAttribute("aria-pressed", String(b.dataset.mode === mode));
+  });
   $("modeHint").textContent = MODE_HINTS[mode];
   canvas.className = mode === "hide" ? "crosshair" : mode === "text" ? "text" : "";
 }
@@ -453,73 +517,22 @@ $("cutBtn").onclick = addCut;
 function addCut() {
   const d = duration();
   if (!d) return;
-  video.pause();
+  sourcePlayer().pause();
   const len = Math.min(3, d / 4);
-  let start = video.currentTime;
+  let start = sourcePlayer().currentTime;
   if (start + len > d) start = Math.max(0, d - len);
   addEdit({ type: "cut", start: +start.toFixed(2), end: +(start + len).toFixed(2) });
 }
 
 // Merged [start, end] ranges of everything marked for removal
-function cutRanges() {
-  const spans = S.edits.filter((e) => e.type === "cut").map((e) => [e.start, e.end]).sort((a, b) => a[0] - b[0]);
+function cutRanges(edits = S.edits) {
+  const spans = edits.filter((e) => e.type === "cut").map((e) => [e.start, e.end]).sort((a, b) => a[0] - b[0]);
   const out = [];
   for (const [a, b] of spans) {
     if (out.length && a <= out[out.length - 1][1]) out[out.length - 1][1] = Math.max(out[out.length - 1][1], b);
     else out.push([a, b]);
   }
   return out;
-}
-
-function renderCuts() {
-  const track = $("cutTrack");
-  const d = duration();
-  track.innerHTML = "";
-  if (!d) return;
-  for (const e of S.edits.filter((x) => x.type === "cut")) {
-    const el = document.createElement("div");
-    el.className = "cut-block" + (e.id === S.selected ? " selected" : "");
-    el.style.left = (e.start / d) * 100 + "%";
-    el.style.width = ((e.end - e.start) / d) * 100 + "%";
-    el.title = `Remove ${fmt(e.start)}–${fmt(e.end)}. Drag the edges to adjust.`;
-    el.innerHTML = '<div class="edge l"></div><div class="edge r"></div>';
-    el.addEventListener("pointerdown", (ev) => startCutDrag(ev, e));
-    track.append(el);
-  }
-}
-
-function startCutDrag(ev, e) {
-  ev.preventDefault();
-  ev.stopPropagation();
-  video.pause();
-  const part = ev.target.classList.contains("l") ? "l" : ev.target.classList.contains("r") ? "r" : "move";
-  const el = ev.currentTarget;
-  el.setPointerCapture(ev.pointerId);
-  const d = duration();
-  const trackW = $("cutTrack").getBoundingClientRect().width;
-  const x0 = ev.clientX, s0 = e.start, e0 = e.end;
-  if (S.selected !== e.id) select(e.id);
-  video.currentTime = part === "r" ? e.end : e.start;
-
-  const onMove = (m) => {
-    const dt = ((m.clientX - x0) / trackW) * d;
-    if (part === "l") e.start = +clamp(s0 + dt, 0, e.end - 0.1).toFixed(2);
-    else if (part === "r") e.end = +clamp(e0 + dt, e.start + 0.1, d).toFixed(2);
-    else {
-      const shift = clamp(dt, -s0, d - e0);
-      e.start = +(s0 + shift).toFixed(2);
-      e.end = +(e0 + shift).toFixed(2);
-    }
-    video.currentTime = part === "r" ? e.end : e.start;
-    syncCard(e);
-  };
-  const onUp = () => {
-    el.removeEventListener("pointermove", onMove);
-    el.removeEventListener("pointerup", onUp);
-    renderCuts();
-  };
-  el.addEventListener("pointermove", onMove);
-  el.addEventListener("pointerup", onUp);
 }
 
 // Push a changed edit's times into its sidebar card and the timeline
@@ -530,15 +543,16 @@ function syncCard(e) {
     card.querySelector('[data-k="end"]').value = e.end;
     card.querySelector(".card-title").textContent = cardTitle(e);
   }
-  renderCuts();
+  renderTimeline();
   updateTransport();
   render();
 }
 
 // ---------- edits ----------
 function addEdit(props) {
+  checkpoint();
   const d = duration();
-  const start = video.currentTime >= d - 0.05 ? 0 : +video.currentTime.toFixed(1);
+  const start = sourcePlayer().currentTime >= d - 0.05 ? 0 : +sourcePlayer().currentTime.toFixed(1);
   const e = { id: S.nextId++, start, end: +d.toFixed(2), ...props };
   if (e.type === "text") { const m = textMetrics(e); e.w = m.w; e.h = m.h; }
   S.edits.push(e);
@@ -550,6 +564,7 @@ function addEdit(props) {
 }
 
 function deleteEdit(id) {
+  checkpoint();
   S.edits = S.edits.filter((e) => e.id !== id);
   if (S.selected === id) S.selected = null;
   renderList();
@@ -559,8 +574,12 @@ function deleteEdit(id) {
 
 function select(id) {
   S.selected = id;
-  document.querySelectorAll(".card").forEach((c) => c.classList.toggle("selected", +c.dataset.id === id));
-  renderCuts();
+  document.querySelectorAll(".card").forEach((c) => {
+    const selected = +c.dataset.id === id;
+    c.classList.toggle("selected", selected);
+    c.querySelector(".card-title").setAttribute("aria-expanded", String(selected));
+  });
+  renderTimeline();
   updateTransport();
   render();
 }
@@ -569,7 +588,7 @@ function cardTitle(e) {
   const range = `${fmt(e.start)}–${fmt(e.end)}`;
   if (e.type === "cut") return `${range} (${(e.end - e.start).toFixed(1)}s)`;
   if (e.type === "text") return `${(e.text || "").split("\n")[0]} · ${range}`;
-  return `${{ blur: "Blur", pixelate: "Pixelate", black: "Black box" }[e.style]} · ${range}`;
+  return `${{ blur: "Blur", pixelate: "Pixelate", black: "Solid redaction" }[e.style]} · ${range}`;
 }
 
 function renderList() {
@@ -577,7 +596,7 @@ function renderList() {
   list.innerHTML = "";
   $("editCount").textContent = S.edits.length;
   show($("editsEmpty"), S.edits.length === 0);
-  renderCuts();
+  renderTimeline();
 
   for (const e of S.edits) {
     const tpl = $({ hide: "hideCardTpl", text: "textCardTpl", cut: "cutCardTpl" }[e.type]).content.cloneNode(true);
@@ -587,23 +606,32 @@ function renderList() {
     card.querySelector(".times").append($("timesTpl").content.cloneNode(true));
     const title = card.querySelector(".card-title");
     title.textContent = cardTitle(e);
+    title.setAttribute("aria-expanded", String(e.id === S.selected));
+    title.onclick = () => { select(e.id); sourcePlayer().currentTime = e.start; };
 
     card.querySelectorAll("[data-k]").forEach((input) => {
       const k = input.dataset.k;
       if (input.type === "checkbox") input.checked = !!e[k];
       else input.value = e[k];
+      input.addEventListener("focus", checkpoint);
+      if (input.type === "number") input.addEventListener("change", () => { input.value = e[k]; });
       input.addEventListener("input", () => {
         let v = input.type === "checkbox" ? input.checked : input.value;
         if (input.type === "number") {
           v = parseFloat(v);
           if (Number.isNaN(v)) return;
+          if (["x", "y", "w", "h"].includes(k)) {
+            const axis = ["x", "w"].includes(k) ? S.job.width : S.job.height;
+            if (k === "w" || k === "h") v = clamp(Math.round(v), 8, axis - e[k === "w" ? "x" : "y"]);
+            else v = clamp(Math.round(v), 0, axis - (e.type === "hide" ? e[k === "x" ? "w" : "h"] : 1));
+          }
           if (k === "fontSize") v = clamp(Math.round(v), 8, 400);
           if (k === "start") v = clamp(v, 0, e.end);
           if (k === "end") v = clamp(v, e.start, duration());
         }
         e[k] = v;
         title.textContent = cardTitle(e);
-        renderCuts();
+        renderTimeline();
         render();
         updateTransport();
       });
@@ -612,8 +640,9 @@ function renderList() {
     card.querySelectorAll("[data-now]").forEach((btn) => {
       btn.onclick = (ev) => {
         ev.preventDefault();
+        checkpoint();
         const k = btn.dataset.now;
-        const t = +video.currentTime.toFixed(2);
+        const t = +sourcePlayer().currentTime.toFixed(2);
         if (k === "start") { e.start = Math.min(t, e.end); }
         else { e.end = Math.max(t, e.start); }
         syncCard(e);
@@ -621,28 +650,124 @@ function renderList() {
     });
 
     card.querySelector(".del").onclick = (ev) => { ev.stopPropagation(); deleteEdit(e.id); };
-    card.addEventListener("mousedown", () => {
+    card.addEventListener("pointerdown", () => {
       if (S.selected === e.id) return;
       select(e.id);
-      if (!isActive(e)) video.currentTime = e.start;
+      sourcePlayer().currentTime = e.start;
     });
     list.append(tpl);
   }
 }
 
 document.addEventListener("keydown", (ev) => {
-  if (!S.job?.has_video || $("editorView").classList.contains("hidden")) return;
+  if (!S.job || $("editorView").classList.contains("hidden")) return;
   if (ev.target.closest("input, textarea, select")) return;
-  if (ev.key === " ") { ev.preventDefault(); video.paused ? video.play() : video.pause(); }
+  if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "z") { ev.preventDefault(); restoreHistory(ev.shiftKey); return; }
+  if (S.reviewing) return;
+  if (ev.key === " " && ev.target.closest("button, a")) return;
+  if (ev.key === " ") { ev.preventDefault(); sourcePlayer().paused ? sourcePlayer().play() : sourcePlayer().pause(); }
   else if ((ev.key === "Delete" || ev.key === "Backspace") && S.selected) { ev.preventDefault(); deleteEdit(S.selected); }
   else if (ev.key === "Escape") { select(null); setMode("select"); }
-  else if (ev.key === "v") setMode("select");
-  else if (ev.key === "h") setMode("hide");
-  else if (ev.key === "t") setMode("text");
+  else if (ev.key === "v" && S.job.has_video) setMode("select");
+  else if (ev.key === "h" && S.job.has_video) setMode("hide");
+  else if (ev.key === "t" && S.job.has_video) setMode("text");
   else if (ev.key === "x") addCut();
-  else if (ev.key === "ArrowLeft") video.currentTime = Math.max(0, video.currentTime - (ev.shiftKey ? 1 : 1 / 30));
-  else if (ev.key === "ArrowRight") video.currentTime = Math.min(duration(), video.currentTime + (ev.shiftKey ? 1 : 1 / 30));
+  else if (ev.key === "ArrowLeft") sourcePlayer().currentTime = Math.max(0, sourcePlayer().currentTime - (ev.shiftKey ? 1 : 1 / 30));
+  else if (ev.key === "ArrowRight") sourcePlayer().currentTime = Math.min(duration(), sourcePlayer().currentTime + (ev.shiftKey ? 1 : 1 / 30));
 });
+
+// ---------- history and export review ----------
+function snapshot() { return JSON.stringify(S.edits); }
+function checkpoint() {
+  const current = snapshot();
+  if (S.undo.at(-1) !== current) S.undo.push(current);
+  if (S.undo.length > 100) S.undo.shift();
+  S.redo = [];
+}
+function restoreHistory(redo = false) {
+  const from = redo ? S.redo : S.undo, to = redo ? S.undo : S.redo;
+  while (from.length && from.at(-1) === snapshot()) from.pop();
+  if (!from.length) return;
+  to.push(snapshot());
+  S.edits = JSON.parse(from.pop());
+  S.selected = null;
+  renderList(); render(); updateTransport();
+}
+$("undoBtn").onclick = () => restoreHistory();
+$("redoBtn").onclick = () => restoreHistory(true);
+function editSignature() {
+  return JSON.stringify({ edits: S.edits.map(({ id, ...edit }) => {
+    if (edit.type === "text") { delete edit.w; delete edit.h; }
+    return edit;
+  }), denoise: $("denoise").checked, strength: $("strength").value, preset: $("exportPreset").value });
+}
+function refreshExportState() {
+  if (!S.job) return;
+  updatePresetInfo();
+  $("undoBtn").disabled = !S.undo.length;
+  $("redoBtn").disabled = !S.redo.length;
+  const removed = cutRanges().reduce((sum, [a, b]) => sum + b - a, 0);
+  $("exportSummary").textContent = `${fmt(Math.max(0, duration() - removed))} output · ${S.edits.filter(e => e.type === "cut").length} cuts · ${S.edits.filter(e => e.type === "hide").length} masks · Noise reduction ${$("denoise").checked ? "on" : "off"}`;
+  const stale = S.exportSignature !== null && S.exportSignature !== editSignature();
+  $("resultNote").textContent = stale ? "Edits changed. Export again to include them; this download is the previous result." : "Rendered export ready to review.";
+  $("previewLabel").textContent = S.reviewing ? `${S.compareOriginal ? "Original recording" : "Rendered export"}${stale ? " · edits changed since export" : ""}` : "Edit preview · export to hear noise reduction";
+}
+$("denoise").addEventListener("change", refreshExportState);
+$("strength").addEventListener("change", refreshExportState);
+function setReview(reviewing) {
+  S.reviewing = reviewing;
+  video.pause(); $("audio").pause(); $("resultVideo").pause(); $("resultAudio").pause();
+  show($("stage"), !reviewing && S.job.has_video);
+  show($("audio"), !reviewing && !S.job.has_video);
+  show($("toolbar"), !reviewing);
+  show($("transport"), !reviewing);
+  show($("backToEditBtn"), reviewing);
+  const audioResult = S.resultIsAudio;
+  show($("resultVideo"), reviewing && !audioResult);
+  show($("resultAudio"), reviewing && audioResult);
+  $("editsPanel").inert = reviewing;
+  refreshExportState();
+}
+$("backToEditBtn").onclick = () => setReview(false);
+$("reviewBtn").onclick = () => setReview(true);
+// Mirror the renderer's retained intervals, including its tiny-fragment rules.
+function keptRangesForExport() {
+  const ranges = cutRanges().filter(([a, b]) => b - a > 0.01);
+  if (!ranges.length) return [[0, duration()]];
+  const keep = []; let t = 0;
+  for (const [a, b] of ranges) { if (a - t > 0.05) keep.push([t, a]); t = Math.max(t, b); }
+  if (duration() - t > 0.05) keep.push([t, duration()]);
+  return keep;
+}
+function mapComparisonTime(t, fromOriginal) {
+  let elapsed = 0;
+  for (const [a, b] of S.submittedRanges) {
+    if (fromOriginal && t < b) return elapsed + Math.max(0, t - a);
+    if (!fromOriginal && t < elapsed + b - a) return a + t - elapsed;
+    elapsed += b - a;
+  }
+  return fromOriginal ? elapsed : (S.submittedRanges.at(-1)?.[1] || 0);
+}
+
+function setBusy(operation) {
+  S.operation = operation;
+  $("processBtn").disabled = !!operation;
+  $("detectSilenceBtn").disabled = !!operation;
+  $("retryPausesBtn").disabled = !!operation;
+}
+function updatePresetInfo() {
+  const preset = $("exportPreset").value;
+  if (!S.job.has_video || preset === "audio_only") {
+    $("presetInfo").textContent = "WAV · 48 kHz · uncompressed audio. Video, text, and masks are excluded; cuts and noise reduction are included.";
+    return;
+  }
+  const limits = [LIMITS.max_output_side, LIMITS.presets?.[preset]?.max_side || (preset === "small" ? 1280 : 0)].filter(v => v > 0);
+  const scale = limits.length ? Math.min(1, Math.min(...limits) / Math.max(S.job.width, S.job.height)) : 1;
+  const even = n => Math.max(2, (scale < 1 ? Math.round(n / 2) : Math.floor(n / 2)) * 2);
+  const w = even(S.job.width * scale), h = even(S.job.height * scale);
+  $("presetInfo").textContent = `MP4 · H.264 / AAC · ${w}×${h}. Size depends on the recording.${scale < 0.8 ? " Resolution will be reduced; check small text in the export." : ""}`;
+}
+$("exportPreset").addEventListener("change", refreshExportState);
 
 // ---------- processing ----------
 function textToPng(e) {
@@ -664,27 +789,44 @@ function buildPayload() {
   return {
     denoise: S.job.has_audio && $("denoise").checked,
     atten_lim: strength ? parseInt(strength, 10) : null,
-    edits: S.job.has_video ? edits : [],
-    cuts: S.job.has_video ? cuts : [],
+    preset: $("exportPreset").value,
+    edits: S.job.has_video && $("exportPreset").value !== "audio_only" ? edits : [],
+    cuts,
   };
 }
 
 $("processBtn").onclick = async () => {
   show($("procError"), false);
-  show($("resultPanel"), false);
-  video.pause();
-  $("processBtn").disabled = true;
+  show($("procReference"), false);
+  show($("recoverFileBtn"), false);
+  video.pause(); $("audio").pause();
+  setBusy("export");
+  const id = S.job.id;
+  const payload = buildPayload();
+  const signature = editSignature();
+  const ranges = keptRangesForExport();
   try {
-    await api(`/api/jobs/${S.job.id}/process`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildPayload()),
+    await api(`/api/jobs/${id}/process`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
     });
+    if (S.job?.id !== id) return;
+    S.exportSignature = signature;
+    S.submittedRanges = ranges;
+    S.resultIsAudio = $("exportPreset").value === "audio_only" || !S.job.has_video;
+    show($("resultPanel"), false);
+    setReview(false);
     show($("procProgress"));
     setProgress("Waiting in queue", null);
     poll();
   } catch (err) {
-    procFailed(err.message);
+    if (S.job?.id !== id) return;
+    // A lost response may follow a successful submission. Check before retrying.
+    if (!err.status || err.status === 409) {
+      S.exportSignature = signature; S.submittedRanges = ranges;
+      show($("procProgress"));
+      setProgress("Checking export status…", null);
+      poll();
+    } else procFailed(err.message, false, err.requestId);
   }
 };
 
@@ -696,34 +838,49 @@ function setProgress(stage, pct) {
   $("procPct").textContent = pct == null ? "" : Math.round(pct * 100) + "%";
 }
 
-function poll() {
+function poll(delay = 800) {
   clearTimeout(S.pollTimer);
+  const id = S.job?.id;
   S.pollTimer = setTimeout(async () => {
-    if (!S.job) return;
+    if (S.job?.id !== id) return;
     try {
-      const j = await api(`/api/jobs/${S.job.id}`);
-      if (j.status === "done") return processDone(j);
-      if (j.status === "error") return procFailed(j.error);
+      const j = await api(`/api/jobs/${id}`);
+      if (S.job?.id !== id) return;
+      if (S.operation === "silence") {
+        if (j.silence) return silenceDone(j.silence);
+        if (!["queued", "processing"].includes(j.status)) return silenceDone({error: "Detection was not started. Please retry."});
+      } else if (j.status === "done") return processDone(j);
+      if (j.status === "error") return procFailed(j.error, false, j.id);
+      if (j.status === "uploaded") return procFailed("Export was not started. Please try again.");
       setProgress(j.stage, j.progress);
       poll();
     } catch (err) {
-      procFailed(err.message);
+      if (S.job?.id !== id) return;
+      if (err.status === 404) return procFailed("This file expired or the server restarted. Upload a replacement to continue.", true);
+      setProgress("Connection interrupted. Reconnecting to processing…", null);
+      poll(Math.min(delay * 2, 10000));
     }
-  }, 800);
+  }, delay);
 }
 
-function procFailed(msg) {
-  $("processBtn").disabled = false;
+function procFailed(msg, replaceFile = false, reference = null) {
+  show($("recoverFileBtn"), replaceFile);
+  show($("procReference"), !!reference);
+  $("procReference").textContent = reference ? `Reference: ${reference}` : "";
+  if (S.operation === "silence") return silenceDone({error: msg});
+  setBusy(null);
+  $("processBtn").textContent = "Retry export";
   show($("procProgress"), false);
   $("procError").textContent = msg;
   show($("procError"));
 }
 
 function processDone(job) {
-  $("processBtn").disabled = false;
-  $("processBtn").textContent = "Process again";
+  setBusy(null);
+  $("processBtn").textContent = "Export again";
   show($("procProgress"), false);
   const isAudio = job.output.endsWith(".wav");
+  S.resultIsAudio = isAudio;
   const player = isAudio ? $("resultAudio") : $("resultVideo");
   show($("resultVideo"), !isAudio);
   show($("resultAudio"), isAudio);
@@ -733,34 +890,55 @@ function processDone(job) {
   $("compareBtn").textContent = "Play original";
   $("downloadBtn").href = `/api/jobs/${S.job.id}/result?download=1`;
   show($("resultPanel"));
-  $("resultPanel").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  setReview(true);
+  refreshExportState();
+  $("stageWrap").scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 // A/B toggle between the original and cleaned file at the same playback position
 $("compareBtn").onclick = () => {
-  const player = $("resultVideo").classList.contains("hidden") ? $("resultAudio") : $("resultVideo");
-  const t = player.currentTime;
+  const player = S.resultIsAudio ? $("resultAudio") : $("resultVideo");
+  const t = mapComparisonTime(player.currentTime, S.compareOriginal);
   const playing = !player.paused;
+  setReview(true);
   S.compareOriginal = !S.compareOriginal;
-  player.src = S.compareOriginal ? `/api/jobs/${S.job.id}/source` : S.resultSrc;
   $("compareBtn").textContent = S.compareOriginal ? "Play cleaned" : "Play original";
   player.addEventListener("loadedmetadata", () => {
-    player.currentTime = t;
-    if (playing) player.play();
+    player.currentTime = Math.min(t, player.duration || t);
+    if (playing) player.play().catch(() => {});
   }, { once: true });
+  player.src = S.compareOriginal ? `/api/jobs/${S.job.id}/source` : S.resultSrc;
+  refreshExportState();
 };
 
 // ---------- reset ----------
-$("newFileBtn").onclick = async () => {
-  if (S.edits.length && !confirm("Start over with a new file? Your edits will be lost.")) return;
+$("newFileBtn").onclick = () => {
+  $("newFileWarning").textContent = S.operation
+    ? "Processing will continue on the server, but you will leave this file and lose access to its result here. Your current edits will be discarded."
+    : "Your current file, edits, and export settings will be cleared. Download any result you want to keep before continuing.";
+  $("newFileDialog").returnValue = "cancel";
+  $("newFileDialog").showModal();
+};
+
+$("newFileDialog").addEventListener("close", () => {
+  if ($("newFileDialog").returnValue === "discard") resetFile();
+});
+
+function resetFile() {
   clearTimeout(S.pollTimer);
   const id = S.job?.id;
+  video.pause(); $("audio").pause(); $("resultVideo").pause(); $("resultAudio").pause();
   S.job = null;
+  S.edits = []; S.suggestions = [];
+  S.undo = []; S.redo = [];
+  S.selected = null; S.exportSignature = null;
+  setBusy(null);
+  $("strength").value = "18";
   video.removeAttribute("src"); video.load();
   $("audio").removeAttribute("src");
   $("resultVideo").removeAttribute("src");
   $("resultAudio").removeAttribute("src");
-  $("processBtn").textContent = "Process";
+  $("processBtn").textContent = "Export";
   $("processBtn").disabled = false;
   show($("editorView"), false);
   show($("newFileBtn"), false);
@@ -770,4 +948,10 @@ $("newFileBtn").onclick = async () => {
   $("uploadBar").style.width = "0";
   $("fileInput").value = "";
   if (id) api(`/api/jobs/${id}`, { method: "DELETE" }).catch(() => {});
-};
+}
+
+$("recoverFileBtn").onclick = () => $("newFileBtn").click();
+window.addEventListener("online", () => { if (S.operation) poll(0); });
+window.addEventListener("offline", () => {
+  if (S.operation) setProgress("You are offline. Processing can continue on the server; reconnect to see its status.", null);
+});

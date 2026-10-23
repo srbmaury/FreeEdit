@@ -8,8 +8,13 @@ Flow for a video:
 from __future__ import annotations
 
 import base64
+import array
 import json
+import math
+import tempfile
+import threading
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -20,6 +25,14 @@ from typing import Callable
 ProgressFn = Callable[[str, float | None], None]
 
 HIDE_STYLES = {"blur", "pixelate", "black"}
+
+
+EXPORT_PRESETS = {
+    "balanced": {"label": "Balanced", "max_side": 0, "crf": 23, "audio_kbps": 192},
+    "small": {"label": "Small file", "max_side": 1280, "crf": 28, "audio_kbps": 128},
+    "high": {"label": "High quality", "max_side": 0, "crf": 18, "audio_kbps": 192},
+    "audio_only": {"label": "Audio only", "max_side": 0},
+}
 
 
 class PipelineError(Exception):
@@ -54,10 +67,13 @@ class MediaInfo:
 
 
 def probe(path: Path) -> MediaInfo:
-    out = subprocess.run(
-        [FFPROBE(), "-v", "error", "-print_format", "json", "-show_streams", "-show_format", str(path)],
-        capture_output=True, text=True,
-    )
+    try:
+        out = subprocess.run(
+            [FFPROBE(), "-v", "error", "-print_format", "json", "-show_streams", "-show_format", str(path)],
+            capture_output=True, text=True, timeout=30,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise PipelineError("Reading this file timed out.") from exc
     if out.returncode != 0:
         raise PipelineError("Could not read this file. Is it a valid audio/video file?")
     data = json.loads(out.stdout)
@@ -73,8 +89,11 @@ def probe(path: Path) -> MediaInfo:
     # Phone videos may carry a 90/270° rotation; ffmpeg auto-rotates when filtering
     if video and _rotation(video) in (90, 270):
         width, height = height, width
+    duration = float(data.get("format", {}).get("duration") or 0)
+    if not (video or audio) or not math.isfinite(duration) or duration <= 0:
+        raise PipelineError("This file has no playable media with a known duration.")
     return MediaInfo(
-        duration=float(data.get("format", {}).get("duration") or 0),
+        duration=duration,
         has_video=video is not None,
         has_audio=audio is not None,
         width=width,
@@ -96,20 +115,40 @@ def _rotation(stream: dict) -> int:
 
 def _run_ffmpeg(args: list[str], duration: float, label: str, progress: ProgressFn) -> None:
     """Run ffmpeg, reporting percentage progress from its -progress output."""
-    cmd = [FFMPEG(), "-hide_banner", "-y", "-nostats", "-progress", "pipe:1", *args]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    assert proc.stdout is not None
-    for line in proc.stdout:
-        if line.startswith("out_time_us=") and duration > 0:
-            try:
-                secs = int(line.split("=", 1)[1]) / 1_000_000
-                progress(label, max(0.0, min(1.0, secs / duration)))
-            except ValueError:
-                pass
-    stderr = proc.stderr.read() if proc.stderr else ""
-    if proc.wait() != 0:
-        tail = "\n".join(stderr.strip().splitlines()[-8:])
-        raise PipelineError(f"ffmpeg failed during '{label}':\n{tail}")
+    cmd = [FFMPEG(), "-hide_banner", "-loglevel", "error", "-y", "-nostats", "-progress", "pipe:1", *args]
+    timeout = max(30, float(os.environ.get("FFMPEG_TIMEOUT_SECONDS", 300 + duration * 10)))
+    expired = threading.Event()
+    # stderr must drain independently of progress or FFmpeg can deadlock.
+    with tempfile.TemporaryFile(mode="w+t") as errors:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=errors, text=True, stdin=subprocess.DEVNULL)
+        def terminate():
+            expired.set()
+            proc.kill()
+        timer = threading.Timer(timeout, terminate)
+        timer.start()
+        try:
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                if line.startswith("out_time_us=") and duration > 0:
+                    try:
+                        secs = int(line.split("=", 1)[1]) / 1_000_000
+                        progress(label, max(0.0, min(1.0, secs / duration)))
+                    except ValueError:
+                        pass
+            code = proc.wait()
+        finally:
+            timer.cancel()
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait()
+            if proc.stdout:
+                proc.stdout.close()
+        if expired.is_set():
+            raise PipelineError(f"Export timed out during '{label}'. Try a shorter recording.")
+        if code != 0:
+            errors.seek(0)
+            tail = "\n".join(errors.read()[-4000:].strip().splitlines()[-8:])
+            raise PipelineError(f"ffmpeg failed during '{label}':\n{tail}")
 
 
 WORKER = Path(__file__).with_name("df_worker.py")
@@ -142,12 +181,14 @@ def _enable(item: dict, duration: float) -> str:
     return f"between(t,{start:.3f},{end:.3f})"
 
 
-def output_scale(info: MediaInfo) -> float:
-    """Downscale factor so the long side fits MAX_OUTPUT_SIDE (unset = full size).
+def output_scale(info: MediaInfo, preset: str = "balanced") -> float:
+    """Fit the preset and server limits without upscaling.
 
     Small hosts can't decode + filter + encode Retina-size frames in 512 MB.
     """
     limit = int(os.environ.get("MAX_OUTPUT_SIDE", 0))
+    preset_limit = EXPORT_PRESETS[preset]["max_side"]
+    limit = min(limit, preset_limit) if limit and preset_limit else limit or preset_limit
     longest = max(info.width, info.height)
     return limit / longest if limit and longest > limit else 1.0
 
@@ -165,11 +206,14 @@ def build_video_edits(
     W, H = info.width, info.height
     parts: list[str] = []
     images: list[Path] = []
-    cur = "[0:v]"
+    # Some screen recordings stop emitting frames before their audio ends.
+    # Hold the last frame through the media duration before applying timed edits.
+    parts.append(f"[0:v]tpad=stop_mode=clone:stop_duration={info.duration:.3f},trim=duration={info.duration:.3f}[vbase]")
+    cur = "[vbase]"
     n = 0
     if scale < 1:
         W, H = _even(W * scale), _even(H * scale)
-        parts.append(f"[0:v]scale={W}:{H}[v0]")
+        parts.append(f"{cur}scale={W}:{H}[v0]")
         cur = "[v0]"
 
     def next_label() -> str:
@@ -181,12 +225,17 @@ def build_video_edits(
         kind = e.get("type")
         en = _enable(e, info.duration)
         if kind == "hide":
-            x, y = _even(e["x"] * scale), _even(e["y"] * scale)
-            w = _even(min(e["w"] * scale, W - x))
-            h = _even(min(e["h"] * scale, H - y))
-            if w < 4 or h < 4:
-                continue
-            style = e.get("style", "blur")
+            style = e.get("style", "black")
+            if style == "black":
+                x, y = math.floor(e["x"] * scale), math.floor(e["y"] * scale)
+                w = min(W, math.ceil((e["x"] + e["w"]) * scale)) - x
+                h = min(H, math.ceil((e["y"] + e["h"]) * scale)) - y
+            else:
+                x, y = _even(e["x"] * scale), _even(e["y"] * scale)
+                w = _even(min(e["w"] * scale, W - x))
+                h = _even(min(e["h"] * scale, H - y))
+                if w < 4 or h < 4:
+                    continue
             if style not in HIDE_STYLES:
                 style = "blur"
             if style == "black":
@@ -280,14 +329,73 @@ def build_cuts(
 
     if not alabel:
         return parts, "[vcut]", None
+    audio_parts, audio_out = build_audio_cuts(alabel, keep)
+    return parts + audio_parts, "[vcut]", audio_out
+
+
+def build_audio_cuts(alabel: str, keep: list[tuple[float, float]]) -> tuple[list[str], str]:
     k = len(keep)
+    parts = []
     asrc = [f"[as{i}]" for i in range(k)] if k > 1 else [alabel]
     if k > 1:
         parts.append(f"{alabel}asplit={k}{''.join(asrc)}")
     for i, (a, b) in enumerate(keep):
         parts.append(f"{asrc[i]}atrim=start={a:.3f}:end={b:.3f},asetpts=PTS-STARTPTS[at{i}]")
     parts.append(f"{''.join(f'[at{i}]' for i in range(k))}concat=n={k}:v=0:a=1[aout]")
-    return parts, "[vcut]", "[aout]"
+    return parts, "[aout]"
+
+
+def audio_waveform(source: Path, duration: float) -> list[float]:
+    """Read a compact amplitude envelope without holding decoded audio in RAM."""
+    rate = 8000
+    samples_per_bin = max(1, math.ceil(duration * rate / 4096))
+    cmd = [FFMPEG(), "-hide_banner", "-loglevel", "error", "-nostdin", "-i", str(source),
+           "-map", "0:a:0", "-vn", "-ac", "1",
+           "-af", f"aresample={rate}:async=1:first_pts=0", "-t", str(duration), "-f", "s16le", "pipe:1"]
+    with tempfile.TemporaryFile() as audio:
+        try:
+            result = subprocess.run(cmd, stdout=audio, stderr=subprocess.PIPE, timeout=30 + duration)
+        except subprocess.TimeoutExpired as exc:
+            raise PipelineError("Waveform generation timed out.") from exc
+        if result.returncode:
+            raise PipelineError("Waveform is unavailable for this file.")
+        audio.seek(0)
+        peaks = []
+        for _ in range(math.ceil(duration * rate / samples_per_bin)):
+            chunk = audio.read(samples_per_bin * 2)
+            samples = array.array("h")
+            samples.frombytes(chunk)
+            if sys.byteorder != "little":
+                samples.byteswap()
+            peaks.append(max((abs(value) for value in samples), default=0))
+    maximum = max(peaks, default=0) or 1
+    return [round(peak / maximum, 4) for peak in peaks]
+
+
+def detect_silence(source: Path, duration: float, threshold_db: float, min_duration: float, padding: float) -> dict:
+    """Return conservative suggestions; the user chooses which become cuts."""
+    cmd = [FFMPEG(), "-hide_banner", "-nostdin", "-i", str(source), "-map", "0:a:0",
+           "-af", f"silencedetect=noise={threshold_db}dB:d={min_duration}", "-f", "null", "-"]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60 + duration * 2)
+    except subprocess.TimeoutExpired as exc:
+        raise PipelineError("Silence detection timed out. Try a shorter recording.") from exc
+    if result.returncode:
+        raise PipelineError("Could not analyze the audio in this recording.")
+    intervals = []
+    start = None
+    for kind, value in re.findall(r"silence_(start|end):\s*(-?[\d.]+)", result.stderr):
+        t = min(duration, max(0, float(value)))
+        if kind == "start":
+            start = t
+        elif start is not None:
+            intervals.append((start, t))
+            start = None
+    if start is not None:
+        intervals.append((start, duration))
+    suggestions = [{"start": round(a + padding, 3), "end": round(b - padding, 3)}
+                   for a, b in intervals if b - a - padding * 2 >= 0.1]
+    return {"segments": suggestions[:100], "truncated": len(suggestions) > 100}
 
 
 def process(
@@ -299,6 +407,7 @@ def process(
     edits: list[dict],
     cuts: list[dict],
     progress: ProgressFn,
+    preset: str = "balanced",
 ) -> Path:
     progress("Reading file", None)
     info = probe(source)
@@ -312,20 +421,22 @@ def process(
         progress("Removing background noise", None)
         clean_wav = denoise(raw, work / "denoised", atten_lim, info.duration)
 
-    # Audio-only input: the denoised audio is the result
-    if not info.has_video:
-        if not clean_wav:
-            raise PipelineError("Nothing to do: audio file with noise removal turned off.")
+    keep = kept_ranges(cuts, info.duration)
+    if not info.has_video or preset == "audio_only":
         out = work / "output.wav"
-        shutil.move(str(clean_wav), out)
+        args = ["-i", str(clean_wav or source), "-vn"]
+        if keep:
+            audio_parts, alabel = build_audio_cuts("[0:a:0]", keep)
+            args += ["-filter_complex", ";".join(audio_parts), "-map", alabel]
+        else:
+            args += ["-map", "0:a:0"]
+        args += ["-ar", "48000", "-c:a", "pcm_s16le", str(out)]
+        _run_ffmpeg(args, sum(b - a for a, b in keep) if keep else info.duration, "Exporting audio", progress)
         return out
 
-    keep = kept_ranges(cuts, info.duration) if info.duration else None
-    # Only downscale when we re-encode anyway; a denoise-only job copies the video
-    scale = output_scale(info) if (edits or keep) else 1.0
+    settings = EXPORT_PRESETS[preset]
+    scale = output_scale(info, preset)
     parts, images, vlabel = build_video_edits(edits, info, work, scale)
-    if not parts and not keep and not do_denoise:
-        raise PipelineError("Nothing to do: turn on noise removal, remove a part, or add an edit.")
 
     # Low-memory mode (hosting): single-threaded decode/filter/encode
     threads = os.environ.get("FFMPEG_THREADS")
@@ -345,24 +456,16 @@ def process(
         parts += cut_parts
         out_duration = sum(b - a for a, b in keep)
 
-    if parts:
-        # Normalise output: even dimensions + yuv420p for broad player support
-        parts.append(f"{vlabel}scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p[vout]")
-        graph = ";".join(parts)
-        for idx in range(len(images)):
-            graph = graph.replace(f"[IMG{idx}]", f"[{img_offset + idx}:v]")
-        args += ["-filter_complex", graph, "-map", "[vout]"]
-        args += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20"]
-        # Fewer encoder threads and a short lookahead keep x264's frame buffers small
-        # (1080p: fits in ~370 MB total; defaults can exceed 512 MB)
-        if threads:
-            args += ["-threads", threads, "-rc-lookahead", "5"]
-        out = work / "output.mp4"
-    else:
-        # Audio-only change: keep the original video stream bit-for-bit
-        args += ["-map", "0:v:0", "-c:v", "copy"]
-        ext = source.suffix.lower()
-        out = work / f"output{ext if ext in ('.mp4', '.mov', '.m4v') else '.mkv'}"
+    # Every video preset produces compatible H.264 MP4 with even dimensions.
+    parts.append(f"{vlabel}scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p[vout]")
+    graph = ";".join(parts)
+    for idx in range(len(images)):
+        graph = graph.replace(f"[IMG{idx}]", f"[{img_offset + idx}:v]")
+    args += ["-filter_complex", graph, "-map", "[vout]",
+             "-c:v", "libx264", "-preset", "veryfast", "-crf", str(settings["crf"])]
+    if threads:
+        args += ["-threads", threads, "-rc-lookahead", "5"]
+    out = work / "output.mp4"
 
     if alabel:
         args += ["-map", alabel]
@@ -370,7 +473,7 @@ def process(
         args += ["-map", "1:a:0"]
     elif info.has_audio:
         args += ["-map", "0:a:0?"]
-    args += ["-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", str(out)]
+    args += ["-c:a", "aac", "-b:a", f"{settings['audio_kbps']}k", "-shortest", "-movflags", "+faststart", str(out)]
 
-    _run_ffmpeg(args, out_duration, "Rendering video" if parts else "Rebuilding video", progress)
+    _run_ffmpeg(args, out_duration, "Rendering video", progress)
     return out

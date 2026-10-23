@@ -1,6 +1,7 @@
 # Web app
 fastapi>=0.110
 uvicorn>=0.29
+pydantic>=2.6,<3
 
 # DeepFilterNet 0.5.6 needs the older torchaudio API: keep these pinned together
 torch==2.5.1

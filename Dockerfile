@@ -30,6 +30,7 @@ RUN python -c "from df.enhance import init_df; init_df(log_level='ERROR')"
 
 COPY backend backend
 COPY frontend frontend
+COPY docs/LICENSE_AUDIT.md docs/LICENSE_AUDIT.md
 
 # Tuned for small hosts (Render free: 512 MB, shared CPU); see README
 ENV PYTHONUNBUFFERED=1 \
@@ -38,4 +39,4 @@ ENV PYTHONUNBUFFERED=1 \
     FFMPEG_THREADS=1 \
     MAX_OUTPUT_SIDE=1600
 EXPOSE 10000
-CMD ["sh", "-c", "uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-10000}"]
+CMD ["sh", "-c", "uvicorn backend.app:app --no-access-log --host 0.0.0.0 --port ${PORT:-10000}"]

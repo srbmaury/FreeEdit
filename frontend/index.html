@@ -34,7 +34,7 @@
 <body>
   <header class="topbar">
     <div class="brand">FreeEdit</div>
-    <div class="tagline">Remove background noise, add text, and hide parts of a recording. Everything runs on this computer.</div>
+    <div class="tagline">Remove background noise, add text, and hide parts of a recording. Files are processed on the server running FreeEdit.</div>
     <button id="newFileBtn" class="ghost hidden">New file</button>
   </header>
 
@@ -42,27 +42,33 @@
   <section id="uploadView" class="view">
     <label id="dropZone" class="dropzone">
       <input id="fileInput" type="file" accept=".mov,.mp4,.m4v,.mkv,.webm,.avi,.wav,.mp3,.m4a,.aac,.flac,.ogg,video/*,audio/*" hidden />
+      <button type="button" id="chooseFileBtn" class="primary">Choose a file</button>
       <div class="dz-title">Drop a video or audio file here</div>
-      <div class="dz-sub">or click to choose a file</div>
+      <div class="dz-sub">or choose a file above</div>
       <div class="dz-formats">MOV · MP4 · WEBM · MKV · WAV · MP3 · M4A · FLAC</div>
+      <div id="retentionNote" class="dz-formats"></div>
       <div id="dzLimits" class="dz-formats"></div>
     </label>
-    <div id="uploadProgress" class="progress hidden">
+    <div id="uploadProgress" class="progress hidden" role="status" aria-live="polite">
       <div class="progress-label">Uploading… <span id="uploadPct">0%</span></div>
       <div class="bar"><div id="uploadBar"></div></div>
     </div>
-    <div id="uploadError" class="error hidden"></div>
+    <div id="uploadError" class="error hidden" role="alert"></div>
+    <button id="retryUploadBtn" class="ghost hidden">Retry upload</button>
   </section>
 
   <!-- 2. Editor -->
   <section id="editorView" class="view hidden">
     <div class="editor">
       <div class="main">
+        <div class="preview-heading"><span id="previewLabel" role="status">Edit preview · export to hear noise reduction</span><button id="backToEditBtn" class="ghost hidden">Back to editing</button></div>
         <div id="toolbar" class="toolbar">
           <button class="tool active" data-mode="select" title="Select and move (V)">Select</button>
           <button class="tool" data-mode="hide" title="Drag over the area to hide (H)">Hide area</button>
           <button class="tool" data-mode="text" title="Click where the text should go (T)">Add text</button>
           <button id="cutBtn" class="cut-btn" title="Remove a part of the video (X)">✂ Remove part</button>
+          <button id="undoBtn" disabled title="Undo (⌘/Ctrl+Z)">Undo</button><button id="redoBtn" disabled title="Redo (⌘/Ctrl+Shift+Z)">Redo</button>
+          <button id="placeEditBtn" class="ghost hidden">Place in center</button>
           <span id="modeHint" class="hint">Click an edit to select it. Drag it to move it.</span>
         </div>
 
@@ -72,16 +78,50 @@
             <canvas id="overlay"></canvas>
           </div>
           <audio id="audio" controls class="hidden"></audio>
+          <video id="resultVideo" controls playsinline class="hidden"></video>
+          <audio id="resultAudio" controls class="hidden"></audio>
         </div>
 
         <div id="transport" class="transport">
-          <button id="playBtn" class="icon" title="Play/Pause (Space)">▶</button>
-          <div class="scrub">
-            <div id="rangeTrack" class="range-track"></div>
-            <input id="scrubber" type="range" min="0" max="1000" value="0" step="1" />
-            <div id="cutTrack" class="cut-track"></div>
+          <div class="transport-controls">
+            <button id="playBtn" aria-label="Play or pause" class="icon" title="Play/Pause (Space)">▶</button>
+            <span id="timeLabel" class="time">0:00.0 / 0:00.0</span>
+            <div class="timeline-zoom" role="group" aria-label="Timeline zoom">
+              <button id="zoomOutBtn" aria-label="Zoom out timeline">−</button>
+              <span id="zoomLabel" aria-live="polite">1×</span>
+              <button id="zoomInBtn" aria-label="Zoom in timeline">+</button>
+              <button id="zoomFitBtn">Fit</button>
+            </div>
           </div>
-          <span id="timeLabel" class="time">0:00.0 / 0:00.0</span>
+          <div class="timeline-shell">
+            <div class="timeline-labels" aria-hidden="true">
+              <div class="timeline-label-spacer"></div>
+              <div id="waveformLabel" class="timeline-label waveform-label">Audio</div>
+              <div id="pauseLabel" class="timeline-label">Pauses</div>
+              <div id="cutLabel" class="timeline-label">Cuts</div>
+              <div id="maskLabel" class="timeline-label">Masks</div>
+              <div id="textLabel" class="timeline-label">Text</div>
+            </div>
+            <div id="timelineViewport" class="timeline-viewport" tabindex="0" aria-label="Timeline; scroll horizontally when zoomed">
+              <div id="timelineContent" class="timeline-content">
+                <div id="timelineRuler" class="timeline-ruler" aria-label="Seek to time"></div>
+                <div class="timeline-seek">
+                  <div id="rangeTrack" class="range-track"></div>
+                  <input id="scrubber" aria-label="Playback position" type="range" min="0" max="1000" value="0" step="1" />
+                </div>
+                <div id="waveformTrack" class="timeline-track waveform-track">
+                  <canvas id="waveformCanvas" role="img" aria-label="Original audio waveform. Use the playback position control to seek."></canvas>
+                  <span id="waveformStatus" class="waveform-status"></span>
+                </div>
+                <div id="pauseTrack" class="timeline-track" aria-label="Suggested pauses"></div>
+                <div id="cutTrack" class="timeline-track" aria-label="Cuts"></div>
+                <div id="maskTrack" class="timeline-track" aria-label="Masks"></div>
+                <div id="textTrack" class="timeline-track" aria-label="Text overlays"></div>
+                <div id="timelinePlayhead" class="timeline-playhead" aria-hidden="true"></div>
+              </div>
+            </div>
+          </div>
+          <p class="timeline-help">The waveform shows original audio; shaded sections are cuts. Click it to seek. Drag a block to move it, or its edges to adjust when it starts and ends.</p>
         </div>
         <div id="fileMeta" class="meta"></div>
       </div>
@@ -105,6 +145,26 @@
           <p id="noAudio" class="small hidden">This file has no audio track.</p>
         </div>
 
+        <div id="silencePanel" class="panel">
+          <h3>Shorten pauses</h3>
+          <p class="small">Detect quiet sections, listen, then choose which to remove. Quiet speech can be mistaken for silence.</p>
+          <details>
+            <summary>Detection settings</summary>
+            <label class="field"><span>Quiet threshold (dB)</span><input id="silenceThreshold" type="number" value="-40" min="-70" max="-15" step="1" /></label>
+            <label class="field"><span>Minimum pause (seconds)</span><input id="silenceDuration" type="number" value="0.8" min="0.3" max="10" step="0.1" /></label>
+            <label class="field"><span>Keep around speech (seconds per side)</span><input id="silencePadding" type="number" value="0.2" min="0.05" max="1" step="0.05" /></label>
+          </details>
+          <button id="detectSilenceBtn">Detect pauses</button>
+          <button id="retryPausesBtn" class="ghost hidden">Try a higher threshold</button>
+          <p id="silenceStatus" class="small" role="status" aria-live="polite"></p>
+          <div id="silenceReview" class="hidden">
+            <div class="row"><button id="selectPausesBtn" class="ghost">Select all</button><button id="clearPausesBtn" class="ghost">Clear</button></div>
+            <div id="silenceList" class="silence-list"></div>
+            <p id="silenceSaved" class="small"></p>
+            <button id="applyPausesBtn">Add selected cuts</button>
+          </div>
+        </div>
+
         <div id="editsPanel" class="panel">
           <h3>Edits <span id="editCount" class="count">0</span></h3>
           <div id="editsList" class="edits"></div>
@@ -112,18 +172,30 @@
         </div>
 
         <div class="panel sticky">
-          <button id="processBtn" class="primary">Process</button>
-          <div id="procProgress" class="progress hidden">
+          <label class="field"><span>Export goal</span>
+            <select id="exportPreset">
+              <option value="balanced">Balanced · everyday sharing</option>
+              <option value="small">Small file · more compression</option>
+              <option value="high">High quality · clearer detail</option>
+              <option value="audio_only">Audio only · WAV</option>
+            </select>
+          </label>
+          <p id="presetInfo" class="small"></p>
+          <p id="exportSummary" class="small"></p>
+          <button id="processBtn" class="primary">Export</button>
+          <div id="procProgress" class="progress hidden" role="status" aria-live="polite">
             <div class="progress-label"><span id="procStage">Starting…</span> <span id="procPct"></span></div>
             <div class="bar"><div id="procBar"></div></div>
           </div>
-          <div id="procError" class="error hidden"></div>
+          <div id="procError" class="error hidden" role="alert"></div>
+          <p id="procReference" class="small hidden"></p>
+          <button id="recoverFileBtn" class="ghost hidden">Upload a replacement file</button>
         </div>
 
         <div id="resultPanel" class="panel hidden">
           <h3>Result</h3>
-          <video id="resultVideo" controls playsinline class="hidden"></video>
-          <audio id="resultAudio" controls class="hidden"></audio>
+          <button id="reviewBtn" class="ghost">Review export</button>
+          <p id="resultNote" class="small" role="status">Rendered export ready to review.</p>
           <div class="row">
             <a id="downloadBtn" class="button primary" href="#">Download</a>
             <button id="compareBtn" class="ghost">Play original</button>
@@ -135,22 +207,29 @@
 
   <template id="hideCardTpl">
     <div class="card">
-      <div class="card-head"><span class="badge hide">Hide</span><span class="card-title"></span><button class="del" title="Delete">✕</button></div>
+      <div class="card-head"><span class="badge hide">Hide</span><button class="card-title" type="button" aria-expanded="false"></button><button class="del" title="Delete">✕</button></div>
       <label class="field"><span>Style</span>
         <select data-k="style">
+          <option value="black">Solid redaction</option>
           <option value="blur">Blur</option>
           <option value="pixelate">Pixelate</option>
-          <option value="black">Black box</option>
         </select>
       </label>
+      <p class="small">Use solid redaction for secrets. Blur and pixelation may reveal details. Masks cover video pixels only; review audio and other frames separately.</p>
+      <details class="geometry"><summary>Position and size</summary><div class="grid2">
+        <label class="field"><span>Left (pixels)</span><input data-k="x" type="number" min="0" step="1" /></label>
+        <label class="field"><span>Top (pixels)</span><input data-k="y" type="number" min="0" step="1" /></label>
+        <label class="field"><span>Width (pixels)</span><input data-k="w" type="number" min="8" step="1" /></label>
+        <label class="field"><span>Height (pixels)</span><input data-k="h" type="number" min="8" step="1" /></label>
+      </div></details>
       <div class="times"></div>
     </div>
   </template>
 
   <template id="textCardTpl">
     <div class="card">
-      <div class="card-head"><span class="badge text">Text</span><span class="card-title"></span><button class="del" title="Delete">✕</button></div>
-      <textarea data-k="text" rows="2"></textarea>
+      <div class="card-head"><span class="badge text">Text</span><button class="card-title" type="button" aria-expanded="false"></button><button class="del" title="Delete">✕</button></div>
+      <textarea data-k="text" rows="2" aria-label="Overlay text"></textarea>
       <div class="grid2">
         <label class="field"><span>Size</span><input data-k="fontSize" type="number" min="8" max="400" /></label>
         <label class="field"><span>Color</span><input data-k="color" type="color" /></label>
@@ -170,13 +249,17 @@
         </label>
       </div>
       <label class="check"><input data-k="bold" type="checkbox" /> Bold</label>
+      <details class="geometry"><summary>Position</summary><div class="grid2">
+        <label class="field"><span>Left (pixels)</span><input data-k="x" type="number" min="0" step="1" /></label>
+        <label class="field"><span>Top (pixels)</span><input data-k="y" type="number" min="0" step="1" /></label>
+      </div></details>
       <div class="times"></div>
     </div>
   </template>
 
   <template id="cutCardTpl">
     <div class="card">
-      <div class="card-head"><span class="badge cut">Remove</span><span class="card-title"></span><button class="del" title="Delete">✕</button></div>
+      <div class="card-head"><span class="badge cut">Remove</span><button class="card-title" type="button" aria-expanded="false"></button><button class="del" title="Delete">✕</button></div>
       <div class="times"></div>
     </div>
   </template>
@@ -192,6 +275,19 @@
     </div>
   </template>
 
+  <dialog id="newFileDialog" aria-labelledby="newFileTitle" aria-describedby="newFileWarning">
+    <form method="dialog">
+      <h2 id="newFileTitle">Start with a new file?</h2>
+      <p id="newFileWarning"></p>
+      <div class="row">
+        <button value="cancel" autofocus>Keep editing</button>
+        <button value="discard" class="discard">Discard and start over</button>
+      </div>
+    </form>
+  </dialog>
+
   <script src="app.js"></script>
+  <script src="silence.js"></script>
+  <script src="timeline.js"></script>
 </body>
 </html>

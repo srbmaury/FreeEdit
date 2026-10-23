@@ -7,4 +7,4 @@ if [ ! -x .venv/bin/python ]; then
   exit 1
 fi
 echo "FreeEdit is running at http://localhost:${PORT}"
-exec .venv/bin/python -m uvicorn backend.app:app --host 127.0.0.1 --port "$PORT"
+exec .venv/bin/python -m uvicorn backend.app:app --no-access-log --host 127.0.0.1 --port "$PORT"
