@@ -46,7 +46,8 @@ for (const id of ["reframeAspect", "reframeZoom", "reframeX", "reframeY"]) {
 $("reframeReset").onclick = () => {
   checkpoint();
   S.reframe = reframeDefaults();
-  renderReframeSections();
+  S.selectedZoom=null;
+  renderReframeSections();renderZoomSelectList();renderTimeline();
   syncReframeControls();
   refreshExportState();
   render();
@@ -105,7 +106,7 @@ function renderReframeSections() {
     remove.onclick = () => {
       checkpoint();
       S.reframe.sections = S.reframe.sections.filter(item=>item!==section);
-      renderReframeSections(); render(); refreshExportState();
+      S.selectedZoom=null;renderReframeSections();renderZoomSelectList();renderTimeline(); render(); refreshExportState();
     };
     row.append(label,seek,remove);
     list.append(row);
@@ -136,7 +137,7 @@ $("reframeAddSection").onclick = () => {
   sections.push({start,end:Math.min(duration(),end),transition,
     zoom, focus_x:Number($("reframeX").value),focus_y:Number($("reframeY").value)});
   sections.sort((a,b)=>a.start-b.start);
-  renderReframeSections(); refreshExportState();
+  renderReframeSections(); renderZoomSelectList(); renderTimeline(); refreshExportState();
   // Seek into the middle where the zoom is fully applied, so clicking Add
   // yields immediate, visible feedback even when playback was elsewhere.
   const middle = start + (end - start) / 2;
@@ -149,5 +150,80 @@ window.addEventListener("freeedit:workspace",event=>{
     $("reframeStart").value=0;
     $("reframeEnd").value=Math.min(3,duration());
     renderReframeSections();
-  } else if(event.detail==="reframe-restore") renderReframeSections();
+  } else if(event.detail==="reframe-restore"){S.selectedZoom=null;renderReframeSections();renderZoomSelectList();renderTimeline();}
 });
+
+function zoomSections() { return S.reframe?.sections || []; }
+function syncZoomSelection() {
+  const selected=zoomSections()[S.selectedZoom];
+  const panel=$("selectedZoomPanel");
+  show(panel,!!selected);
+  if(!selected)return;
+  const values={selectedZoomStart:selected.start,selectedZoomEnd:selected.end,selectedZoomStrength:selected.zoom,
+    selectedZoomX:selected.focus_x,selectedZoomY:selected.focus_y,selectedZoomTransition:selected.transition};
+  for(const [id,value] of Object.entries(values)) $(id).value=value;
+  $("selectedZoomStrengthLabel").textContent=selected.zoom.toFixed(2)+"×";
+  $("selectedZoomError").textContent="";
+}
+function selectZoom(index) {
+  if(!zoomSections()[index])return;
+  S.selected=null;
+  S.selectedZoom=index;
+  sourcePlayer().currentTime=(zoomSections()[index].start+zoomSections()[index].end)/2;
+  syncZoomSelection();renderZoomSelectList();renderTimeline();render();updateTransport();
+  window.dispatchEvent(new CustomEvent("freeedit:workspace",{detail:"zoom-selection"}));
+}
+function renderZoomSelectList() {
+  const list=$("zoomEditsList");if(!list)return;
+  list.replaceChildren();
+  const sections=zoomSections();
+  $("editCount").textContent=S.edits.length+sections.length;
+  show($("editsEmpty"),S.edits.length===0&&sections.length===0);
+  sections.forEach((section,index)=>{
+    const row=document.createElement("div");row.className="zoom-edit-row";
+    const button=document.createElement("button");
+    button.type="button";button.setAttribute("aria-pressed",String(S.selectedZoom===index));
+    button.textContent="Zoom "+fmt(section.start)+"–"+fmt(section.end)+" · "+section.zoom.toFixed(2)+"×";
+    button.onclick=()=>selectZoom(index);
+    row.append(button);list.append(row);
+  });
+  syncZoomSelection();
+}
+function renderZoomTimeline(){
+  const track=$("zoomTrack"),label=$("zoomLabelTrack");
+  if(!track||!S.job)return;
+  show(track,S.job.has_video);show(label,S.job.has_video);
+  track.replaceChildren();
+  zoomSections().forEach((section,index)=>{
+    const b=document.createElement("button");b.type="button";
+    b.className="timeline-block zoom"+(index===S.selectedZoom?" selected":"");
+    b.style.left=(section.start/duration()*100)+"%";
+    b.style.width=((section.end-section.start)/duration()*100)+"%";
+    b.textContent="Zoom "+section.zoom.toFixed(2)+"×";
+    b.setAttribute("aria-label","Select zoom section "+fmt(section.start)+" to "+fmt(section.end));
+    b.onclick=()=>selectZoom(index);
+    track.append(b);
+  });
+}
+for(const [id,key] of Object.entries({selectedZoomStart:"start",selectedZoomEnd:"end",selectedZoomStrength:"zoom",selectedZoomX:"focus_x",selectedZoomY:"focus_y",selectedZoomTransition:"transition"})){
+  $(id).addEventListener("change",()=>{
+    const index=S.selectedZoom,old=zoomSections()[index];if(!old)return;
+    const value=Number($(id).value),updated={...old,[key]:value};
+    const sorted=zoomSections().map((s,i)=>i===index?updated:s).sort((a,b)=>a.start-b.start);
+    if(!Number.isFinite(value)||updated.start<0||updated.end>duration()||updated.end<=updated.start||
+      updated.zoom<1||updated.zoom>3||updated.focus_x<0||updated.focus_x>1||
+      updated.focus_y<0||updated.focus_y>1||updated.transition<0||updated.transition>1.5||
+      sorted.some((s,i)=>i>0&&s.start<sorted[i-1].end)){
+      $("selectedZoomError").textContent="Invalid time or overlap. Zoom sections cannot overlap.";
+      $(id).value=old[key];return;
+    }
+    checkpoint();S.reframe.sections=sorted;S.selectedZoom=sorted.indexOf(updated);
+    renderReframeSections();renderZoomSelectList();renderTimeline();refreshExportState();render();
+  });
+}
+$("selectedZoomRemove").onclick=()=>{
+  const index=S.selectedZoom;if(index==null)return;
+  checkpoint();S.reframe.sections.splice(index,1);S.selectedZoom=null;
+  renderReframeSections();renderZoomSelectList();renderTimeline();refreshExportState();render();
+  window.dispatchEvent(new CustomEvent("freeedit:workspace",{detail:"zoom-selection"}));
+};
