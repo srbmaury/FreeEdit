@@ -52,6 +52,24 @@ class TimedReframeTests(unittest.TestCase):
             self.assertEqual((info.width, info.height), (160,90))
             self.assertAlmostEqual(info.duration,3,delta=.2)
 
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "ffmpeg unavailable")
+    def test_full_export_applies_reframe_before_cut_timestamps(self):
+        """Exercise the real export graph, not just a standalone zoompan node."""
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            src = root / "source.mp4"
+            subprocess.run(["ffmpeg","-hide_banner","-loglevel","error","-y",
+                "-f","lavfi","-i","testsrc2=size=160x90:rate=24:duration=3",
+                "-c:v","libx264","-preset","ultrafast","-threads","1",str(src)],
+                check=True,capture_output=True)
+            result = pipeline.process(src,root,denoise_audio=False,atten_lim=None,
+                edits=[],cuts=[{"start":1.0,"end":1.5}],progress=lambda stage,pct:None,
+                reframe=self.settings,preset="small")
+            media = pipeline.probe(result)
+            self.assertTrue(media.has_video)
+            self.assertAlmostEqual(media.duration,2.5,delta=.2)
+            self.assertEqual((media.width,media.height),(160,90))
+
 
 if __name__=="__main__":
     unittest.main()
