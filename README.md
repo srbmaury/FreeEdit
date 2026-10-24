@@ -12,7 +12,16 @@ A small web app for cleaning up screen recordings and other audio or video files
 - **Hide part of the video**: drag a box, then blur it, pixelate it or cover it with black, for a time range you choose
 - Preview a 10-second noise-removal sample before exporting; compare original and exported recordings afterward
 
-Live at **https://freeedit.srbmaury.com**, or run it on your own Mac. Files are processed by the server running FreeEdit and stored in `./jobs/`. A scheduled cleanup expires inactive files after 24 hours locally or 1 hour when hosted; active uploads and queued/processing exports are protected.
+## A typical editing session
+
+1. **Upload** a screen recording, webcam video, or audio file.
+2. Use **Videos**, **Audio**, **Pauses**, **Background**, **Cut**, **Text**, or **Hide area** in the task rail. Add a presenter inset in **Videos** when needed.
+3. Use **Select (V)** in the **preview toolbar** to select, move, and resize existing edits. The inspector shows **Your edits** by default and **Edit properties** when an edit is selected. You can keep the **Videos** inspector open while positioning the presenter.
+4. Review the original timeline, listen to processed audio/video samples, and **Export**. Download the output or save a `.freeedit.json` project to continue editing later.
+
+The task rail contains **Videos · Audio · Pauses · Background · Cut · Text · Hide area · Export**. Select is a preview interaction tool, not another editing feature. See the [focused workspace implementation notes](docs/FOCUSED_WORKSPACE.md) and [standalone design reference](docs/design/FreeEdit-Design.html); the reference is a mockup, not a running editor.
+
+**Live app:** https://freeedit.srbmaury.com. The live deployment can differ from this `design/focused-workspace` branch; features present here are not necessarily deployed. Run this branch locally to review its current UI and presenter composition. Uploaded files are processed on the FreeEdit server and stored in `./jobs/` until cleanup. Inactive files expire after 24 hours locally or 1 hour when hosted; active uploads and queued/processing exports are protected.
 
 ```text
 Browser (upload, place edits, preview)
@@ -21,6 +30,7 @@ Browser (upload, place edits, preview)
 FastAPI  ──►  ffmpeg: extract audio (48 kHz)
          ──►  DeepFilterNet3: denoise (streamed in short chunks)
          ──►  MediaPipe: person mask (optional background effects)
+         ──►  ffmpeg: optional presenter inset + audio selection/mix
          ──►  ffmpeg: background + privacy masks + text + cuts + clean audio  ──►  download
 ```
 
@@ -71,7 +81,7 @@ This uses MediaPipe without changing DeepFilterNet's environment. You can set `B
 4. **Hide area** (`H`): drag over the part to hide. Solid cover is the default. Choose Blur or Pixelate only for non-sensitive details.
 5. **Add text** (`T`): click on the video, then type in the sidebar.
 6. Each edit has a **From/To** time on the original timeline. The **Use playhead** buttons set it to the playhead. New text and hide edits start at the current playhead and run to the end of the video.
-7. Select an edit to move it. For hide boxes, drag the corner handle to resize. `Delete` removes the selected edit.
+7. Use **Select (V)** beside the preview to select and move an edit. For hide boxes, drag the corner handle to resize. `Delete` removes the selected edit. The right inspector shows the selected edit's properties.
 8. Click **Export**. The rendered result opens in the main player. Switch between **Original** and the cleaned version, return with **Back to editing**, or **Download**. Comparison follows corresponding positions after cuts.
 
 Undo/redo buttons restore edit changes; use `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z` outside text fields. If edits change after export, the result is marked as outdated until you export again. Temporary connection interruptions retry status checks automatically.
@@ -84,7 +94,7 @@ The timeline includes a waveform of the original audio and separate rows for sug
 
 ### Silence removal
 
-Open **Shorten pauses → Detect pauses**. Suggestions start unselected and appear above the cut timeline. Use **Listen** to hear each pause with surrounding audio, select the ones to remove, then **Remove selected pauses**. Added cuts can be resized, edited, deleted, or undone. Audio-only files support the same cut controls.
+Open **Pauses → Detect pauses**. Suggestions start unselected and appear above the cut timeline. Use **Listen** to hear each pause with surrounding audio, select the ones to remove, then **Remove selected pauses**. Added cuts can be resized, edited, deleted, or undone. Audio-only files support the same cut controls.
 
 Detection defaults to −40 dB, a minimum 0.8-second pause, and 0.2 seconds kept on each side. Raise the threshold to detect more quiet sections, with a greater risk of including quiet speech. Up to 100 suggestions are returned per pass. Detection and export share the bounded processing queue.
 
@@ -201,7 +211,7 @@ Leaving a project with changes not yet downloaded prompts the browser's standard
 
 ## Editor layout
 
-The workspace uses a left tool rail, a central preview, and one settings inspector on the right. Select Audio, Pauses, Background, or an editing tool to show its controls. Undo/Redo and Export are in the header; the original-timing timeline spans the workspace below the preview, and the footer provides Save project and retention information. Select an edit to expand its controls. After export, the **Original / Exported** switch compares corresponding positions above the preview. **Back to editing** returns to the timeline. The **⋯** menu contains Appearance (System, Light, or Dark), keyboard shortcuts, storage information, About, and repository links. Appearance defaults to System and is remembered in this browser. Narrow screens stack the workspace and settings vertically.
+The workspace uses a left task rail (Videos, Audio, Pauses, Background, Cut, Text, Hide area, Export), a central preview, and one settings inspector on the right. **Select (V)** is in the preview toolbar rather than the rail; it lets you move existing edits without adding new ones. Selecting an edit reveals **Edit properties** in the inspector; otherwise it shows **Your edits**. Keeping **Videos** open while using Select allows presenter-inset repositioning. Undo/Redo and Export are in the header; the original-timing timeline spans the workspace below the preview, and the footer provides Save project and retention information. After export, the **Original / Exported** switch compares corresponding positions above the preview. **Back to editing** returns to the timeline. The **⋯** menu contains Appearance (System, Light, or Dark), keyboard shortcuts, storage information, About, and repository links. Appearance defaults to System and is remembered in this browser. Narrow screens stack the workspace and settings vertically.
 
 ## Keyboard and small-screen editing
 
@@ -214,15 +224,27 @@ backend/app.py        FastAPI routes, job queue, limits, file cleanup
 backend/observability.py API errors, request IDs, structured events
 backend/models.py     Typed edit validation and media bounds
 backend/pipeline.py   ffprobe/ffmpeg pipeline; filtergraph for overlays and cuts
+backend/composition.py Two-video presenter inset and audio mixing
 backend/df_worker.py  DeepFilterNet3 denoiser (chunked, runs as a subprocess)
 backend/background.py Person-mask preparation and background composition filters
 backend/background_worker.py Streaming MediaPipe segmentation worker
 backend/preflight.py  Startup checks and optional noise-model preparation
-frontend/             Static UI (no build step), including background and project controls
+frontend/             Static UI (no build step), including workspace and presenter controls
+tests/test_composition.py Synthetic FFmpeg integration tests for two-video composition
 setup-background.sh   Optional isolated background-engine setup
 scripts/              Manual performance measurement and release inventory
 ```
 
+
+## Checks before release
+
+From the repository root, after installing the dependencies, run the synthetic two-video tests (FFmpeg and FFprobe must be available):
+
+```bash
+.venv/bin/python -m unittest discover -s tests -v
+```
+
+These tests exercise presenter timing, seeked previews, mixed/presenter-only audio, no-overlap handling and muted exports. They use generated video/audio clips, not personal recordings. They **do not** replace browser QA, segmentation tests on varied real people, or long-video memory and performance tests. The focused workspace and presenter compositor on this branch remain **unmerged / not automatically deployed**. Verify the UI at desktop, 768px and phone widths in both themes, plus a real preview and export, before shipping. There is no established GitHub Actions CI for this feature branch.
 
 ## Local operation and releases
 
