@@ -16,6 +16,13 @@ Feature branch: design/focused-workspace.
 - At 850px and below, the task rail wraps above the preview; timeline and inspector stack below it.
 - Explicit light/dark foreground pairs improve secondary labels, selected controls, disabled controls, primary actions, badges, and timeline text.
 
+## Reframe and captions
+
+- Reframe presets: original aspect, 16:9 landscape, 9:16 portrait, 1:1 square. Adjust zoom (1–3×) and horizontal/vertical focus; an overlay guide marks the retained region.
+- Import a UTF-8 .srt file from Captions. Up to 100 short cues are added as ordinary timed text overlays, so editing, project recovery, timeline selection, cuts, and final export reuse the existing text workflow.
+- Caption imports are not automatic speech recognition. Editing a cue uses the normal Text edit inspector. The crop happens after masks/text but before encoding; no extra source file is created.
+- The reference preview uses a crop guide over the full source canvas; it is not a pixel-cropped preview. The final export is cropped.
+
 ## Integration
 
 No build step or new production dependencies. Run FreeEdit normally with `./run.sh`.
