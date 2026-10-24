@@ -4,7 +4,7 @@ A small web app for cleaning up screen recordings and other audio or video files
 
 - **Remove background noise** with [DeepFilterNet3](https://github.com/Rikorose/DeepFilterNet)
 - **Shorten pauses**: detect quiet sections, listen to suggestions, and choose which become cuts
-- **Reframe** videos: crop to 16:9, 9:16, square or original aspect ratio, with zoom and focus controls
+- **Reframe** videos: crop to 16:9, 9:16, square or original aspect ratio, with zoom/focus and smoothly animated time-range sections
 - **Import editable captions**: load SRT subtitles as timed text overlays you can adjust on the timeline
 - **Combine two videos**: add a presenter inset, blur/remove its background, and choose Main, Presenter, Both, or Muted sound ([workflow](docs/COMBINING_VIDEOS.md))
 - **Person-aware backgrounds**: blur, solid colors, or built-in/uploaded images, with camera-inset selection and a short processed preview ([optional setup](docs/BACKGROUNDS.md))
