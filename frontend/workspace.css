@@ -169,3 +169,14 @@ button.primary, a.button.primary { background: var(--accent); color: var(--accen
 
 /* Keyboard navigation remains visible on both light and dark surfaces. */
 .workspace-rail button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.timeline-block.zoom { background: #5146c7; }
+:root[data-theme="dark"] .timeline-block.zoom { background: #7165c8; }
+.selected-zoom-panel { margin-top: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+.selected-zoom-panel h3 { margin: 0 0 8px; color: var(--text); }
+.selected-zoom-panel .field { margin-bottom: 9px; }
+.zoom-edit-row { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.zoom-edit-row button { width: 100%; justify-content: space-between; font-size: 12px; text-align: left; }
+.zoom-edit-row button[aria-pressed="true"] { background: #ecebff; color: #383080; }
+:root[data-theme="dark"] .zoom-edit-row button[aria-pressed="true"] { background: #35314e; color: #e5e1ff; }
+#stage > #reframePreviewCanvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 4; }
