@@ -433,7 +433,7 @@ function render() {
   // Display the retained region without altering input coordinates or selection.
   if (S.reframe && (S.reframe.aspect !== "original" || S.reframe.zoom > 1 || S.reframe.sections?.length)) {
     const r = freeeditCropRect(W, H, freeeditReframeAt(S.reframe, video.currentTime));
-    if (typeof updateReframePreview === "function") updateReframePreview(r);
+
     ctx.save();
     ctx.fillStyle = "rgba(0,0,0,0.42)";
     ctx.fillRect(0, 0, W, r.y);
@@ -447,7 +447,6 @@ function render() {
     ctx.restore();
   }
 
-  if (typeof updateReframePreview === "function" && (!S.reframe || (S.reframe.aspect === "original" && S.reframe.zoom === 1 && !S.reframe.sections?.length))) updateReframePreview(null);
   if (S.drag?.kind === "new") {
     const r = normRect(S.drag);
     ctx.save();
@@ -458,6 +457,10 @@ function render() {
     ctx.fillRect(r.x, r.y, r.w, r.h);
     ctx.strokeRect(r.x, r.y, r.w, r.h);
     ctx.restore();
+  }
+  if (typeof updateReframePreview === "function") {
+    const active = S.reframe && (S.reframe.aspect !== "original" || S.reframe.zoom > 1 || S.reframe.sections?.length);
+    updateReframePreview(active ? freeeditCropRect(W, H, freeeditReframeAt(S.reframe, video.currentTime)) : null);
   }
 }
 
