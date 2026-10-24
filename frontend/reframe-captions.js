@@ -25,6 +25,7 @@ function updateReframe() {
   if (JSON.stringify(S.reframe) !== JSON.stringify(next)) checkpoint();
   S.reframe = {...next, sections:S.reframe?.sections || []};
   syncReframeControls();
+  renderZoomSelectList();
   refreshExportState();
   render();
 }
@@ -40,6 +41,8 @@ for (const id of ["reframeAspect", "reframeZoom", "reframeX", "reframeY"]) {
     const next = {...previous, zoom:Number($("reframeZoom").value), focus_x:Number($("reframeX").value), focus_y:Number($("reframeY").value)};
     S.reframe = next;
     $("reframeZoomLabel").textContent = next.zoom.toFixed(2) + "×";
+    renderZoomSelectList();
+    refreshExportState();
     render();
   });
 }
@@ -175,24 +178,57 @@ function selectZoom(index) {
   window.dispatchEvent(new CustomEvent("freeedit:workspace",{detail:"zoom-selection"}));
 }
 function renderZoomSelectList() {
-  const list=$("editsList");if(!list)return;
-  // renderList() owns the regular edit cards; append zoom cards to that list
-  // and sort the combined entries by their original-timeline start.
-  list.querySelectorAll(".zoom-edit-row").forEach(row=>row.remove());
-  const sections=zoomSections();
-  $("editCount").textContent=S.edits.length+sections.length;
-  show($("editsEmpty"),S.edits.length===0&&sections.length===0);
-  sections.forEach((section,index)=>{
-    const row=document.createElement("div");row.className="zoom-edit-row";
-    const button=document.createElement("button");
-    button.type="button";button.setAttribute("aria-pressed",String(S.selectedZoom===index));
-    button.textContent="Zoom "+fmt(section.start)+"–"+fmt(section.end)+" · "+section.zoom.toFixed(2)+"×";
-    button.onclick=()=>selectZoom(index);
+  const list = $("editsList");
+  if (!list) return;
+  // Use the SAME visible list as cuts, text, masks and captions. The old
+  // separate zoom container was removed, leaving zoom edits invisible.
+  list.querySelectorAll(".zoom-edit-row").forEach(row => row.remove());
+  const sections = zoomSections();
+  const config = S.reframe;
+  const wholeVideo = !!config && (
+    config.aspect !== "original" ||
+    (!sections.length && config.zoom > 1.001)
+  );
+  $("editCount").textContent = S.edits.length + sections.length + Number(wholeVideo);
+  show($("editsEmpty"), S.edits.length === 0 && sections.length === 0 && !wholeVideo);
+
+  // Aspect ratio / whole-recording zoom is an actual edit too, even if the
+  // user did not add a timed section. Select it to reopen Reframe controls.
+  if (wholeVideo) {
+    const row = document.createElement("div");
+    row.className = "zoom-edit-row";
+    row.dataset.start = "0";
+    const button = document.createElement("button");
+    button.type = "button";
+    const aspectNames = {original: "Original", wide: "16:9", vertical: "9:16", square: "1:1"};
+    const zoomDetail = sections.length ? "" : " · " + config.zoom.toFixed(2) + "×";
+    button.textContent = "Reframe · " + (aspectNames[config.aspect] || "Original") + zoomDetail;
+    button.title = "Open Reframe settings for the whole video";
+    button.onclick = () => {
+      window.dispatchEvent(new CustomEvent("freeedit:workspace", {detail: "reframe-settings"}));
+    };
     row.append(button);
-    const next=[...list.querySelectorAll(".card")].find(card=>Number(card.dataset.start)>section.start);
-    if(next)list.insertBefore(row,next);else list.append(row);
+    list.append(row);
+  }
+
+  sections.forEach((section, index) => {
+    const row = document.createElement("div");
+    row.className = "zoom-edit-row";
+    row.dataset.start = String(section.start);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute("aria-pressed", String(S.selectedZoom === index));
+    button.textContent = "Zoom · " + fmt(section.start) + "–" + fmt(section.end) +
+      " · " + section.zoom.toFixed(2) + "×";
+    button.onclick = () => selectZoom(index);
+    row.append(button);
+    list.append(row);
   });
-  [...list.children].sort((a,b)=>Number(a.dataset.start)-Number(b.dataset.start)).forEach(el=>list.append(el));
+  // All items have numeric start times. Keep every edit in original timeline
+  // order, including when there are no ordinary cards to anchor the list.
+  [...list.children]
+    .sort((a, b) => Number(a.dataset.start || 0) - Number(b.dataset.start || 0))
+    .forEach(el => list.append(el));
   syncZoomSelection();
 }
 function renderZoomTimeline(){
