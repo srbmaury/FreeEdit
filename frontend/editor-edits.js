@@ -62,9 +62,7 @@ function syncCard(e) {
     card.querySelector('[data-k="end"]').value = e.end;
     card.querySelector(".card-title").textContent = cardTitle(e);
   }
-  renderTimeline();
-  updateTransport();
-  render();
+  editorStore.dispatch("edit:drag", () => {});
 }
 
 // ---------- edits ----------
