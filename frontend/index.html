@@ -209,7 +209,15 @@
           <label class="field"><span>Zoom</span><input id="reframeZoom" type="range" min="1" max="3" step="0.05" value="1"><output id="reframeZoomLabel">1.00×</output></label>
           <label class="field"><span>Horizontal focus</span><input id="reframeX" type="range" min="0" max="1" step="0.01" value="0.5"></label>
           <label class="field"><span>Vertical focus</span><input id="reframeY" type="range" min="0" max="1" step="0.01" value="0.5"></label>
-          <button id="reframeReset" type="button" class="ghost">Reset crop</button>
+          <div class="panel-divider"><strong>Animated sections</strong></div>
+          <p class="small">Set a range on the original timeline; zoom eases in and out at its boundaries. The aspect ratio remains constant.</p>
+          <label class="field"><span>From (seconds)</span><input id="reframeStart" type="number" min="0" step="0.1" value="0"></label>
+          <label class="field"><span>To (seconds)</span><input id="reframeEnd" type="number" min="0" step="0.1" value="3"></label>
+          <label class="field"><span>Transition (seconds)</span><input id="reframeTransition" type="number" min="0" max="1.5" step="0.05" value="0.35"></label>
+          <button id="reframeAddSection" type="button">Add zoom section</button>
+          <div id="reframeSections" aria-label="Zoom sections"></div>
+          <p id="reframeStatus" role="status" class="small"></p>
+          <button id="reframeReset" type="button" class="ghost">Reset crop and sections</button>
         </section>
         <section id="captionsPanel" class="panel">
           <h2 class="section-title">Captions</h2>
