@@ -25,6 +25,7 @@ const S = {
   reviewLoop: null,
   background: null,
   reframe: null,
+  selectedZoom: null,
 };
 
 let pollRevision = 0;
@@ -169,6 +170,7 @@ function openEditor(job) {
   S.compareOriginal = false;
   S.job = job;
   S.edits = [];
+  S.selectedZoom = null;
   S.undo = []; S.redo = [];
   resetNoisePreview();
   resetBackground();
@@ -431,6 +433,7 @@ function render() {
   // Display the retained region without altering input coordinates or selection.
   if (S.reframe && (S.reframe.aspect !== "original" || S.reframe.zoom > 1 || S.reframe.sections?.length)) {
     const r = freeeditCropRect(W, H, freeeditReframeAt(S.reframe, video.currentTime));
+    if (typeof updateReframePreview === "function") updateReframePreview(r);
     ctx.save();
     ctx.fillStyle = "rgba(0,0,0,0.42)";
     ctx.fillRect(0, 0, W, r.y);
@@ -444,6 +447,7 @@ function render() {
     ctx.restore();
   }
 
+  if (typeof updateReframePreview === "function" && (!S.reframe || (S.reframe.aspect === "original" && S.reframe.zoom === 1 && !S.reframe.sections?.length))) updateReframePreview(null);
   if (S.drag?.kind === "new") {
     const r = normRect(S.drag);
     ctx.save();
@@ -666,6 +670,8 @@ function deleteEdit(id) {
 function select(id) {
   stopReviewLoop();
   S.selected = id;
+  S.selectedZoom = null;
+  if (typeof syncZoomSelection === "function") syncZoomSelection();
   window.dispatchEvent(new CustomEvent("freeedit:workspace", { detail: "selection" }));
   document.querySelectorAll(".card").forEach((c) => {
     const selected = +c.dataset.id === id;
@@ -686,6 +692,7 @@ function cardTitle(e) {
 
 function renderList() {
   if (S.selected) window.dispatchEvent(new CustomEvent("freeedit:workspace", { detail: "selection" }));
+  if (typeof renderZoomSelectList === "function") renderZoomSelectList();
   const list = $("editsList");
   list.innerHTML = "";
   $("editCount").textContent = S.edits.length;
@@ -1110,8 +1117,9 @@ function resetFile() {
   video.pause(); $("audio").pause(); $("resultVideo").pause(); $("resultAudio").pause();
   S.job = null;
   S.edits = []; S.suggestions = [];
+  S.selectedZoom = null;
   S.undo = []; S.redo = [];
-  S.selected = null; S.exportSignature = null;
+  S.selected = null; S.selectedZoom = null; S.exportSignature = null;
   S.reframe = null;
   setBusy(null);
   $("strength").value = "18";
