@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import array
+from fractions import Fraction
 import json
 import math
 import tempfile
@@ -67,6 +68,7 @@ class MediaInfo:
     width: int = 0
     height: int = 0
     audio_channels: int = 0
+    frame_rate: float = 30.0
 
 
 def probe(path: Path) -> MediaInfo:
@@ -102,7 +104,18 @@ def probe(path: Path) -> MediaInfo:
         width=width,
         height=height,
         audio_channels=int(audio.get("channels", 2)) if audio else 0,
+        frame_rate=source_frame_rate(video),
     )
+
+
+def source_frame_rate(video: dict | None) -> float:
+    if not video:
+        return 30.0
+    try:
+        rate = float(Fraction(video.get("avg_frame_rate") or video.get("r_frame_rate") or "30"))
+        return round(min(60, max(1, rate)), 3) if math.isfinite(rate) and rate > 0 else 30.0
+    except (ValueError, ZeroDivisionError, TypeError):
+        return 30.0
 
 
 def _rotation(stream: dict) -> int:
@@ -210,6 +223,54 @@ def reframe_geometry(width: int, height: int, settings: dict) -> tuple[int, int,
     x = int((width - w) * settings["focus_x"] / 2) * 2
     y = int((height - h) * settings["focus_y"] / 2) * 2
     return x, y, w, h
+
+
+def reframe_expressions(sections: list[dict], axis: str) -> str:
+    """Smoothstep per-section weights evaluated on the original input timeline.
+
+    axis: z (zoom), x or y (focus). Each section eases from the unzoomed
+    frame into the chosen region and returns to the unzoomed frame.
+    """
+    expr = "1" if axis == "z" else "0.5"
+    for section in sections:
+        start, end = section["start"], section["end"]
+        ease = min(section["transition"], (end - start) / 2)
+        if ease < .001:
+            weight = f"between(T,{start:.3f},{end:.3f})"
+        else:
+            incoming = f"min(1,max(0,(T-{start:.3f})/{ease:.3f}))"
+            outgoing = f"min(1,max(0,({end:.3f}-T)/{ease:.3f}))"
+            # Both ends use cubic ease-in/ease-out: C1-continuous at joins.
+            weight = f"({incoming})*({outgoing})"
+            weight = f"({weight})*({weight})*(3-2*({weight}))"
+        value = section["zoom"] - 1 if axis == "z" else section["focus_" + axis] - .5
+        if abs(value) >= .000001:
+            expr += f"+({value:.6f})*({weight})"
+    return expr
+
+
+def build_timed_reframe(vlabel: str, width: int, height: int, settings: dict, fps: float) -> tuple[list[str], str]:
+    """Constant aspect ratio; animate zoom and focus in original-timeline sections.
+
+    A time-varying base crop recenters the aspect-ratio region, then zoompan
+    animates the zoom inside it. The combined crop maps to the same source
+    rectangle as the browser's geometry calculation.
+    """
+    if settings["aspect"] not in ("original", "wide", "vertical", "square"):
+        raise PipelineError("Unsupported reframe aspect ratio.")
+    _, _, w, h = reframe_geometry(width, height,
+        {"aspect": settings["aspect"], "zoom": 1, "focus_x": .5, "focus_y": .5})
+    sections = settings["sections"]
+    z = reframe_expressions(sections, "z").replace("T", "in_time")
+    fx_t = reframe_expressions(sections, "x").replace("T", "t")
+    fy_t = reframe_expressions(sections, "y").replace("T", "t")
+    fx_in = reframe_expressions(sections, "x").replace("T", "in_time")
+    fy_in = reframe_expressions(sections, "y").replace("T", "in_time")
+    graph = [
+        f"{vlabel}fps={fps:.3f},crop={w}:{h}:x='(iw-ow)*({fx_t})':y='(ih-oh)*({fy_t})':exact=1[reframebase]",
+        f"[reframebase]zoompan=z='{z}':x='(iw-iw/zoom)*({fx_in})':y='(ih-ih/zoom)*({fy_in})':d=1:s={w}x{h}:fps={fps:.3f}[reframed]"
+    ]
+    return graph, "[reframed]"
 
 
 def build_video_edits(
@@ -499,9 +560,15 @@ def process(
 
     # Crop after all overlays to preserve source-pixel positioning and timings.
     if reframe:
-        x, y, w, h = reframe_geometry(_even(info.width * scale), _even(info.height * scale), reframe)
-        parts.append(f"{vlabel}crop={w}:{h}:{x}:{y}[reframed]")
-        vlabel = "[reframed]"
+        if reframe.get("sections"):
+            reframe_parts, vlabel = build_timed_reframe(
+                vlabel, _even(info.width * scale), _even(info.height * scale),
+                reframe, info.frame_rate)
+            parts += reframe_parts
+        else:
+            x, y, w, h = reframe_geometry(_even(info.width * scale), _even(info.height * scale), reframe)
+            parts.append(f"{vlabel}crop={w}:{h}:{x}:{y}[reframed]")
+            vlabel = "[reframed]"
     # Every video preset produces compatible H.264 MP4 with even dimensions.
     parts.append(f"{vlabel}scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p[vout]")
     graph = ";".join(parts)
