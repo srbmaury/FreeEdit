@@ -31,6 +31,7 @@
   <meta name="twitter:image:alt" content="FreeEdit: a video editor with a hidden area, a text overlay, a cut on the timeline, and audio before and after noise removal" />
   <script src="theme.js"></script>
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="workspace.css" />
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to editor</a>
@@ -92,7 +93,7 @@
       <div class="main">
         <div class="project-recovery"><p id="projectStatus" class="project-status" role="status" aria-live="polite"></p><button id="takeRecoveryBtn" class="mini hidden">Use recovery for this tab</button></div>
         <div class="preview-heading">
-          <div><h2 class="workspace-title">Your recording</h2><span id="previewLabel" role="status">Edits preview · use the audio sample to hear noise removal</span></div>
+          <div><h2 class="workspace-title">Preview</h2><span id="previewLabel" role="status">Editing preview</span></div>
           <div class="preview-actions">
             <div id="previewSwitch" class="segmented hidden" role="group" aria-label="Compare recording">
               <button id="originalPreviewBtn" aria-pressed="false">Original</button>
@@ -102,14 +103,14 @@
           </div>
         </div>
         <div id="toolbar" class="toolbar">
-          <button class="tool active" data-mode="select" title="Select and move (V)">Select</button>
+          <button type="button" class="tool active" data-mode="select" aria-pressed="true" title="View all edits and select an item (V)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 3 14 9-7 1-3 7Z"/></svg><span>Edits</span><kbd aria-hidden="true">V</kbd></button>
           <button class="tool" data-mode="hide" title="Drag over the area to hide (H)">Hide area</button>
           <button class="tool" data-mode="text" title="Click where the text should go (T)">Add text</button>
           <button id="cutBtn" class="cut-btn" title="Remove a part of the video (X)">✂ Cut section</button>
           <button id="undoBtn" disabled title="Undo (⌘/Ctrl+Z)">Undo</button><button id="redoBtn" disabled title="Redo (⌘/Ctrl+Shift+Z)">Redo</button>
           <button id="placeEditBtn" class="ghost hidden">Place in center</button>
           <button id="reviewSelectionBtn" class="ghost hidden" aria-pressed="false">Review selection</button>
-          <span id="modeHint" class="hint">Click an edit to select it. Drag it to move it.</span>
+          <span id="modeHint" class="hint">Select an edit to adjust it.</span>
         </div>
 
         <div id="stageWrap" class="stage-wrap">
@@ -140,7 +141,7 @@
               <div id="pauseLabel" class="timeline-label">Pauses</div>
               <div id="cutLabel" class="timeline-label">Cuts</div>
               <div id="maskLabel" class="timeline-label">Masks</div>
-              <div id="textLabel" class="timeline-label">Text</div>
+              <div id="textLabel" class="timeline-label">Text</div><div id="zoomLabelTrack" class="timeline-label">Zoom</div>
             </div>
             <div id="timelineViewport" class="timeline-viewport" tabindex="0" aria-label="Timeline; scroll horizontally when zoomed">
               <div id="timelineContent" class="timeline-content">
@@ -156,7 +157,7 @@
                 <div id="pauseTrack" class="timeline-track" aria-label="Suggested pauses"></div>
                 <div id="cutTrack" class="timeline-track" aria-label="Cuts"></div>
                 <div id="maskTrack" class="timeline-track" aria-label="Masks"></div>
-                <div id="textTrack" class="timeline-track" aria-label="Text overlays"></div>
+                <div id="textTrack" class="timeline-track" aria-label="Text overlays"></div><div id="zoomTrack" class="timeline-track" aria-label="Zoom sections"></div>
                 <div id="timelinePlayhead" class="timeline-playhead" aria-hidden="true"></div>
               </div>
             </div>
@@ -167,10 +168,101 @@
       </div>
 
       <aside class="side">
+        <section id="videosPanel" class="panel">
+          <h2 class="section-title">Combine videos</h2>
+          <p class="small">The main video fills the frame and sets the duration. Add one presenter video as an inset.</p>
+          <p id="presenterName" class="small">No presenter video added.</p>
+          <button id="choosePresenterBtn" type="button">Add presenter video…</button>
+          <input id="presenterInput" type="file" accept="video/*,.mov,.mkv,.mp4,.webm" hidden />
+          <div id="presenterControls" class="hidden">
+            <button id="removePresenterBtn" type="button" class="ghost">Remove presenter</button>
+            <label class="field"><span>Presenter background</span><select id="presenterEffect"><option value="original">Original</option><option value="blur">Blur</option><option value="remove">Remove background</option></select></label>
+            <label class="field"><span>Corner</span><select id="presenterCorner"><option value="bottom-right">Bottom right</option><option value="bottom-left">Bottom left</option><option value="top-right">Top right</option><option value="top-left">Top left</option></select></label>
+            <label class="field"><span>Inset width (% of main video)</span><input id="presenterSize" type="range" min="10" max="60" value="28" /></label>
+            <div class="camera-coordinates">
+              <label class="field"><span>X (pixels)</span><input id="presenterX" type="number" min="0" step="1" /></label>
+              <label class="field"><span>Y (pixels)</span><input id="presenterY" type="number" min="0" step="1" /></label>
+            </div>
+            <label class="field"><span>Start in main video (seconds)</span><input id="presenterOffset" type="number" min="0" step="0.1" value="0" /></label>
+            <div class="camera-coordinates">
+              <label class="field"><span>Presenter from (seconds)</span><input id="presenterFrom" type="number" min="0" step="0.1" value="0" /></label>
+              <label class="field"><span>Presenter to (seconds)</span><input id="presenterTo" type="number" min="0" step="0.1" /></label>
+            </div>
+            <p class="small">Drag the inset to move it, or its lower-right corner to resize. It keeps its aspect ratio and disappears when its selected range ends. Main-video cuts apply to both videos.</p>
+            <label class="field"><span>Sound from</span><select id="compositionSound"><option value="main">Main video</option><option value="presenter">Presenter video</option><option value="both">Both videos</option><option value="muted">Muted</option></select></label>
+            <div id="compositionVolumes" class="hidden">
+              <label class="field"><span>Main volume (%)</span><input id="mainVolume" type="range" min="0" max="200" value="100" /></label>
+              <label class="field"><span>Presenter volume (%)</span><input id="presenterVolume" type="range" min="0" max="200" value="100" /></label>
+            </div>
+            <button id="compositionPreviewBtn" type="button">Preview combined video</button>
+            <video id="compositionPreviewPlayer" class="hidden" controls playsinline aria-label="Combined video sample"></video>
+          </div>
+          <p id="compositionStatus" class="small" role="status">Preview three seconds from the playhead, including your sound choice. Main background effects, cuts, text, and privacy masks are applied in the full export.</p>
+        </section>
+        <section id="reframePanel" class="panel">
+          <h2 class="section-title">Reframe recording</h2>
+          <p class="small">Change the whole video or zoom a selected portion.</p>
+          <details id="reframeWholeGroup" class="reframe-group" name="reframe-scope">
+          <summary>Whole video <span id="reframeWholeSummary" class="small">Original · 1.00×</span></summary>
+          <div class="reframe-group-body">
+          <label class="field"><span>Aspect ratio</span><select id="reframeAspect">
+            <option value="original">Original</option><option value="wide">16:9 · Landscape</option>
+            <option value="vertical">9:16 · Portrait</option><option value="square">1:1 · Square</option>
+          </select></label>
+          <label class="field"><span>Whole-video zoom</span><input id="reframeZoom" type="range" min="1" max="3" step="0.05" value="1"><output id="reframeZoomLabel">1.00×</output></label>
+          <label class="field"><span>Horizontal focus</span><input id="reframeX" type="range" min="0" max="1" step="0.01" value="0.5"></label>
+          <label class="field"><span>Vertical focus</span><input id="reframeY" type="range" min="0" max="1" step="0.01" value="0.5"></label>
+          </div></details>
+          <details id="reframePortionGroup" class="reframe-group" name="reframe-scope">
+          <summary>Selected portion <span class="small">Add a timed zoom</span></summary>
+          <div class="reframe-group-body">
+          <p class="small">Use the dashed guide to frame this portion. The rest stays unchanged.</p>
+          <div class="reframe-time-range">
+          <label class="field"><span>From (seconds)</span><div class="with-btn"><input id="reframeStart" type="number" min="0" step="0.1" value="0"><button id="reframeStartNow" type="button" class="mini">Use playhead</button></div></label>
+          <label class="field"><span>To (seconds)</span><div class="with-btn"><input id="reframeEnd" type="number" min="0" step="0.1" value="3"><button id="reframeEndNow" type="button" class="mini">Use playhead</button></div></label>
+          </div>
+          <label class="field"><span>Portion zoom</span><input id="reframeSectionZoom" type="range" min="1" max="3" step="0.05" value="1.8"><output id="reframeSectionZoomLabel">1.80×</output></label>
+          <label class="field"><span>Portion horizontal focus</span><input id="reframeSectionX" type="range" min="0" max="1" step="0.01" value="0.5"></label>
+          <label class="field"><span>Portion vertical focus</span><input id="reframeSectionY" type="range" min="0" max="1" step="0.01" value="0.5"></label>
+          <label class="field"><span>Transition (seconds)</span><input id="reframeTransition" type="number" min="0" max="1.5" step="0.05" value="0.35"></label>
+          <button id="reframeAddSection" type="button">Add Reframe to portion</button>
+          </div></details>
+          <div id="reframeSections" aria-label="Zoom sections"></div>
+          <p id="reframeStatus" role="status" class="small"></p>
+          <button id="reframeReset" type="button" class="ghost">Reset crop and sections</button>
+        </section>
+        <section id="captionsPanel" class="panel">
+          <h2 class="section-title">Captions</h2>
+          <p class="small">Import an SRT subtitle file. Captions become editable, timed text overlays in the existing timeline.</p>
+          <button id="captionImportBtn" type="button">Import SRT subtitles…</button>
+          <input id="captionInput" type="file" accept=".srt,text/plain" hidden>
+          <p id="captionStatus" class="small" role="status"></p>
+        </section>
+        <section id="cutDraftPanel" class="panel">
+          <h2 class="section-title">Remove a section</h2>
+          <p class="small">Choose a range on the original recording. Nothing is removed until you add the cut.</p>
+          <label class="field"><span>From (seconds)</span><div class="with-btn"><input id="cutFrom" type="number" min="0" step="0.1" /><button id="cutFromNow" type="button" class="mini">Use playhead</button></div></label>
+          <label class="field"><span>To (seconds)</span><div class="with-btn"><input id="cutTo" type="number" min="0" step="0.1" /><button id="cutToNow" type="button" class="mini">Use playhead</button></div></label>
+          <p id="cutDraftStatus" class="small" role="status"></p>
+          <button id="addCutRangeBtn" type="button" class="primary">Add cut</button>
+          <p class="small">After adding, drag the cut or its edges on the timeline to adjust it. Select a cut to edit its times or delete it.</p>
+        </section>
         <div id="editsPanel" class="panel">
           <h2 class="section-title">Edits <span id="editCount" class="count">0</span></h2>
-          <div id="editsList" class="edits"></div>
-          <p id="editsEmpty" class="small">Choose a tool above the preview to add an edit. Select an edit here or on the timeline to adjust it.</p>
+          <div id="editsList" class="edits" aria-label="All edits in timeline order"></div>
+          <section id="selectedZoomPanel" class="selected-zoom-panel hidden" aria-label="Zoom section properties">
+            <h3>Reframe portion</h3>
+            <p class="small">The rectangle shows the area this portion will keep. Adjust zoom and focus to position it. Play to preview the result.</p>
+            <label class="field"><span>From (seconds)</span><input id="selectedZoomStart" type="number" min="0" step="0.01"></label>
+            <label class="field"><span>To (seconds)</span><input id="selectedZoomEnd" type="number" min="0" step="0.01"></label>
+            <label class="field"><span>Zoom</span><input id="selectedZoomStrength" type="range" min="1" max="3" step="0.05"><output id="selectedZoomStrengthLabel"></output></label>
+            <label class="field"><span>Horizontal focus</span><input id="selectedZoomX" type="range" min="0" max="1" step="0.01"></label>
+            <label class="field"><span>Vertical focus</span><input id="selectedZoomY" type="range" min="0" max="1" step="0.01"></label>
+            <label class="field"><span>Transition (seconds)</span><input id="selectedZoomTransition" type="number" min="0" max="1.5" step="0.05"></label>
+            <button id="selectedZoomRemove" type="button" class="ghost">Remove Reframe portion</button>
+            <p id="selectedZoomError" class="small" role="status"></p>
+          </section>
+          <p id="editsEmpty" class="small">No edits yet. Add Text, Hide area, or Cut from the task rail. Edits (V) lists cuts, text, masks, captions, and zoom sections. Choose an item to edit it.</p>
         </div>
 
         <details id="backgroundPanel" class="panel background-panel">
@@ -379,7 +471,7 @@
 
   <dialog id="shortcutsDialog" class="info-dialog" aria-labelledby="shortcutsTitle">
     <form method="dialog"><h2 id="shortcutsTitle">Keyboard shortcuts</h2>
-      <dl class="shortcut-list"><dt>Space</dt><dd>Play or pause</dd><dt>V / H / T / X</dt><dd>Select / Hide area / Add text / Cut section</dd><dt>← / →</dt><dd>Step through the recording; hold Shift for one second</dd><dt>Delete</dt><dd>Remove the selected edit</dd><dt>Esc</dt><dd>Deselect and return to Select</dd><dt>⌘ or Ctrl + Z</dt><dd>Undo; add Shift to redo</dd></dl>
+      <dl class="shortcut-list"><dt>Space</dt><dd>Play or pause</dd><dt>V / H / T / X</dt><dd>Edits / Hide area / Add text / Cut section</dd><dt>← / →</dt><dd>Step through the recording; hold Shift for one second</dd><dt>Delete</dt><dd>Remove the selected edit</dd><dt>Esc</dt><dd>Deselect and return to Select</dd><dt>⌘ or Ctrl + Z</dt><dd>Undo; add Shift to redo</dd></dl>
       <p class="small">Editing shortcuts apply outside text fields. Use Place in center and the position fields to add overlays with a keyboard.</p>
       <button class="primary">Done</button></form>
   </dialog>
@@ -407,11 +499,15 @@
     <form method="dialog"><h2 id="diagnosticsTitle">Check setup</h2><div id="diagnosticsResults" role="status" aria-live="polite"></div><button class="primary">Done</button></form>
   </dialog>
   <script src="ui.js"></script>
+  <script src="media-utils.js"></script>
   <script src="app.js"></script>
   <script src="silence.js"></script>
   <script src="timeline.js"></script>
   <script src="projects.js"></script>
   <script src="noise-preview.js"></script>
   <script src="background.js"></script>
+  <script src="videos.js"></script>
+  <script src="workspace.js"></script>
+  <script src="reframe-captions.js"></script>
 </body>
 </html>

@@ -24,6 +24,8 @@ const S = {
   busySince: null,
   reviewLoop: null,
   background: null,
+  reframe: null,
+  selectedZoom: null,
 };
 
 let pollRevision = 0;
@@ -39,7 +41,7 @@ const FONTS = {
   mono: 'Menlo, Consolas, monospace',
 };
 const MODE_HINTS = {
-  select: "Click an edit to select it. Drag it to move it.",
+  select: "Select an edit to adjust it.",
   hide: "Drag over the part of the video you want to hide.",
   text: "Click where the text should go.",
   background: "Drag a rectangle around the camera inset. Press Escape to cancel.",
@@ -168,10 +170,14 @@ function openEditor(job) {
   S.compareOriginal = false;
   S.job = job;
   S.edits = [];
+  S.selectedZoom = null;
   S.undo = []; S.redo = [];
   resetNoisePreview();
   resetBackground();
+  resetVideos();
   S.exportSignature = null; S.reviewing = false;
+  S.reframe = {aspect: "original", zoom: 1, focus_x: .5, focus_y: .5, sections: []};
+  if (typeof syncReframeControls === "function") syncReframeControls();
   S.operation = null; S.suggestions = [];
   resetTimeline();
   show($("silenceReview"), false);
@@ -220,16 +226,22 @@ function openEditor(job) {
   renderList();
   updateTransport();
   requestAnimationFrame(layoutStage);
+  window.dispatchEvent(new CustomEvent("freeedit:workspace", { detail: "open" }));
 }
 
 function layoutStage() {
   if (!S.job?.has_video) return;
   const wrap = $("stageWrap");
-  const maxW = wrap.clientWidth;
-  const maxH = Math.max(240, window.innerHeight * 0.66);
+  const style = getComputedStyle(wrap);
+  const maxW = wrap.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+  // Use more of the workspace while preserving the recording's aspect ratio.
+  // The timeline stays beneath the preview and never gets overlapped.
+  const maxH = Math.max(280, window.innerHeight * (window.innerWidth <= 850 ? 0.65 : 0.78));
   const { width: W, height: H } = S.job;
-  const scale = Math.min(maxW / W, maxH / H);
-  const dw = Math.round(W * scale), dh = Math.round(H * scale);
+  const guide = typeof reframeGuideSection === "function" && reframeGuideSection();
+  const shape = guide ? {w: W, h: H} : freeeditCropRect(W, H, {...S.reframe, zoom: 1});
+  const scale = Math.min(maxW / shape.w, maxH / shape.h);
+  const dw = Math.round(shape.w * scale), dh = Math.round(shape.h * scale);
   const stage = $("stage");
   stage.style.width = dw + "px";
   stage.style.height = dh + "px";
@@ -376,10 +388,14 @@ function paintHide(e) {
 
 function render() {
   refreshExportState();
+  $("toolbar").dataset.mode = S.mode;
+  $("toolbar").classList.toggle("has-edits", S.edits.length > 0 || !!S.reframe?.sections?.length || S.reframe?.zoom > 1 || S.reframe?.aspect && S.reframe.aspect !== "original");
   if (!S.job?.has_video) return;
   const W = S.job.width, H = S.job.height;
   ctx.clearRect(0, 0, W, H);
   const lw = W / (canvas.width / (window.devicePixelRatio || 1)); // 1 screen px in source px
+
+  drawPresenter(ctx);
 
   for (const e of S.edits) {
     if (e.type === "cut") continue;
@@ -420,6 +436,8 @@ function render() {
   }
 
   drawCameraRegion(ctx, lw);
+  // The live reframe compositor displays the actual zoomed picture rather
+  // than painting a dashed crop guide into the export-style overlay.
 
   if (S.drag?.kind === "new") {
     const r = normRect(S.drag);
@@ -432,6 +450,10 @@ function render() {
     ctx.strokeRect(r.x, r.y, r.w, r.h);
     ctx.restore();
   }
+  if (typeof updateReframePreview === "function") {
+    const active = reframeGuideSection() || S.reframe && (S.reframe.aspect !== "original" || S.reframe.zoom > 1 || S.reframe.sections?.length);
+    updateReframePreview(active ? freeeditCropRect(W, H, freeeditReframeAt(S.reframe, video.currentTime)) : null);
+  }
 }
 
 function normRect(d) {
@@ -442,9 +464,11 @@ function normRect(d) {
 // ---------- canvas interaction ----------
 function toSource(ev) {
   const r = canvas.getBoundingClientRect();
+  const crop = reframeGuideSection() ? {x: 0, y: 0, w: S.job.width, h: S.job.height}
+    : freeeditCropRect(S.job.width, S.job.height, freeeditReframeAt(S.reframe, video.currentTime));
   return {
-    x: clamp(((ev.clientX - r.left) / r.width) * S.job.width, 0, S.job.width),
-    y: clamp(((ev.clientY - r.top) / r.height) * S.job.height, 0, S.job.height),
+    x: crop.x + clamp((ev.clientX - r.left) / r.width, 0, 1) * crop.w,
+    y: crop.y + clamp((ev.clientY - r.top) / r.height, 0, 1) * crop.h,
   };
 }
 
@@ -555,6 +579,7 @@ $("placeEditBtn").onclick = () => {
 
 function setMode(mode) {
   S.mode = mode;
+  window.dispatchEvent(new CustomEvent("freeedit:workspace", { detail: "mode" }));
   $("drawCameraAreaBtn").setAttribute("aria-pressed", String(mode === "background"));
   $("drawCameraAreaBtn").textContent = mode === "background" ? "Cancel area selection" : "Draw camera area";
   show($("placeEditBtn"), mode !== "select" && mode !== "background" && !!S.job?.has_video);
@@ -565,19 +590,27 @@ function setMode(mode) {
   $("modeHint").textContent = MODE_HINTS[mode];
   canvas.className = (mode === "hide" || mode === "background") ? "crosshair" : mode === "text" ? "text" : "";
 }
-document.querySelectorAll(".tool").forEach((b) => (b.onclick = () => setMode(b.dataset.mode)));
+function chooseSelectTool() {
+  if (S.reviewing) setReview(false);
+  setMode("select");
+  // An explicit Select action must reveal the edits inspector, even when
+  // selection mode is already active (the default after uploading).
+  window.dispatchEvent(new CustomEvent("freeedit:workspace", {detail: "select-tool"}));
+}
+document.querySelectorAll(".tool").forEach((b) => (b.onclick = () => {
+  if (b.dataset.mode === "select") chooseSelectTool();
+  else setMode(b.dataset.mode);
+}));
 
 // ---------- removing parts ----------
 $("cutBtn").onclick = addCut;
 
 function addCut() {
-  const d = duration();
-  if (!d) return;
+  if (!S.job || !duration()) return;
   sourcePlayer().pause();
-  const len = Math.min(3, d / 4);
-  let start = sourcePlayer().currentTime;
-  if (start + len > d) start = Math.max(0, d - len);
-  addEdit({ type: "cut", start: +start.toFixed(2), end: +(start + len).toFixed(2) });
+  if (S.reviewing) setReview(false);
+  setMode("select");
+  window.dispatchEvent(new CustomEvent("freeedit:workspace", {detail: "cut"}));
 }
 
 // Merged [start, end] ranges of everything marked for removal
@@ -613,6 +646,7 @@ function addEdit(props) {
   if (e.type === "text") { const m = textMetrics(e); e.w = m.w; e.h = m.h; }
   S.edits.push(e);
   S.selected = e.id;
+  S.selectedZoom = null;
   renderList();
   render();
   updateTransport();
@@ -622,7 +656,10 @@ function addEdit(props) {
 function deleteEdit(id) {
   checkpoint();
   S.edits = S.edits.filter((e) => e.id !== id);
-  if (S.selected === id) S.selected = null;
+  if (S.selected === id) {
+    S.selected = null;
+    window.dispatchEvent(new CustomEvent("freeedit:workspace", {detail: "selection"}));
+  }
   renderList();
   render();
   updateTransport();
@@ -631,6 +668,9 @@ function deleteEdit(id) {
 function select(id) {
   stopReviewLoop();
   S.selected = id;
+  S.selectedZoom = null;
+  if (typeof syncZoomSelection === "function") syncZoomSelection();
+  window.dispatchEvent(new CustomEvent("freeedit:workspace", { detail: "selection" }));
   document.querySelectorAll(".card").forEach((c) => {
     const selected = +c.dataset.id === id;
     c.classList.toggle("selected", selected);
@@ -649,6 +689,7 @@ function cardTitle(e) {
 }
 
 function renderList() {
+  if (S.selected) window.dispatchEvent(new CustomEvent("freeedit:workspace", { detail: "selection" }));
   const list = $("editsList");
   list.innerHTML = "";
   $("editCount").textContent = S.edits.length;
@@ -659,6 +700,7 @@ function renderList() {
     const tpl = $({ hide: "hideCardTpl", text: "textCardTpl", cut: "cutCardTpl" }[e.type]).content.cloneNode(true);
     const card = tpl.querySelector(".card");
     card.dataset.id = e.id;
+    card.dataset.start = e.start;
     card.classList.toggle("selected", e.id === S.selected);
     card.querySelector(".times").append($("timesTpl").content.cloneNode(true));
     const title = card.querySelector(".card-title");
@@ -706,6 +748,10 @@ function renderList() {
       };
     });
 
+    if (e.type === "cut") {
+      card.querySelector(".del").textContent = "Delete cut";
+      card.querySelector(".del").setAttribute("aria-label", "Delete cut");
+    }
     card.querySelector(".del").onclick = (ev) => { ev.stopPropagation(); deleteEdit(e.id); };
     card.addEventListener("pointerdown", () => {
       if (S.selected === e.id) return;
@@ -714,6 +760,7 @@ function renderList() {
     });
     list.append(tpl);
   }
+  if (typeof renderZoomSelectList === "function") renderZoomSelectList();
 }
 
 document.addEventListener("keydown", (ev) => {
@@ -726,7 +773,7 @@ document.addEventListener("keydown", (ev) => {
   if (ev.key === " ") { ev.preventDefault(); sourcePlayer().paused ? sourcePlayer().play() : sourcePlayer().pause(); }
   else if ((ev.key === "Delete" || ev.key === "Backspace") && S.selected) { ev.preventDefault(); deleteEdit(S.selected); }
   else if (ev.key === "Escape") { select(null); setMode("select"); }
-  else if (ev.key === "v" && S.job.has_video) setMode("select");
+  else if (ev.key.toLowerCase() === "v" && S.job.has_video) chooseSelectTool();
   else if (ev.key === "h" && S.job.has_video) setMode("hide");
   else if (ev.key === "t" && S.job.has_video) setMode("text");
   else if (ev.key === "x") addCut();
@@ -735,7 +782,7 @@ document.addEventListener("keydown", (ev) => {
 });
 
 // ---------- history and export review ----------
-function snapshot() { return JSON.stringify({edits: S.edits, background: S.background}); }
+function snapshot() { return JSON.stringify({edits: S.edits, background: S.background, presenter: presenterProject(), reframe: S.reframe}); }
 function checkpoint() {
   const current = snapshot();
   if (S.undo.at(-1) !== current) S.undo.push(current);
@@ -749,8 +796,13 @@ function restoreHistory(redo = false) {
   to.push(snapshot());
   const restored = JSON.parse(from.pop());
   S.edits = restored.edits; S.background = restored.background;
+  S.reframe = restored.reframe || {aspect:"original",zoom:1,focus_x:.5,focus_y:.5,sections:[]};
+  syncReframeControls();
+  window.dispatchEvent(new CustomEvent("freeedit:workspace", {detail:"reframe-restore"}));
+  restorePresenter(restored.presenter, true);
   syncBackgroundControls(); invalidateBackgroundPreview();
   S.selected = null;
+  S.selectedZoom = null;
   renderList(); render(); updateTransport();
 }
 $("undoBtn").onclick = () => restoreHistory();
@@ -759,7 +811,7 @@ function editSignature() {
   return JSON.stringify({ edits: S.edits.map(({ id, ...edit }) => {
     if (edit.type === "text") { delete edit.w; delete edit.h; }
     return edit;
-  }), background: getBackgroundSettings(), denoise: $("denoise").checked, strength: $("strength").value, preset: $("exportPreset").value });
+  }), presenter: presenterProject(), background: getBackgroundSettings(), reframe: S.reframe, denoise: $("denoise").checked, strength: $("strength").value, preset: $("exportPreset").value });
 }
 function refreshExportState() {
   if (!S.job) return;
@@ -768,10 +820,12 @@ function refreshExportState() {
   $("undoBtn").disabled = !S.undo.length;
   $("redoBtn").disabled = !S.redo.length;
   const removed = cutRanges().reduce((sum, [a, b]) => sum + b - a, 0);
-  $("exportSummary").textContent = `${fmt(Math.max(0, duration() - removed))} output · ${S.edits.filter(e => e.type === "cut").length} cuts · ${S.edits.filter(e => e.type === "hide").length} masks · Noise reduction ${$("denoise").checked ? "on" : "off"}${getBackgroundSettings() && $("exportPreset").value !== "audio_only" ? " · Background " + S.background.mode : ""}`;
+  $("noisePreviewBtn").disabled = !!S.operation || !!getPresenterSettings();
+  $("noisePreviewBtn").title = getPresenterSettings() ? "The noise sample uses the main recording. Export to hear noise reduction on the combined sound." : "";
+  $("exportSummary").textContent = `${fmt(Math.max(0, duration() - removed))} output · ${S.edits.filter(e => e.type === "cut").length} cuts · ${S.edits.filter(e => e.type === "hide").length} masks · Reframe ${S.reframe?.sections?.length ? S.reframe.sections.length + (S.reframe.sections.length === 1 ? " portion" : " portions") : S.reframe && (S.reframe.aspect !== "original" || S.reframe.zoom > 1.001) ? "whole video" : "off"} · Noise reduction ${$("denoise").checked ? "on" : "off"}${getBackgroundSettings() && $("exportPreset").value !== "audio_only" ? " · Background " + S.background.mode : ""}`;
   const stale = S.exportSignature !== null && S.exportSignature !== editSignature();
   $("resultNote").textContent = stale ? "Edits changed. Export again to include them; this download is the previous result." : "Rendered export ready to review.";
-  $("previewLabel").textContent = S.reviewing ? `${S.compareOriginal ? "Original recording" : "Rendered export"}${stale ? " · edits changed since export" : ""}` : "Edits preview · audio and background effects use processed samples";
+  $("previewLabel").textContent = S.reviewing ? `${S.compareOriginal ? "Original recording" : "Rendered export"}${stale ? " · edits changed since export" : ""}` : "Editing preview";
 }
 $("denoise").addEventListener("change", refreshExportState);
 $("strength").addEventListener("change", refreshExportState);
@@ -822,10 +876,12 @@ function setBusy(operation) {
   $("processBtn").disabled = !!operation;
   $("detectSilenceBtn").disabled = !!operation;
   $("retryPausesBtn").disabled = !!operation;
-  $("noisePreviewBtn").disabled = !!operation;
+  $("noisePreviewBtn").disabled = !!operation || !!getPresenterSettings();
   $("backgroundPreviewBtn").disabled = !!operation;
   $("backgroundControls").inert = !!operation;
   $("backgroundMode").disabled = !!operation;
+  $("videosPanel").inert = !!operation;
+  $("compositionPreviewPlayer").pause();
   if (operation) $("backgroundPreviewPlayer").pause();
   $("cancelProcessingBtn").disabled = false;
   $("cancelProcessingBtn").textContent = "Cancel";
@@ -848,7 +904,9 @@ function updatePresetInfo() {
   const limits = [LIMITS.max_output_side, LIMITS.presets?.[preset]?.max_side || (preset === "small" ? 1280 : 0)].filter(v => v > 0);
   const scale = limits.length ? Math.min(1, Math.min(...limits) / Math.max(S.job.width, S.job.height)) : 1;
   const even = n => Math.max(2, (scale < 1 ? Math.round(n / 2) : Math.floor(n / 2)) * 2);
-  const w = even(S.job.width * scale), h = even(S.job.height * scale);
+  const crop = freeeditCropRect(even(S.job.width * scale), even(S.job.height * scale),
+    {...S.reframe, zoom: S.reframe?.sections?.length ? 1 : S.reframe.zoom});
+  const w = crop.w, h = crop.h;
   $("presetInfo").textContent = `MP4 · H.264 / AAC · ${w}×${h}. Size depends on the recording.${scale < 0.8 ? " Resolution will be reduced; check small text in the export." : ""}`;
 }
 $("exportPreset").addEventListener("change", refreshExportState);
@@ -871,8 +929,10 @@ function buildPayload() {
   });
   const strength = $("strength").value;
   return {
+    presenter: getPresenterSettings(),
+    reframe: S.job.has_video && $("exportPreset").value !== "audio_only" ? S.reframe : null,
     background: $("exportPreset").value !== "audio_only" ? getBackgroundSettings() : null,
-    denoise: S.job.has_audio && $("denoise").checked,
+    denoise: (S.job.has_audio || !!presenterProject()?.source.has_audio) && $("denoise").checked,
     atten_lim: strength ? parseInt(strength, 10) : null,
     preset: $("exportPreset").value,
     edits: S.job.has_video && $("exportPreset").value !== "audio_only" ? edits : [],
@@ -881,6 +941,8 @@ function buildPayload() {
 }
 
 async function startExport() {
+  if (!validateVideos()) return;
+  window.dispatchEvent(new CustomEvent("freeedit:workspace", { detail: "export" }));
   show($("procError"), false);
   show($("procReference"), false);
   show($("recoverFileBtn"), false);
@@ -939,8 +1001,10 @@ function poll(delay = 800) {
       if (j.status === "cancelled") {
         const wasSilence = S.operation === "silence";
         const wasPreview = S.operation === "preview";
+        const wasComposition = S.operation === "composition";
         const wasBackground = S.operation === "background";
         setBusy(null); show($("procProgress"), false);
+        if (wasComposition) return compositionPreviewDone({error: "Combined preview stopped."});
         if (wasBackground) return backgroundPreviewDone({error: "Background preview stopped."});
         if (wasPreview) return noisePreviewDone({error: "Sample processing stopped."});
         if (wasSilence) $("silenceStatus").textContent = "Detection stopped. Your edits are unchanged.";
@@ -948,7 +1012,10 @@ function poll(delay = 800) {
         return;
       }
       if (j.status === "cancelling") { setProgress("Stopping…", null); poll(); return; }
-      if (S.operation === "background") {
+      if (S.operation === "composition") {
+        if (j.composition_preview) return compositionPreviewDone(j.composition_preview);
+        if (!["queued", "processing", "cancelling"].includes(j.status)) return compositionPreviewDone({error: "Combined preview was not started. Please retry."});
+      } else if (S.operation === "background") {
         if (j.background_preview) return backgroundPreviewDone(j.background_preview);
         if (!["queued", "processing", "cancelling"].includes(j.status)) return backgroundPreviewDone({error: "Background preview was not started. Please retry."});
       } else if (S.operation === "preview") {
@@ -972,10 +1039,12 @@ function poll(delay = 800) {
 }
 
 function procFailed(msg, replaceFile = false, reference = null) {
+  if (S.operation === "export") window.dispatchEvent(new CustomEvent("freeedit:workspace", { detail: "export" }));
   show($("recoverFileBtn"), replaceFile);
   show($("procReference"), !!reference);
   $("procReference").textContent = reference ? `Reference: ${reference}` : "";
   if (S.operation === "silence") return silenceDone({error: msg});
+  if (S.operation === "composition") return compositionPreviewDone({error: msg});
   if (S.operation === "background") return backgroundPreviewDone({error: msg});
   if (S.operation === "preview") return noisePreviewDone({error: msg});
   setBusy(null);
@@ -986,6 +1055,7 @@ function procFailed(msg, replaceFile = false, reference = null) {
 }
 
 function processDone(job) {
+  window.dispatchEvent(new CustomEvent("freeedit:workspace", { detail: "export" }));
   setBusy(null);
   $("processBtn").textContent = "Export updated file";
   show($("procProgress"), false);
@@ -1042,14 +1112,17 @@ function resetFile() {
   resetProject();
   resetNoisePreview();
   resetBackground();
+  resetVideos();
   clearTimeout(S.pollTimer);
   const id = S.job?.id;
   stopReviewLoop();
   video.pause(); $("audio").pause(); $("resultVideo").pause(); $("resultAudio").pause();
   S.job = null;
   S.edits = []; S.suggestions = [];
+  S.selectedZoom = null;
   S.undo = []; S.redo = [];
-  S.selected = null; S.exportSignature = null;
+  S.selected = null; S.selectedZoom = null; S.exportSignature = null;
+  S.reframe = null;
   setBusy(null);
   $("strength").value = "18";
   video.removeAttribute("src"); video.load();
@@ -1106,7 +1179,7 @@ $("cancelProcessingBtn").onclick = async () => {
 
 $("processBtn").onclick = () => {
   const warnings = [];
-  if ($("exportPreset").value === "audio_only" && (S.edits.some(e => e.type !== "cut") || getBackgroundSettings())) warnings.push("Audio-only export excludes background effects, text, and hidden areas. Audio and cuts are included.");
+  if ($("exportPreset").value === "audio_only" && (S.edits.some(e => e.type !== "cut") || getBackgroundSettings() || getPresenterSettings())) warnings.push("Audio-only export excludes video layers, background effects, text, and hidden areas. Audio and cuts are included.");
   if ($("exportPreset").value === "small" && S.edits.some(e => e.type === "text")) warnings.push("Small file compression can make text less readable. Review the exported result before sharing.");
   if (warnings.length) showProjectMessage("Check before exporting", warnings.join(" "), () => { $("projectDialog").close(); startExport(); }, "Export file");
   else startExport();
