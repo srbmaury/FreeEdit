@@ -28,7 +28,8 @@ function freeeditReframeAt(settings, time) {
     if (time<s.start || time>s.end) continue;
     const edge=Math.min(s.transition,(s.end-s.start)/2);
     const t=edge>.0005
-      ? Math.min(1,Math.max(0,(time-s.start)/edge),Math.max(0,(s.end-time)/edge)) : 1;
+      ? Math.min(1,Math.max(0,(time-s.start)/edge)) *
+        Math.min(1,Math.max(0,(s.end-time)/edge)) : 1;
     const eased=t*t*(3-2*t);
     result.zoom+=(s.zoom-1)*eased;
     result.focus_x+=(s.focus_x-.5)*eased;
