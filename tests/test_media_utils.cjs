@@ -37,15 +37,15 @@ test("invalid or excessive SRT is rejected", () => {
 
 test("timed zoom eases in and out only inside a selected range", () => {
   const settings={aspect:"wide",zoom:2,focus_x:.7,focus_y:.3,
-    sections:[{start:1,end:3,zoom:2,focus_x:.8,focus_y:.3,transition:.5}]};
+    sections:[{start:1,end:3,zoom:2.5,focus_x:.8,focus_y:.3,transition:.5}]};
   const value=t=>vm.runInContext("freeeditReframeAt("+JSON.stringify(settings)+","+t+")",context);
-  assert.equal(value(0).zoom,1);
-  assert.equal(value(1).zoom,1);
-  assert.ok(value(1.25).zoom>1 && value(1.25).zoom<2);
-  assert.equal(value(2).zoom,2);
-  assert.equal(value(3).zoom,1);
-  assert.equal(value(4).zoom,1);
-  assert.ok(Math.abs(value(1.25).focus_x-.65)<1e-5);
+  assert.equal(value(0).zoom,2);
+  assert.equal(value(1).zoom,2);
+  assert.ok(value(1.25).zoom>2 && value(1.25).zoom<2.5);
+  assert.equal(value(2).zoom,2.5);
+  assert.equal(value(3).zoom,2);
+  assert.equal(value(4).zoom,2);
+  assert.ok(Math.abs(value(1.25).focus_x-.75)<1e-5);
 });
 test("short reframe sections meet their peak without leaving the clip", () => {
   const settings={aspect:"original",zoom:1,focus_x:.5,focus_y:.5,
