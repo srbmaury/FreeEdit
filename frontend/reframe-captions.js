@@ -128,13 +128,23 @@ $("reframeAddSection").onclick = () => {
     status.textContent = "Zoom sections cannot overlap.";
     return;
   }
+  const zoom = Number($("reframeZoom").value);
+  if (zoom <= 1.001) {
+    status.textContent = "Choose Zoom above 1.00× first (try 1.80×). A 1.00× section cannot visibly zoom.";
+    $("reframeZoom").focus();
+    return;
+  }
   checkpoint();
   sections.push({start,end:Math.min(duration(),end),transition,
-    zoom:Number($("reframeZoom").value),
-    focus_x:Number($("reframeX").value),focus_y:Number($("reframeY").value)});
+    zoom, focus_x:Number($("reframeX").value),focus_y:Number($("reframeY").value)});
   sections.sort((a,b)=>a.start-b.start);
-  renderReframeSections(); refreshExportState(); render();
-  status.textContent = "Zoom section added. Play across its boundaries to review easing.";
+  renderReframeSections(); refreshExportState();
+  // Seek into the middle where the zoom is fully applied, so clicking Add
+  // yields immediate, visible feedback even when playback was elsewhere.
+  const middle = start + (end - start) / 2;
+  sourcePlayer().currentTime = middle;
+  render();
+  status.textContent = `Added ${zoom.toFixed(2)}× zoom from ${fmt(start)} to ${fmt(end)}. Previewing the section now; play across its boundaries for smooth transitions.`;
 };
 window.addEventListener("freeedit:workspace",event=>{
   if(event.detail==="open"){
