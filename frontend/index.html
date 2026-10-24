@@ -103,7 +103,7 @@
           </div>
         </div>
         <div id="toolbar" class="toolbar">
-          <button type="button" class="tool active" data-mode="select" aria-pressed="true" title="Select and move edits (V)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 3 14 9-7 1-3 7Z"/></svg><span>Select</span><kbd aria-hidden="true">V</kbd></button>
+          <button type="button" class="tool active" data-mode="select" aria-pressed="true" title="View all edits and select an item (V)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 3 14 9-7 1-3 7Z"/></svg><span>Edits</span><kbd aria-hidden="true">V</kbd></button>
           <button class="tool" data-mode="hide" title="Drag over the area to hide (H)">Hide area</button>
           <button class="tool" data-mode="text" title="Click where the text should go (T)">Add text</button>
           <button id="cutBtn" class="cut-btn" title="Remove a part of the video (X)">✂ Cut section</button>
@@ -250,7 +250,7 @@
             <p id="selectedZoomError" class="small" role="status"></p>
           </section>
           <div id="zoomEditsList" class="zoom-edits-list"></div>
-          <p id="editsEmpty" class="small">No edits yet. Add Text, Hide area, or Cut from the task rail. Select (V) in the preview toolbar lets you move existing overlays and edit their properties.</p>
+          <p id="editsEmpty" class="small">No edits yet. Add Text, Hide area, or Cut from the task rail. Edits (V) lists cuts, text, masks, captions, and zoom sections. Choose an item to edit it.</p>
         </div>
 
         <details id="backgroundPanel" class="panel background-panel">
@@ -459,7 +459,7 @@
 
   <dialog id="shortcutsDialog" class="info-dialog" aria-labelledby="shortcutsTitle">
     <form method="dialog"><h2 id="shortcutsTitle">Keyboard shortcuts</h2>
-      <dl class="shortcut-list"><dt>Space</dt><dd>Play or pause</dd><dt>V / H / T / X</dt><dd>Select / Hide area / Add text / Cut section</dd><dt>← / →</dt><dd>Step through the recording; hold Shift for one second</dd><dt>Delete</dt><dd>Remove the selected edit</dd><dt>Esc</dt><dd>Deselect and return to Select</dd><dt>⌘ or Ctrl + Z</dt><dd>Undo; add Shift to redo</dd></dl>
+      <dl class="shortcut-list"><dt>Space</dt><dd>Play or pause</dd><dt>V / H / T / X</dt><dd>Edits / Hide area / Add text / Cut section</dd><dt>← / →</dt><dd>Step through the recording; hold Shift for one second</dd><dt>Delete</dt><dd>Remove the selected edit</dd><dt>Esc</dt><dd>Deselect and return to Select</dd><dt>⌘ or Ctrl + Z</dt><dd>Undo; add Shift to redo</dd></dl>
       <p class="small">Editing shortcuts apply outside text fields. Use Place in center and the position fields to add overlays with a keyboard.</p>
       <button class="primary">Done</button></form>
   </dialog>
