@@ -52,7 +52,12 @@ const EditorModel = (() => {
   function editableProperties(edit) {
     if (!isTimedEdit(edit)) throw new TypeError("Invalid timeline edit type");
     const {id, ...properties} = edit;
-    return {...properties};
+    // Text dimensions are derived from content, font and size in the editor.
+    if (properties.type === "text") {
+      delete properties.w;
+      delete properties.h;
+    }
+    return properties;
   }
   return Object.freeze({TIMELINE_TYPES, DEFAULT_REFRAME, isTimedEdit, sorted, byType,
     sections, exportReframe, validateReframe, cutRanges, editableProperties});
