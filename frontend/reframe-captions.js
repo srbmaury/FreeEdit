@@ -175,8 +175,9 @@ function selectZoom(index) {
   window.dispatchEvent(new CustomEvent("freeedit:workspace",{detail:"zoom-selection"}));
 }
 function renderZoomSelectList() {
-  const list=$("zoomEditsList");if(!list)return;
-  list.replaceChildren();
+  const list=$("editsList");if(!list)return;
+  // renderList() owns the regular edit cards; append zoom cards to that list
+  // and sort the combined entries by their original-timeline start.
   const sections=zoomSections();
   $("editCount").textContent=S.edits.length+sections.length;
   show($("editsEmpty"),S.edits.length===0&&sections.length===0);
@@ -188,6 +189,7 @@ function renderZoomSelectList() {
     button.onclick=()=>selectZoom(index);
     row.append(button);list.append(row);
   });
+  [...list.children].sort((a,b)=>Number(a.dataset.start)-Number(b.dataset.start)).forEach(el=>list.append(el));
   syncZoomSelection();
 }
 function renderZoomTimeline(){
