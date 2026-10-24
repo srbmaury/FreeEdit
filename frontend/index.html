@@ -471,7 +471,7 @@
 
   <dialog id="shortcutsDialog" class="info-dialog" aria-labelledby="shortcutsTitle">
     <form method="dialog"><h2 id="shortcutsTitle">Keyboard shortcuts</h2>
-      <dl class="shortcut-list"><dt>Space</dt><dd>Play or pause</dd><dt>V / H / T / X</dt><dd>Edits / Hide area / Add text / Cut section</dd><dt>← / →</dt><dd>Step through the recording; hold Shift for one second</dd><dt>Delete</dt><dd>Remove the selected edit</dd><dt>Esc</dt><dd>Deselect and return to Select</dd><dt>⌘ or Ctrl + Z</dt><dd>Undo; add Shift to redo</dd></dl>
+      <dl class="shortcut-list"><dt>Space</dt><dd>Play or pause</dd><dt>V / H / T / X</dt><dd>Edits / Hide area / Add text / Cut section</dd><dt>← / →</dt><dd>Step through the recording; hold Shift for one second</dd><dt>Delete</dt><dd>Remove the selected edit</dd><dt>Esc</dt><dd>Deselect and return to Edits</dd><dt>⌘ or Ctrl + Z</dt><dd>Undo; add Shift to redo</dd></dl>
       <p class="small">Editing shortcuts apply outside text fields. Use Place in center and the position fields to add overlays with a keyboard.</p>
       <button class="primary">Done</button></form>
   </dialog>
@@ -481,7 +481,7 @@
       <p id="storageDetails">Temporary files expire automatically. Active processing is protected.</p>
       <p>Your original file stays unchanged. Use Save project to keep edits for another day, and keep the original recording. Browser recovery stores your latest session on this browser only. Starting another file discards that recovery.</p>
       <p id="storageUsage" role="status">Open this dialog to check disk usage.</p>
-      <p class="small">Cleanup removes other inactive recordings and their exports on this server, including other browser sessions. Your open recording and active processing are kept. Download anything you need first.</p>
+      <p class="small">Cleanup removes only inactive recordings belonging to this browser session. Other visitors' recordings and active processing are not affected. Download anything you need first.</p>
       <button id="cleanupStorageBtn" type="button">Clean other temporary files…</button>
       <button class="primary">Done</button></form>
   </dialog>

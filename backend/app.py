@@ -10,6 +10,7 @@ import asyncio
 import hashlib
 import re
 import os
+from urllib.parse import urlsplit
 from contextlib import asynccontextmanager
 import shutil
 import threading
@@ -19,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import pipeline
@@ -27,6 +28,7 @@ from .diagnostics import inspect_setup, require_export_space
 from .execution import Cancelled, JobControl, cancellation_scope
 from .models import ProcessRequest, SilenceRequest, PreviewRequest, BackgroundPreviewRequest, CompositionPreviewRequest
 from .observability import event, install_error_handling, public_processing_error
+from .sessions import COOKIE, create_session, verify_session
 
 ROOT = Path(__file__).resolve().parent.parent
 JOBS_DIR = Path(os.environ.get("FREEEDIT_JOBS_DIR", ROOT / "jobs"))
@@ -72,6 +74,43 @@ job_controls = {}
 job_futures = {}
 active_uploads: set[str] = set()
 MAX_PENDING_JOBS = max(1, int(os.environ.get("MAX_PENDING_JOBS", 4)))
+
+# Job tokens are not authentication: every job additionally belongs to a
+# signed browser session. Check this before all job routes (including GET media).
+@app.middleware("http")
+async def protect_session_jobs(request: Request, call_next):
+    token = request.cookies.get(COOKIE)
+    owner = verify_session(token)
+    new_cookie = owner is None
+    if new_cookie:
+        owner, token = create_session()
+    request.state.owner = owner
+
+    # Browsers send Origin on cross-origin unsafe requests; block those
+    # requests before creating uploads or processing jobs.
+    origin = request.headers.get("origin")
+    if request.method not in ("GET", "HEAD", "OPTIONS") and origin:
+        parsed = urlsplit(origin)
+        if parsed.scheme not in ("http", "https") or parsed.netloc.lower() != request.headers.get("host", "").lower():
+            return JSONResponse(status_code=403, content={"detail": "Cross-origin modification denied."})
+
+    match = re.match(r"^/api/jobs/([^/]+)(?:/|$)", request.url.path)
+    if match:
+        with jobs_lock:
+            job = jobs.get(match.group(1))
+            permitted = bool(job and job.get("owner") == owner)
+        if not permitted:
+            # Do not expose whether someone else's job exists.
+            return JSONResponse(status_code=404, content={"detail": "Job not found."})
+
+    response = await call_next(request)
+    if new_cookie:
+        response.set_cookie(
+            COOKIE, token, httponly=True, samesite="strict",
+            secure=request.url.scheme == "https", path="/",
+            max_age=7 * 24 * 3600,
+        )
+    return response
 
 
 def _update(job_id: str, **fields) -> None:
@@ -174,6 +213,7 @@ async def upload(request: Request, filename: str):
             jobs[job_id] = {
                 "id": job_id,
                 "filename": filename,
+                "owner": request.state.owner,
                 "status": "uploaded",
                 "stage": None,
                 "progress": None,
@@ -525,9 +565,12 @@ def composition_preview_result(job_id: str):
     return FileResponse(path)
 
 
-def _storage_inventory():
+def _storage_inventory(owner: str):
     entries = []
     for directory in JOBS_DIR.iterdir():
+        # Never disclose or delete another session's recordings.
+        if directory.name not in jobs or jobs[directory.name].get("owner") != owner:
+            continue
         if directory.is_dir() and len(directory.name) == 12 and all(c in "0123456789abcdef" for c in directory.name):
             size = sum(p.stat().st_size for p in directory.rglob("*") if p.is_file())
             entries.append((directory, size))
@@ -535,9 +578,9 @@ def _storage_inventory():
 
 
 @app.get("/api/storage")
-def storage(keep: str = ""):
+def storage(request: Request, keep: str = ""):
     with jobs_lock:
-        entries = _storage_inventory()
+        entries = _storage_inventory(request.state.owner)
         protected = active_uploads | set(job_controls) | {keep}
         return {"used_bytes": sum(size for _, size in entries),
                 "reclaimable_bytes": sum(size for path, size in entries if path.name not in protected),
@@ -545,12 +588,12 @@ def storage(keep: str = ""):
 
 
 @app.post("/api/storage/cleanup")
-def cleanup_storage(keep: str):
+def cleanup_storage(request: Request, keep: str):
     # The open recording is explicitly preserved alongside every active operation.
     with jobs_lock:
         protected = active_uploads | set(job_controls) | {keep}
         removed = 0
-        for path, size in _storage_inventory():
+        for path, size in _storage_inventory(request.state.owner):
             if path.name in protected:
                 continue
             shutil.rmtree(path)
@@ -582,7 +625,8 @@ def healthz():
 
 @app.get("/api/jobs/{job_id}")
 def job_status(job_id: str):
-    return _job(job_id)
+    # Session identity is internal metadata, not part of the public job API.
+    return {key: value for key, value in _job(job_id).items() if key != "owner"}
 
 
 @app.api_route("/api/jobs/{job_id}/source", methods=["GET", "HEAD"])

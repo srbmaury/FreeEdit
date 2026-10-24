@@ -23,7 +23,7 @@ A small web app for cleaning up screen recordings and other audio or video files
 
 The task rail contains **Videos · Audio · Pauses · Background · Reframe · Captions · Cut · Text · Hide area · Export**. Edits opens a unified inspector for text, captions, masks, cuts, and timed zoom sections. Reframe has separate whole-video and selected-portion controls. Add a portion with its start/end times (or use the playhead); select its Reframe entry in Edits or on the timeline to change zoom, focus, transition, or timing. Outside each portion, whole-video settings stay unchanged. Aspect ratio sets the output shape throughout. See the [focused workspace implementation notes](docs/FOCUSED_WORKSPACE.md) and [standalone design reference](docs/design/FreeEdit-Design.html); the reference is a mockup, not a running editor.
 
-**Live app:** https://freeedit.srbmaury.com. The live deployment can differ from this `design/focused-workspace` branch; features present here are not necessarily deployed. Run this branch locally to review its current UI and presenter composition. Uploaded files are processed on the FreeEdit server and stored in `./jobs/` until cleanup. Inactive files expire after 24 hours locally or 1 hour when hosted; active uploads and queued/processing exports are protected.
+**Live app:** https://freeedit.srbmaury.com. The current `main` branch contains the focused workspace, but live hosting may deploy a different revision. Verify the deployed version before assuming newly merged features are available. Uploaded files are processed on the FreeEdit server and stored in `./jobs/` until cleanup. Inactive files expire after 24 hours locally or 1 hour when hosted; active uploads and queued/processing exports are protected.
 
 ```text
 Browser (upload, place edits, preview)
@@ -238,6 +238,14 @@ scripts/              Manual performance measurement and release inventory
 ```
 
 
+## Privacy and session isolation
+
+Temporary uploads and rendered files are scoped to a signed, HttpOnly, SameSite=Strict anonymous browser cookie. This is isolation for a single-process public editor, **not** user authentication or permanent private storage. URLs from other sessions return 404, and storage cleanup is restricted to the current browser session. Losing cookies or the server's signing secret means old jobs cannot be reopened, though they still expire normally. Set a strong `FREEEDIT_SESSION_SECRET` for deployments that retain jobs across process restarts; avoid multiple server processes sharing the same jobs directory without a shared, trusted session/authentication store. HTTPS is required for secure cookies. Prevent excessive public uploads with edge/IP-level rate limits in the hosting layer as well as application-level upload and queue caps.
+
+## Reproducible releases
+
+Torch/torchaudio/DeepFilterNet are version-pinned; several web dependencies remain version ranges. The production dependency set is **not yet reproducibly locked**. For a release, generate a pinned, hashed lockfile on Python 3.12 using a compatible resolver and test the exact Docker image. Do not upgrade the paired audio/model dependencies independently. Before distributing container images, resolve the [model and third-party licensing questions](docs/LICENSE_AUDIT.md).
+
 ## Checks before release
 
 From the repository root, after installing the dependencies, run the synthetic two-video tests (FFmpeg and FFprobe must be available):
@@ -246,11 +254,11 @@ From the repository root, after installing the dependencies, run the synthetic t
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-These tests exercise presenter timing, seeked previews, mixed/presenter-only audio, no-overlap handling and muted exports. They use generated video/audio clips, not personal recordings. They **do not** replace browser QA, segmentation tests on varied real people, or long-video memory and performance tests. The focused workspace and presenter compositor on this branch remain **unmerged / not automatically deployed**. Verify the UI at desktop, 768px and phone widths in both themes, plus a real preview and export, before shipping. There is no established GitHub Actions CI for this feature branch.
+These tests exercise presenter timing, seeked previews, mixed/presenter-only audio, no-overlap handling and muted exports. They use generated video/audio clips, not personal recordings. They **do not** replace browser QA, segmentation tests on varied real people, or long-video memory and performance tests. The focused workspace is merged into `main`. GitHub Actions runs Python, Node, and synthetic FFmpeg checks through `.github/workflows/checks.yml` on this hardening branch; full browser interaction, real-person segmentation, and long-media testing still need manual QA before deploying. Verify desktop, 768px and phone widths in both themes.
 
 ## Local operation and releases
 
-- **Storage:** **⋯ → Storage and cleanup** shows temporary-file usage and free disk space. Cleanup preserves the open recording and active processing, and removes other inactive sessions and exports on that server.
+- **Storage:** **⋯ → Storage and cleanup** shows temporary-file usage for this browser session and server free disk space. Cleanup preserves the open recording and active processing, and removes only this session's inactive recordings and exports.
 - **Continue later:** save a project and retain the original media. Downloaded projects do not contain media or rendered exports; temporary files expire.
 - **Long recordings:** no local duration cap is configured by default; the upload limit is 1,024 MB. See [performance measurements and limits](docs/PERFORMANCE.md) before planning long exports.
 - **Accessibility:** native dialogs, keyboard editing controls, a skip link, visible focus, readable seek values, and reduced-motion support. This is not a claim of full accessibility conformance.
