@@ -1,41 +1,11 @@
-# FreeEdit UI design
+# FreeEdit visual design reference
 
-Open **FreeEdit-Design.html** in a browser for the interactive design reference. It includes task switching, import and export examples, appearance switching, and higher-contrast labels. It is a simulation, not a media-processing application. The editable fragment is FreeEdit-Design-Source.html.
+Open `FreeEdit-Design.html` directly in a browser. This preserves the original polished preview: a stylized recording window, camera inset, task rail, inspector, and timeline. It is an interactive mockup, not a copy of the running editor. The editable fragment is `FreeEdit-Design-Source.html`.
 
-The production implementation lives in frontend/workspace.css and frontend/workspace.js, with small hooks in app.js and index.html. Run the app normally with ./run.sh. The reference and production implementation share the preview-first layout; production retains the existing native media controls and the full Background engine from main.
+The design now includes Videos, Captions, Edits, Audio, Pauses, Background, Reframe, Cut, Text, Hide area, and Export. Presenter controls include placement, source timing, background effect, sound source, and volumes. The unified edit list exposes selection, timing, removal, and representative text/mask/reframe properties. Separate timeline lanes show pauses, cuts, masks, text, and reframe portions.
 
-## Layout
+Reframe has two sections collapsed initially, with only one expanded at a time. A dashed crop guide appears before adding a portion. Expanded controls scroll in the inspector. Processing examples expose progress, Cancel, Retry, and before/after selection. Project/help menus, import examples, light/dark/system appearance, and responsive layouts remain.
 
-Desktop uses a 132px task rail, flexible preview, and a 300px inspector with 20px gaps. At widths below 1100px, rail/inspector shrink to 106px/260px with 14px gaps. At 850px and below, tasks wrap across the top, followed by the preview, timeline, and inspector. All existing waveform, pause, cut, mask, and text lanes remain.
+Media effects and processing are illustrative. Selecting files demonstrates control states; the mockup does not process or export actual edited recordings. Run the FreeEdit app for real media editing.
 
-## Color tokens
-
-| Token | Light | Dark |
-| --- | --- | --- |
-| Page | #f7f8fb | #15171d |
-| Panel | #ffffff | #20232b |
-| Secondary surface | #f0f1f7 | #2b2f3a |
-| Text | #1c1c1a | #ececea |
-| Secondary text | #535b6b | #bec5d2 |
-| Accent | #5b50d6 | #aaa2ff |
-| Accent text | #ffffff | #19152f |
-| Border | #e1e4ed | #373c48 |
-
-Selected task labels use the main text color on a subtle accent surface. Colored timeline blocks use white text with dark fills: cuts #a92828, masks #974411, text #23623e. Do not reuse pale accents as body text on pale backgrounds. Disabled controls retain readable text and explicit disabled semantics.
-
-## Components and behavior
-
-- Task rail: Select, Audio, Pauses, Background, Cut, Text, Hide area, Export. Each task reveals one inspector; choosing Cut creates an editable cut using the existing behavior.
-- Preview: real source or exported playback, existing overlay canvas, selection/drawing, original/exported comparison, undo/redo and export shortcut.
-- Inspector: existing controls are moved rather than duplicated. Selecting an edit reveals its real timing, geometry, font, mask or cut controls.
-- Background: original, blur strength, solid color, built-in/uploaded image, full frame or fixed camera region, keyboard geometry fields, three-second processed sample. Audio-only files disable it.
-- Audio: enable noise removal, choose strength, listen to original/cleaned 10-second sample. No-audio files disable it.
-- Pauses: presets, advanced threshold/duration/padding, audition, selection, applying cuts. Preserve human review.
-- Export: presets and actual output limits; duration/summary, progress, Cancel, errors, replacement-file recovery, result review, download.
-- Processing controls and errors are outside the switchable inspector so they remain reachable during noise/background/pause/export work.
-- App menu retains project save/open, recovery, appearance, shortcuts, storage, setup diagnostics and links.
-- Retention text mirrors the server response rather than hardcoding one hour.
-
-## Validation
-
-See ../FOCUSED_WORKSPACE.md for completed DOM/syntax/contrast checks and remaining browser/real-media verification. The implementation has not been deployed. Browser rendering was not verified in this environment.
+The repository and downloaded design folders contain matching source and standalone HTML files. The standalone wrapper embeds the editable fragment. Keep both copies synchronized when updating the design. Syntax checks cover the embedded scripts; the browser tool cannot open file URLs for visual verification.

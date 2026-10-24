@@ -44,6 +44,7 @@
   ];
   let current = "edits";
   function activate(pane, mode) {
+    if (pane === "reframe" && S.job?.has_video) sourcePlayer().pause();
     current = pane;
     side.classList.toggle("is-edit-inspector", pane === "edits");
     side.setAttribute("aria-label", `${pane === "edits" ? "Edit" : pane.charAt(0).toUpperCase() + pane.slice(1)} settings`);
@@ -72,6 +73,17 @@
     };
     rail.append(button);
   }
+  const previewHeading = document.querySelector(".preview-heading");
+  previewHeading.append(byId("toolbar"));
+  const previewInfo = document.createElement("details");
+  previewInfo.className = "preview-info";
+  const infoButton = document.createElement("summary");
+  infoButton.textContent = "ⓘ";
+  infoButton.setAttribute("aria-label", "About the editing preview");
+  const infoText = document.createElement("p");
+  infoText.textContent = "Use the processed samples in Audio, Background, or Videos to check those effects. Export to review all edits together.";
+  previewInfo.append(infoButton, infoText);
+  previewHeading.querySelector(".workspace-title").parentElement.append(previewInfo);
   // The timeline spans the preview and inspector instead of competing for preview space.
   editor.append(byId("transport"));
   const actions = document.createElement("div");
@@ -111,7 +123,13 @@
   const save = document.createElement("button");
   save.type = "button"; save.className = "ghost"; save.textContent = "Save project…";
   save.onclick = () => byId("saveProjectBtn").click();
-  footer.append(note, save);
+  const projectActions = document.createElement("div");
+  projectActions.className = "workspace-project-actions";
+  const sourceReminder = document.createElement("span");
+  sourceReminder.className = "small";
+  sourceReminder.textContent = "Keep the original recording";
+  projectActions.append(sourceReminder, save);
+  footer.append(note, projectActions);
   editor.append(footer);
   const timelineTitle = document.createElement("div");
   timelineTitle.className = "timeline-heading";
@@ -141,11 +159,8 @@
       // Rebuild from current settings, not the last ordinary text/mask edit.
       renderList();
       activate("edits", "select");
-      byId("modeHint").textContent = (S.selected != null || S.selectedZoom != null)
-        ? "Selection active · Drag the selected edit, or change its properties on the right."
-        : (S.edits.length || S.reframe?.sections?.length || S.reframe?.zoom > 1 || S.reframe?.aspect !== "original")
-          ? "Edits open · Choose any cut, mask, text, caption, or zoom section here or on the timeline."
-          : "No edits yet · Add a cut, mask, caption, text, or zoom section using the task rail.";
+      byId("modeHint").textContent = "Select an edit to adjust it.";
+
     }
     if (reason === "mode") {
       if (S.mode === "background") activate("background");

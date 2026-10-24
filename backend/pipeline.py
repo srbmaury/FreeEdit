@@ -225,13 +225,14 @@ def reframe_geometry(width: int, height: int, settings: dict) -> tuple[int, int,
     return x, y, w, h
 
 
-def reframe_expressions(sections: list[dict], axis: str) -> str:
+def reframe_expressions(sections: list[dict], axis: str, baseline: float | None = None) -> str:
     """Smoothstep per-section weights evaluated on the original input timeline.
 
-    axis: z (zoom), x or y (focus). Each section eases from the unzoomed
-    frame into the chosen region and returns to the unzoomed frame.
+    axis: z (zoom), x or y (focus). Each section eases from the whole-video
+    settings into the chosen region and returns to the whole-video settings.
     """
-    expr = "1" if axis == "z" else "0.5"
+    baseline = baseline if baseline is not None else (1 if axis == "z" else .5)
+    expr = f"{baseline:.6f}"
     for section in sections:
         start, end = section["start"], section["end"]
         ease = min(section["transition"], (end - start) / 2)
@@ -244,7 +245,7 @@ def reframe_expressions(sections: list[dict], axis: str) -> str:
             # each boundary. The preview uses the same easing function.
             weight = f"({incoming})*({outgoing})"
             weight = f"({weight})*({weight})*({weight})*(10-15*({weight})+6*({weight})*({weight}))"
-        value = section["zoom"] - 1 if axis == "z" else section["focus_" + axis] - .5
+        value = (section["zoom"] if axis == "z" else section["focus_" + axis]) - baseline
         if abs(value) >= .000001:
             expr += f"+({value:.6f})*({weight})"
     return expr
@@ -262,11 +263,11 @@ def build_timed_reframe(vlabel: str, width: int, height: int, settings: dict, fp
     _, _, w, h = reframe_geometry(width, height,
         {"aspect": settings["aspect"], "zoom": 1, "focus_x": .5, "focus_y": .5})
     sections = settings["sections"]
-    z = reframe_expressions(sections, "z").replace("T", "in_time")
-    fx_t = reframe_expressions(sections, "x").replace("T", "t")
-    fy_t = reframe_expressions(sections, "y").replace("T", "t")
-    fx_in = reframe_expressions(sections, "x").replace("T", "in_time")
-    fy_in = reframe_expressions(sections, "y").replace("T", "in_time")
+    z = reframe_expressions(sections, "z", settings["zoom"]).replace("T", "in_time")
+    fx_t = reframe_expressions(sections, "x", settings["focus_x"]).replace("T", "t")
+    fy_t = reframe_expressions(sections, "y", settings["focus_y"]).replace("T", "t")
+    fx_in = reframe_expressions(sections, "x", settings["focus_x"]).replace("T", "in_time")
+    fy_in = reframe_expressions(sections, "y", settings["focus_y"]).replace("T", "in_time")
     graph = [
         f"{vlabel}fps={fps:.3f},crop={w}:{h}:x='(iw-ow)*({fx_t})':y='(ih-oh)*({fy_t})':exact=1[reframebase]",
         f"[reframebase]zoompan=z='{z}':x='(iw-iw/zoom)*({fx_in})':y='(ih-ih/zoom)*({fy_in})':d=1:s={w}x{h}:fps={fps:.3f}[reframed]"

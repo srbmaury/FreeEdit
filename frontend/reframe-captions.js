@@ -9,10 +9,12 @@ function syncReframeControls() {
   $("reframeX").value = r.focus_x;
   $("reframeY").value = r.focus_y;
   $("reframeZoomLabel").textContent = Number(r.zoom).toFixed(2) + "×";
-  // Focus also configures the next timed section. Do not disable it when
-  // the whole-recording zoom is 1×; Add section will default to 1.8×.
+  const aspectNames = {original:"Original", wide:"16:9", vertical:"9:16", square:"1:1"};
+  $("reframeWholeSummary").textContent = `${aspectNames[r.aspect]} · ${Number(r.zoom).toFixed(2)}×`;
+  // Whole-video settings remain independent of the next timed section.
   $("reframeX").disabled = false;
   $("reframeY").disabled = false;
+  if (S.job?.has_video) requestAnimationFrame(layoutStage);
 }
 function updateReframe() {
   if (!S.job?.has_video) return;
@@ -45,6 +47,7 @@ for (const id of ["reframeAspect", "reframeZoom", "reframeX", "reframeY"]) {
     const next = {...previous, zoom:Number($("reframeZoom").value), focus_x:Number($("reframeX").value), focus_y:Number($("reframeY").value)};
     S.reframe = next;
     $("reframeZoomLabel").textContent = next.zoom.toFixed(2) + "×";
+    $("reframeWholeSummary").textContent = $("reframeWholeSummary").textContent.split(" · ")[0] + " · " + next.zoom.toFixed(2) + "×";
     renderZoomSelectList();
     refreshExportState();
     render();
@@ -97,17 +100,14 @@ function renderReframeSections() {
   if (!list) return;
   list.replaceChildren();
   const sections = S.reframe?.sections || [];
-  for (const section of sections) {
+  for (const [index, section] of sections.entries()) {
     const row = document.createElement("div");
     row.className = "reframe-section";
     const label = document.createElement("span");
     label.textContent = `${fmt(section.start)}–${fmt(section.end)} · ${section.zoom.toFixed(2)}× · ${section.transition.toFixed(2)}s easing`;
     const seek = document.createElement("button");
-    seek.type = "button"; seek.textContent = "Preview";
-    seek.onclick = () => {
-      sourcePlayer().currentTime = Math.min(duration(),section.start+Math.max(.05,section.transition));
-      render();
-    };
+    seek.type = "button"; seek.textContent = "Edit";
+    seek.onclick = () => selectZoom(index);
     const remove = document.createElement("button");
     remove.type = "button"; remove.textContent = "Remove";
     remove.onclick = () => {
@@ -118,7 +118,7 @@ function renderReframeSections() {
     row.append(label,seek,remove);
     list.append(row);
   }
-  if (!sections.length) list.textContent = "No timed sections: current crop applies to the whole recording.";
+  if (!sections.length) list.textContent = "No portions added. Whole-video settings apply throughout.";
 }
 $("reframeAddSection").onclick = () => {
   if (!S.job?.has_video) return;
@@ -136,24 +136,38 @@ $("reframeAddSection").onclick = () => {
     status.textContent = "Zoom sections cannot overlap.";
     return;
   }
-  // 1.00× is the correct default for the entire recording, but it creates
-  // an invisible section. Use a useful 1.80× target on the first click.
-  const requestedZoom = Number($("reframeZoom").value);
-  const zoom = requestedZoom <= 1.001 ? 1.8 : requestedZoom;
+  const zoom = Number($("reframeSectionZoom").value);
   checkpoint();
-  sections.push({start,end:Math.min(duration(),end),transition,
-    zoom, focus_x:Number($("reframeX").value),focus_y:Number($("reframeY").value)});
+  const section = {start,end:Math.min(duration(),end),transition,
+    zoom, focus_x:Number($("reframeSectionX").value),focus_y:Number($("reframeSectionY").value)};
+  sections.push(section);
   sections.sort((a,b)=>a.start-b.start);
+  S.selectedZoom = sections.indexOf(section);
   renderReframeSections(); renderZoomSelectList(); renderTimeline(); refreshExportState();
   // Seek into the middle where the zoom is fully applied, so clicking Add
   // yields immediate, visible feedback even when playback was elsewhere.
   const middle = start + (end - start) / 2;
   sourcePlayer().currentTime = middle;
   render();
-  status.textContent = `Added ${zoom.toFixed(2)}× zoom from ${fmt(start)} to ${fmt(end)}. Previewing the section now; play across its boundaries for smooth transitions.`;
+  status.textContent = `Added Reframe from ${fmt(start)} to ${fmt(end)}. Select it in Edits or on the timeline to adjust it.`;
+  selectZoom(S.selectedZoom);
 };
+$("reframeSectionZoom").oninput = () => {
+  $("reframeSectionZoomLabel").textContent = Number($("reframeSectionZoom").value).toFixed(2) + "×";
+  render();
+};
+for (const id of ["reframeSectionX", "reframeSectionY"]) $(id).addEventListener("input", render);
+for (const [button, field] of [["reframeStartNow", "reframeStart"], ["reframeEndNow", "reframeEnd"]]) {
+  $(button).onclick = () => { $(field).value = sourcePlayer().currentTime.toFixed(2); };
+}
 window.addEventListener("freeedit:workspace",event=>{
   if(event.detail==="open"){
+    $("reframeWholeGroup").open = $("reframePortionGroup").open = false;
+    $("reframeStatus").textContent="";
+    $("reframeSectionZoom").value=1.8;
+    $("reframeSectionZoomLabel").textContent="1.80×";
+    $("reframeSectionX").value=$("reframeSectionY").value=.5;
+    $("reframeStart").max=$("reframeEnd").max=duration();
     $("reframeStart").value=0;
     $("reframeEnd").value=Math.min(3,duration());
     renderReframeSections();
@@ -174,11 +188,12 @@ function syncZoomSelection() {
 }
 function selectZoom(index) {
   if(!zoomSections()[index])return;
+  sourcePlayer().pause();
   S.selected=null;
   S.selectedZoom=index;
   document.querySelectorAll(".card.selected").forEach(card=>card.classList.remove("selected"));
   sourcePlayer().currentTime=(zoomSections()[index].start+zoomSections()[index].end)/2;
-  syncZoomSelection();renderZoomSelectList();renderTimeline();render();updateTransport();
+  syncZoomSelection();renderZoomSelectList();renderTimeline();layoutStage();updateTransport();
   window.dispatchEvent(new CustomEvent("freeedit:workspace",{detail:"zoom-selection"}));
 }
 function renderZoomSelectList() {
@@ -191,7 +206,7 @@ function renderZoomSelectList() {
   const config = S.reframe;
   const wholeVideo = !!config && (
     config.aspect !== "original" ||
-    (!sections.length && config.zoom > 1.001)
+    config.zoom > 1.001
   );
   $("editCount").textContent = S.edits.length + sections.length + Number(wholeVideo);
   show($("editsEmpty"), S.edits.length === 0 && sections.length === 0 && !wholeVideo);
@@ -205,13 +220,24 @@ function renderZoomSelectList() {
     const button = document.createElement("button");
     button.type = "button";
     const aspectNames = {original: "Original", wide: "16:9", vertical: "9:16", square: "1:1"};
-    const zoomDetail = sections.length ? "" : " · " + config.zoom.toFixed(2) + "×";
+    const zoomDetail = " · Whole video · " + config.zoom.toFixed(2) + "×";
     button.textContent = "Reframe · " + (aspectNames[config.aspect] || "Original") + zoomDetail;
     button.title = "Open Reframe settings for the whole video";
     button.onclick = () => {
+      $("reframeWholeGroup").open = true;
       window.dispatchEvent(new CustomEvent("freeedit:workspace", {detail: "reframe-settings"}));
     };
-    row.append(button);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "mini reframe-remove";
+    remove.textContent = "Remove";
+    remove.setAttribute("aria-label", "Remove whole-video Reframe");
+    remove.onclick = () => {
+      checkpoint();
+      S.reframe = {...reframeDefaults(), sections: zoomSections()};
+      syncReframeControls(); renderZoomSelectList(); renderTimeline(); render(); refreshExportState();
+    };
+    row.append(button, remove);
     list.append(row);
   }
 
@@ -222,7 +248,7 @@ function renderZoomSelectList() {
     const button = document.createElement("button");
     button.type = "button";
     button.setAttribute("aria-pressed", String(S.selectedZoom === index));
-    button.textContent = "Zoom · " + fmt(section.start) + "–" + fmt(section.end) +
+    button.textContent = "Reframe · " + fmt(section.start) + "–" + fmt(section.end) +
       " · " + section.zoom.toFixed(2) + "×";
     button.onclick = () => selectZoom(index);
     row.append(button);
@@ -245,14 +271,17 @@ function renderZoomTimeline(){
     b.className="timeline-block zoom"+(index===S.selectedZoom?" selected":"");
     b.style.left=(section.start/duration()*100)+"%";
     b.style.width=((section.end-section.start)/duration()*100)+"%";
-    b.textContent="Zoom "+section.zoom.toFixed(2)+"×";
+    b.textContent="Reframe "+section.zoom.toFixed(2)+"×";
     b.setAttribute("aria-label","Select zoom section "+fmt(section.start)+" to "+fmt(section.end));
     b.onclick=()=>selectZoom(index);
     track.append(b);
   });
 }
 for(const [id,key] of Object.entries({selectedZoomStart:"start",selectedZoomEnd:"end",selectedZoomStrength:"zoom",selectedZoomX:"focus_x",selectedZoomY:"focus_y",selectedZoomTransition:"transition"})){
-  $(id).addEventListener("change",()=>{
+  const input = $(id);
+  const sliding = input.type === "range";
+  if (sliding) input.addEventListener("change", () => { delete input.dataset.dragging; });
+  input.addEventListener(sliding ? "input" : "change",()=>{
     const index=S.selectedZoom,old=zoomSections()[index];if(!old)return;
     const value=Number($(id).value),updated={...old,[key]:value};
     const sorted=zoomSections().map((s,i)=>i===index?updated:s).sort((a,b)=>a.start-b.start);
@@ -263,7 +292,9 @@ for(const [id,key] of Object.entries({selectedZoomStart:"start",selectedZoomEnd:
       $("selectedZoomError").textContent="Invalid time or overlap. Zoom sections cannot overlap.";
       $(id).value=old[key];return;
     }
-    checkpoint();S.reframe.sections=sorted;S.selectedZoom=sorted.indexOf(updated);
+    if (!sliding || !input.dataset.dragging) checkpoint();
+    if (sliding) input.dataset.dragging = "1";
+    S.reframe.sections=sorted;S.selectedZoom=sorted.indexOf(updated);
     renderReframeSections();renderZoomSelectList();renderTimeline();refreshExportState();render();
   });
 }
@@ -282,6 +313,21 @@ reframePreview.setAttribute("aria-hidden","true");
 reframePreview.hidden=true;
 $("stage").append(reframePreview);
 const reframeCtx=reframePreview.getContext("2d",{alpha:false});
+// Show a draft before Add, or the selected saved portion, on the full source.
+// Playback returns to the cropped result. Guides never enter exports.
+function reframeGuideSection() {
+  if (!S.job?.has_video || !video.paused || S.reviewing) return null;
+  if ($("workspace-reframe") && !$("workspace-reframe").hidden) {
+    if ($("reframeWholeGroup").open) return S.reframe;
+    if (!$("reframePortionGroup").open) return null;
+    return {zoom: Number($("reframeSectionZoom").value),
+      focus_x: Number($("reframeSectionX").value), focus_y: Number($("reframeSectionY").value)};
+  }
+  return S.selectedZoom != null && !$("workspace-edits")?.hidden &&
+    !$("selectedZoomPanel").classList.contains("hidden") ? zoomSections()[S.selectedZoom] : null;
+}
+for (const id of ["reframeWholeGroup", "reframePortionGroup"]) $(id).addEventListener("toggle", layoutStage);
+for (const event of ["play", "pause"]) video.addEventListener(event, layoutStage);
 function updateReframePreview(rect){
   if(!S.job?.has_video||!rect||video.readyState<2){
     reframePreview.hidden=true;return;
@@ -293,6 +339,31 @@ function updateReframePreview(rect){
   // identical crop so text and masks retain their original pixel positions.
   reframeCtx.clearRect(0,0,reframePreview.width,reframePreview.height);
   try {
+    const section = reframeGuideSection();
+    if (section) {
+      const width = reframePreview.width, height = reframePreview.height;
+      const target = freeeditCropRect(S.job.width, S.job.height, {...S.reframe, ...section});
+      const x = target.x / S.job.width * width, y = target.y / S.job.height * height;
+      const w = target.w / S.job.width * width, h = target.h / S.job.height * height;
+      reframeCtx.drawImage(video, 0, 0, width, height);
+      reframeCtx.drawImage(canvas, 0, 0, width, height);
+      reframeCtx.beginPath();
+      reframeCtx.rect(0, 0, width, height);
+      reframeCtx.rect(x, y, w, h);
+      reframeCtx.fillStyle = "rgba(0,0,0,.5)";
+      reframeCtx.fill("evenodd");
+      const px = window.devicePixelRatio || 1;
+      reframeCtx.setLineDash([7 * px, 5 * px]);
+      reframeCtx.lineWidth = 4 * px;
+      reframeCtx.strokeStyle = "#17142f";
+      reframeCtx.strokeRect(x, y, w, h);
+      reframeCtx.lineWidth = 2 * px;
+      reframeCtx.strokeStyle = "#c4b5fd";
+      reframeCtx.strokeRect(x, y, w, h);
+      reframeCtx.setLineDash([]);
+      reframePreview.hidden = false;
+      return;
+    }
     reframeCtx.drawImage(video,rect.x,rect.y,rect.w,rect.h,0,0,reframePreview.width,reframePreview.height);
     reframeCtx.drawImage(canvas,rect.x*canvas.width/S.job.width,rect.y*canvas.height/S.job.height,rect.w*canvas.width/S.job.width,rect.h*canvas.height/S.job.height,0,0,reframePreview.width,reframePreview.height);
     reframePreview.hidden=false;

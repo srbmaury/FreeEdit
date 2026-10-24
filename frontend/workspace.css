@@ -33,7 +33,7 @@ button.primary, a.button.primary { background: var(--accent); color: var(--accen
 :root[data-theme="dark"] .workspace-rail button[aria-pressed="true"] { color: #e5e1ff; background: #35314e; }
 .workspace-rail button:last-child { margin-top: 20px; }
 .workspace-rail button:disabled { color: var(--muted); background: transparent; }
-.editor > .main { grid-column: 2; grid-row: 1; padding: 12px 14px; min-width: 0; }
+.editor > .main { grid-column: 2; grid-row: 1; padding: 18px; min-width: 0; }
 .editor > .side { grid-column: 3; grid-row: 1; background: var(--surface); border-left: 1px solid var(--border); padding: 22px 18px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .inspector-heading { color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
 .workspace-pane[hidden] { display: none !important; }
@@ -58,10 +58,10 @@ button.primary, a.button.primary { background: var(--accent); color: var(--accen
 :root[data-theme="dark"] #toolbar > .tool[data-mode="select"].active { color: #e5e1ff; background: #35314e; border-color: #7067ac; }
 #toolbar > .tool[data-mode="select"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 #toolbar .hint { width: auto; margin: 0; font-size: 12px; }
-.stage-wrap { min-height: 260px; padding: 6px; background: var(--stage); border: 0; border-radius: 9px; }
-.stage { flex-shrink: 0; box-shadow: 0 12px 30px #0002; }
+.stage-wrap { min-height: 260px; padding: 12px; background: var(--stage); border: 0; border-radius: 9px; }
+.stage { flex-shrink: 0; border-radius: 6px; overflow: hidden; box-shadow: 0 12px 30px #0002; }
 .stage video { background: #000; }
-#resultVideo { max-height: 56vh; }
+#resultVideo { max-height: 78vh; max-width: 100%; }
 .meta { font-size: 11px; padding: 12px 0 0; color: var(--muted); }
 .project-recovery { margin-bottom: 12px; }
 .project-status { font-size: 11px; }
@@ -81,35 +81,10 @@ button.primary, a.button.primary { background: var(--accent); color: var(--accen
 .timeline-block.cut { background: var(--cut); }
 .timeline-help { font-size: 11px; line-height: 1.6; color: var(--muted); margin-bottom: 0; }
 .edits { max-height: 48vh; }
-/* The Select/Your edits inspector fills the available desktop column height.
-   Only the edit list scrolls, not the header or processing controls. */
+/* An inspector scrolls independently and never stretches the recording row. */
 @media (min-width: 851px) {
-  .editor > .side.is-edit-inspector {
-    min-height: min(720px, calc(100vh - 72px));
-    min-height: min(720px, calc(100dvh - 72px));
-    min-width: 0;
-  }
-  .side.is-edit-inspector #workspace-edits:not([hidden]) {
-    display: flex;
-    flex: 1 1 auto;
-    flex-direction: column;
-    min-height: 0;
-  }
-  .side.is-edit-inspector #editsPanel {
-    display: flex;
-    flex: 1 1 auto;
-    flex-direction: column;
-    min-height: 0;
-  }
-  .side.is-edit-inspector #editsList {
-    flex: 1 1 auto;
-    min-height: 0;
-    max-height: none;
-    overflow-y: auto;
-    overscroll-behavior-y: contain;
-    scrollbar-gutter: stable;
-  }
-  .side.is-edit-inspector #editsList:empty { flex-grow: 0; }
+  .editor > .side { max-height: calc(100dvh - 72px); overflow-y: auto; overscroll-behavior-y: contain; align-self: start; }
+  .side.is-edit-inspector #editsList { max-height: 42vh; overflow-y: auto; scrollbar-gutter: stable; }
 }
 .workspace-footer { grid-column: 1 / -1; grid-row: 3; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 22px; border-top: 1px solid var(--border); background: var(--bg); }
 .workspace-retention { margin: 0; line-height: 1.6; font-size: 11px; }
@@ -118,7 +93,7 @@ button.primary, a.button.primary { background: var(--accent); color: var(--accen
 .side > #procError { margin: 0; }
 @media (max-width: 1100px) {
   .editor { grid-template-columns: 130px minmax(0, 1fr) 270px; }
-  .editor > .main { padding: 12px; }
+  .editor > .main { padding: 18px; }
   .editor > .side { padding: 18px 14px; }
   .workspace-rail { padding: 18px 6px; }
 }
@@ -181,3 +156,63 @@ button.primary, a.button.primary { background: var(--accent); color: var(--accen
 :root[data-theme="dark"] .zoom-edit-row button[aria-pressed="true"] { background: #35314e; color: #e5e1ff; }
 #stage > #reframePreviewCanvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 4; }
 #stage > #reframePreviewCanvas[hidden] { display: none !important; }
+
+.zoom-edit-row { display: flex; gap: 6px; }
+.zoom-edit-row > button:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.zoom-edit-row > .reframe-remove { width: auto; flex-shrink: 0; }
+
+#editsPanel:has(#selectedZoomPanel:not(.hidden)) #editsList { max-height: 180px; overflow-y: auto; }
+
+/* Keep Reframe compact; opening controls scrolls the inspector, not the preview. */
+.reframe-group { border: 1px solid var(--border); border-radius: 8px; margin: 10px 0; }
+.reframe-group > summary { cursor: pointer; padding: 12px; font-size: 13px; font-weight: 600; }
+.reframe-group > summary .small { display: block; margin: 4px 0 0 15px; font-size: 11px; font-weight: 400; }
+.reframe-group-body { padding: 0 12px 12px; }
+.reframe-group-body > .small { margin: 0 0 12px; }
+.reframe-time-range { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.reframe-time-range .with-btn { flex-wrap: wrap; }
+.reframe-time-range input { width: 100%; min-width: 0; }
+.reframe-time-range .mini { font-size: 10px; padding: 4px 6px; }
+@media (min-width: 851px) {
+  .editor > .side:has(#workspace-reframe:not([hidden])) { max-height: calc(100dvh - 72px); overflow-y: auto; overscroll-behavior-y: contain; align-self: start; }
+}
+
+/* Visual rhythm from the standalone design: quiet surfaces, framed media,
+   compact rows and clear hierarchy instead of stacked control boxes. */
+.workspace-rail { padding-top: 22px; gap: 7px; }
+.workspace-rail button { font-weight: 500; font-size: 13px; }
+.workspace-pane .field { margin-bottom: 14px; }
+.workspace-pane .field > span { color: var(--muted); }
+.workspace-pane input:not([type="range"]):not([type="checkbox"]):not([type="color"]),
+.workspace-pane select, .workspace-pane textarea { border-color: var(--border); padding: 8px 10px; border-radius: 7px; font-size: 12px; }
+.workspace-pane .small { color: var(--muted); }
+.workspace-pane .section-title { margin-bottom: 10px; }
+.workspace-pane .card { border-radius: 8px; }
+.workspace-pane .card:not(.selected) { padding: 10px 0; border-bottom: 1px solid var(--border); border-radius: 0; }
+.workspace-pane .card-title { color: var(--text); font-weight: 500; }
+.inspector-heading { padding-bottom: 0; border-bottom: 0; margin-bottom: 2px; }
+.selected-zoom-panel { background: var(--bg); border-color: var(--border); }
+.project-recovery { margin-bottom: 16px; }
+#toolbar .hint { color: var(--muted); font-size: 11px; }
+@media (max-width: 850px) { .stage-wrap { padding: 12px; } }
+@media (max-width: 600px) { .stage-wrap { padding: 8px; } }
+
+/* Compact preview header, with secondary guidance available on demand. */
+.preview-heading { align-items: center; gap: 10px; margin-bottom: 12px; }
+.preview-heading > div:first-child { display: flex; align-items: center; gap: 8px; }
+.workspace-title { margin: 0; }
+#previewLabel { display: none; }
+.main:has(#backToEditBtn:not(.hidden)) #previewLabel { display: inline; }
+.preview-heading #toolbar { margin: 0 0 0 auto; display: flex; justify-content: flex-end; gap: 8px; width: auto; }
+#toolbar[data-mode="select"]:not(.has-edits) #modeHint { display: none; }
+#toolbar[data-mode="select"] #modeHint { font-size: 11px; max-width: 165px; }
+.project-recovery { margin-bottom: 10px; }
+.project-status { color: var(--muted); font-size: 11px; margin: 0; }
+.preview-info { position: relative; }
+.preview-info > summary { list-style: none; cursor: pointer; color: var(--muted); border-radius: 4px; padding: 4px; }
+.preview-info > summary::-webkit-details-marker { display: none; }
+.preview-info > summary:focus-visible { outline: 2px solid var(--accent); }
+.preview-info > p { position: absolute; z-index: 10; top: 100%; left: 0; width: min(280px, 65vw); margin: 6px 0 0; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 20px #0002; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.workspace-project-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.workspace-project-actions > span { margin: 0; color: var(--muted); font-size: 11px; }
+@media(max-width:600px) { .preview-heading #toolbar { flex-wrap: wrap; } #toolbar[data-mode="select"] #modeHint { display: none; } }

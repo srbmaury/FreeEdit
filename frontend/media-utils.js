@@ -23,7 +23,7 @@ function freeeditCropRect(width, height, settings) {
 function freeeditReframeAt(settings, time) {
   const base=settings || {aspect:"original",zoom:1,focus_x:.5,focus_y:.5,sections:[]};
   if (!base.sections?.length) return base;
-  const result={aspect:base.aspect,zoom:1,focus_x:.5,focus_y:.5};
+  const result={aspect:base.aspect,zoom:base.zoom,focus_x:base.focus_x,focus_y:base.focus_y};
   for (const s of base.sections) {
     if (time<s.start || time>s.end) continue;
     const edge=Math.min(s.transition,(s.end-s.start)/2);
@@ -32,9 +32,9 @@ function freeeditReframeAt(settings, time) {
         Math.min(1,Math.max(0,(s.end-time)/edge)) : 1;
     // Quintic smootherstep, matching the FFmpeg export at both boundaries.
     const eased=t*t*t*(10-15*t+6*t*t);
-    result.zoom+=(s.zoom-1)*eased;
-    result.focus_x+=(s.focus_x-.5)*eased;
-    result.focus_y+=(s.focus_y-.5)*eased;
+    result.zoom+=(s.zoom-base.zoom)*eased;
+    result.focus_x+=(s.focus_x-base.focus_x)*eased;
+    result.focus_y+=(s.focus_y-base.focus_y)*eased;
   }
   return result;
 }

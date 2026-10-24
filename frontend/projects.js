@@ -191,7 +191,7 @@ function saveRecovery() {
   try {
     localStorage.setItem(projects.key, JSON.stringify({project, jobId: S.job.id, waveform: S.job.waveform, savedAt: new Date().toISOString()}));
     projects.signature = signature;
-    $("projectStatus").textContent = `Recovery saved at ${new Date().toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})} · Keep the original recording` ;
+    $("projectStatus").textContent = `Saved in this browser · ${new Date().toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})}` ;
   } catch {
     $("projectStatus").textContent = "Browser recovery is unavailable. Use Save project to keep your edits.";
   }

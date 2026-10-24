@@ -93,7 +93,7 @@
       <div class="main">
         <div class="project-recovery"><p id="projectStatus" class="project-status" role="status" aria-live="polite"></p><button id="takeRecoveryBtn" class="mini hidden">Use recovery for this tab</button></div>
         <div class="preview-heading">
-          <div><h2 class="workspace-title">Your recording</h2><span id="previewLabel" role="status">Edits preview · use the audio sample to hear noise removal</span></div>
+          <div><h2 class="workspace-title">Preview</h2><span id="previewLabel" role="status">Editing preview</span></div>
           <div class="preview-actions">
             <div id="previewSwitch" class="segmented hidden" role="group" aria-label="Compare recording">
               <button id="originalPreviewBtn" aria-pressed="false">Original</button>
@@ -110,7 +110,7 @@
           <button id="undoBtn" disabled title="Undo (⌘/Ctrl+Z)">Undo</button><button id="redoBtn" disabled title="Redo (⌘/Ctrl+Shift+Z)">Redo</button>
           <button id="placeEditBtn" class="ghost hidden">Place in center</button>
           <button id="reviewSelectionBtn" class="ghost hidden" aria-pressed="false">Review selection</button>
-          <span id="modeHint" class="hint">Click an edit to select it. Drag it to move it.</span>
+          <span id="modeHint" class="hint">Select an edit to adjust it.</span>
         </div>
 
         <div id="stageWrap" class="stage-wrap">
@@ -201,20 +201,32 @@
         </section>
         <section id="reframePanel" class="panel">
           <h2 class="section-title">Reframe recording</h2>
-          <p class="small">Crop or zoom without changing the original. The dashed guide shows what the export will retain.</p>
+          <p class="small">Change the whole video or zoom a selected portion.</p>
+          <details id="reframeWholeGroup" class="reframe-group" name="reframe-scope">
+          <summary>Whole video <span id="reframeWholeSummary" class="small">Original · 1.00×</span></summary>
+          <div class="reframe-group-body">
           <label class="field"><span>Aspect ratio</span><select id="reframeAspect">
             <option value="original">Original</option><option value="wide">16:9 · Landscape</option>
             <option value="vertical">9:16 · Portrait</option><option value="square">1:1 · Square</option>
           </select></label>
-          <label class="field"><span>Zoom</span><input id="reframeZoom" type="range" min="1" max="3" step="0.05" value="1"><output id="reframeZoomLabel">1.00×</output></label>
+          <label class="field"><span>Whole-video zoom</span><input id="reframeZoom" type="range" min="1" max="3" step="0.05" value="1"><output id="reframeZoomLabel">1.00×</output></label>
           <label class="field"><span>Horizontal focus</span><input id="reframeX" type="range" min="0" max="1" step="0.01" value="0.5"></label>
           <label class="field"><span>Vertical focus</span><input id="reframeY" type="range" min="0" max="1" step="0.01" value="0.5"></label>
-          <div class="panel-divider"><strong>Animated sections</strong></div>
-          <p class="small">Set a range on the original timeline; zoom eases in and out at its boundaries. The aspect ratio remains constant.</p>
-          <label class="field"><span>From (seconds)</span><input id="reframeStart" type="number" min="0" step="0.1" value="0"></label>
-          <label class="field"><span>To (seconds)</span><input id="reframeEnd" type="number" min="0" step="0.1" value="3"></label>
+          </div></details>
+          <details id="reframePortionGroup" class="reframe-group" name="reframe-scope">
+          <summary>Selected portion <span class="small">Add a timed zoom</span></summary>
+          <div class="reframe-group-body">
+          <p class="small">Use the dashed guide to frame this portion. The rest stays unchanged.</p>
+          <div class="reframe-time-range">
+          <label class="field"><span>From (seconds)</span><div class="with-btn"><input id="reframeStart" type="number" min="0" step="0.1" value="0"><button id="reframeStartNow" type="button" class="mini">Use playhead</button></div></label>
+          <label class="field"><span>To (seconds)</span><div class="with-btn"><input id="reframeEnd" type="number" min="0" step="0.1" value="3"><button id="reframeEndNow" type="button" class="mini">Use playhead</button></div></label>
+          </div>
+          <label class="field"><span>Portion zoom</span><input id="reframeSectionZoom" type="range" min="1" max="3" step="0.05" value="1.8"><output id="reframeSectionZoomLabel">1.80×</output></label>
+          <label class="field"><span>Portion horizontal focus</span><input id="reframeSectionX" type="range" min="0" max="1" step="0.01" value="0.5"></label>
+          <label class="field"><span>Portion vertical focus</span><input id="reframeSectionY" type="range" min="0" max="1" step="0.01" value="0.5"></label>
           <label class="field"><span>Transition (seconds)</span><input id="reframeTransition" type="number" min="0" max="1.5" step="0.05" value="0.35"></label>
-          <button id="reframeAddSection" type="button">Add zoom section</button>
+          <button id="reframeAddSection" type="button">Add Reframe to portion</button>
+          </div></details>
           <div id="reframeSections" aria-label="Zoom sections"></div>
           <p id="reframeStatus" role="status" class="small"></p>
           <button id="reframeReset" type="button" class="ghost">Reset crop and sections</button>
@@ -237,18 +249,19 @@
         </section>
         <div id="editsPanel" class="panel">
           <h2 class="section-title">Edits <span id="editCount" class="count">0</span></h2>
+          <div id="editsList" class="edits" aria-label="All edits in timeline order"></div>
           <section id="selectedZoomPanel" class="selected-zoom-panel hidden" aria-label="Zoom section properties">
-            <h3>Zoom properties</h3>
+            <h3>Reframe portion</h3>
+            <p class="small">The rectangle shows the area this portion will keep. Adjust zoom and focus to position it. Play to preview the result.</p>
             <label class="field"><span>From (seconds)</span><input id="selectedZoomStart" type="number" min="0" step="0.01"></label>
             <label class="field"><span>To (seconds)</span><input id="selectedZoomEnd" type="number" min="0" step="0.01"></label>
             <label class="field"><span>Zoom</span><input id="selectedZoomStrength" type="range" min="1" max="3" step="0.05"><output id="selectedZoomStrengthLabel"></output></label>
             <label class="field"><span>Horizontal focus</span><input id="selectedZoomX" type="range" min="0" max="1" step="0.01"></label>
             <label class="field"><span>Vertical focus</span><input id="selectedZoomY" type="range" min="0" max="1" step="0.01"></label>
             <label class="field"><span>Transition (seconds)</span><input id="selectedZoomTransition" type="number" min="0" max="1.5" step="0.05"></label>
-            <button id="selectedZoomRemove" type="button" class="ghost">Remove zoom section</button>
+            <button id="selectedZoomRemove" type="button" class="ghost">Remove Reframe portion</button>
             <p id="selectedZoomError" class="small" role="status"></p>
           </section>
-          <div id="editsList" class="edits" aria-label="All edits in timeline order"></div>
           <p id="editsEmpty" class="small">No edits yet. Add Text, Hide area, or Cut from the task rail. Edits (V) lists cuts, text, masks, captions, and zoom sections. Choose an item to edit it.</p>
         </div>
 

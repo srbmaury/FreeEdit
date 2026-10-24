@@ -41,7 +41,7 @@ const FONTS = {
   mono: 'Menlo, Consolas, monospace',
 };
 const MODE_HINTS = {
-  select: "Click an edit to select it. Drag it to move it.",
+  select: "Select an edit to adjust it.",
   hide: "Drag over the part of the video you want to hide.",
   text: "Click where the text should go.",
   background: "Drag a rectangle around the camera inset. Press Escape to cancel.",
@@ -236,10 +236,12 @@ function layoutStage() {
   const maxW = wrap.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
   // Use more of the workspace while preserving the recording's aspect ratio.
   // The timeline stays beneath the preview and never gets overlapped.
-  const maxH = Math.max(280, window.innerHeight * (window.innerWidth <= 850 ? 0.60 : 0.76));
+  const maxH = Math.max(280, window.innerHeight * (window.innerWidth <= 850 ? 0.65 : 0.78));
   const { width: W, height: H } = S.job;
-  const scale = Math.min(maxW / W, maxH / H);
-  const dw = Math.round(W * scale), dh = Math.round(H * scale);
+  const guide = typeof reframeGuideSection === "function" && reframeGuideSection();
+  const shape = guide ? {w: W, h: H} : freeeditCropRect(W, H, {...S.reframe, zoom: 1});
+  const scale = Math.min(maxW / shape.w, maxH / shape.h);
+  const dw = Math.round(shape.w * scale), dh = Math.round(shape.h * scale);
   const stage = $("stage");
   stage.style.width = dw + "px";
   stage.style.height = dh + "px";
@@ -386,6 +388,8 @@ function paintHide(e) {
 
 function render() {
   refreshExportState();
+  $("toolbar").dataset.mode = S.mode;
+  $("toolbar").classList.toggle("has-edits", S.edits.length > 0 || !!S.reframe?.sections?.length || S.reframe?.zoom > 1 || S.reframe?.aspect && S.reframe.aspect !== "original");
   if (!S.job?.has_video) return;
   const W = S.job.width, H = S.job.height;
   ctx.clearRect(0, 0, W, H);
@@ -447,7 +451,7 @@ function render() {
     ctx.restore();
   }
   if (typeof updateReframePreview === "function") {
-    const active = S.reframe && (S.reframe.aspect !== "original" || S.reframe.zoom > 1 || S.reframe.sections?.length);
+    const active = reframeGuideSection() || S.reframe && (S.reframe.aspect !== "original" || S.reframe.zoom > 1 || S.reframe.sections?.length);
     updateReframePreview(active ? freeeditCropRect(W, H, freeeditReframeAt(S.reframe, video.currentTime)) : null);
   }
 }
@@ -460,9 +464,11 @@ function normRect(d) {
 // ---------- canvas interaction ----------
 function toSource(ev) {
   const r = canvas.getBoundingClientRect();
+  const crop = reframeGuideSection() ? {x: 0, y: 0, w: S.job.width, h: S.job.height}
+    : freeeditCropRect(S.job.width, S.job.height, freeeditReframeAt(S.reframe, video.currentTime));
   return {
-    x: clamp(((ev.clientX - r.left) / r.width) * S.job.width, 0, S.job.width),
-    y: clamp(((ev.clientY - r.top) / r.height) * S.job.height, 0, S.job.height),
+    x: crop.x + clamp((ev.clientX - r.left) / r.width, 0, 1) * crop.w,
+    y: crop.y + clamp((ev.clientY - r.top) / r.height, 0, 1) * crop.h,
   };
 }
 
@@ -816,10 +822,10 @@ function refreshExportState() {
   const removed = cutRanges().reduce((sum, [a, b]) => sum + b - a, 0);
   $("noisePreviewBtn").disabled = !!S.operation || !!getPresenterSettings();
   $("noisePreviewBtn").title = getPresenterSettings() ? "The noise sample uses the main recording. Export to hear noise reduction on the combined sound." : "";
-  $("exportSummary").textContent = `${fmt(Math.max(0, duration() - removed))} output · ${S.edits.filter(e => e.type === "cut").length} cuts · ${S.edits.filter(e => e.type === "hide").length} masks · Noise reduction ${$("denoise").checked ? "on" : "off"}${getBackgroundSettings() && $("exportPreset").value !== "audio_only" ? " · Background " + S.background.mode : ""}`;
+  $("exportSummary").textContent = `${fmt(Math.max(0, duration() - removed))} output · ${S.edits.filter(e => e.type === "cut").length} cuts · ${S.edits.filter(e => e.type === "hide").length} masks · Reframe ${S.reframe?.sections?.length ? S.reframe.sections.length + (S.reframe.sections.length === 1 ? " portion" : " portions") : S.reframe && (S.reframe.aspect !== "original" || S.reframe.zoom > 1.001) ? "whole video" : "off"} · Noise reduction ${$("denoise").checked ? "on" : "off"}${getBackgroundSettings() && $("exportPreset").value !== "audio_only" ? " · Background " + S.background.mode : ""}`;
   const stale = S.exportSignature !== null && S.exportSignature !== editSignature();
   $("resultNote").textContent = stale ? "Edits changed. Export again to include them; this download is the previous result." : "Rendered export ready to review.";
-  $("previewLabel").textContent = S.reviewing ? `${S.compareOriginal ? "Original recording" : "Rendered export"}${stale ? " · edits changed since export" : ""}` : "Edits preview · audio and background effects use processed samples";
+  $("previewLabel").textContent = S.reviewing ? `${S.compareOriginal ? "Original recording" : "Rendered export"}${stale ? " · edits changed since export" : ""}` : "Editing preview";
 }
 $("denoise").addEventListener("change", refreshExportState);
 $("strength").addEventListener("change", refreshExportState);
@@ -898,7 +904,9 @@ function updatePresetInfo() {
   const limits = [LIMITS.max_output_side, LIMITS.presets?.[preset]?.max_side || (preset === "small" ? 1280 : 0)].filter(v => v > 0);
   const scale = limits.length ? Math.min(1, Math.min(...limits) / Math.max(S.job.width, S.job.height)) : 1;
   const even = n => Math.max(2, (scale < 1 ? Math.round(n / 2) : Math.floor(n / 2)) * 2);
-  const w = even(S.job.width * scale), h = even(S.job.height * scale);
+  const crop = freeeditCropRect(even(S.job.width * scale), even(S.job.height * scale),
+    {...S.reframe, zoom: S.reframe?.sections?.length ? 1 : S.reframe.zoom});
+  const w = crop.w, h = crop.h;
   $("presetInfo").textContent = `MP4 · H.264 / AAC · ${w}×${h}. Size depends on the recording.${scale < 0.8 ? " Resolution will be reduced; check small text in the export." : ""}`;
 }
 $("exportPreset").addEventListener("change", refreshExportState);
