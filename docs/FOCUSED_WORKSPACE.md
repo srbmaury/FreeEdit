@@ -6,8 +6,8 @@ Feature branch: design/focused-workspace.
 ## What changes
 
 - Desktop: task rail, recording preview, one focused inspector, full-width timeline beneath preview and inspector.
-- Tasks: Videos, Audio, Pauses, Background, Cut, Text, Hide area, Export. **Select (V)** lives in the preview toolbar instead of the task rail.
-- The inspector shows **Your edits** until an edit is selected, then **Edit properties**. On desktop the Select inspector fills the right-hand column, with the edit list scrolling within the available height rather than stopping at 48vh. On narrow screens the list expands naturally in document flow. Using Select preserves presenter-inset positioning.
+- Tasks: Videos, Audio, Pauses, Background, Cut, Text, Hide area, Export. **Edits (V)** lives in the preview toolbar instead of the task rail.
+- The Edits inspector shows all cuts, masks, text, captions, and zoom sections; choosing an item reveals its properties. On desktop the Select inspector fills the right-hand column, with the edit list scrolling within the available height rather than stopping at 48vh. On narrow screens the list expands naturally in document flow. Using Select preserves presenter-inset positioning.
 - Original edit controls, timeline lanes, waveform, upload, project recovery, save/open, themes, processing APIs, and output comparison remain connected to their existing handlers.
 - Background retains blur/color/image choices, built-in and uploaded images, fixed camera inset selection, numeric region fields, and the real three-second processed sample from main.
 - Undo/redo and an export shortcut sit next to preview actions.
@@ -18,7 +18,7 @@ Feature branch: design/focused-workspace.
 
 ## Timed Reframe
 
-Reframe can now apply smooth zoom and pan only between selected original-timeline start/end values. Set the aspect ratio and desired zoom/focus, choose start/end and transition duration (0–1.5 seconds per edge), then add a section. Sections cannot overlap; up to 20 are supported. FFmpeg uses a smoothstep ease-in/ease-out, and returns to the full fixed-aspect frame outside every section. The preview outlines the cropped region during playback. The exported MP4 has one constant aspect ratio; changing aspect ratio in the middle of a file is intentionally unsupported. The original full-recording crop is retained when no timed sections exist.
+Reframe can now apply smooth zoom and pan only between selected original-timeline start/end values. Set the aspect ratio and desired zoom/focus, choose start/end and transition duration (0–1.5 seconds per edge), then add a section. Sections cannot overlap; up to 20 are supported. FFmpeg uses a smoothstep ease-in/ease-out, and returns to the full fixed-aspect frame outside every section. The preview renders the cropped picture with smoother eased transitions during playback. The exported MP4 has one constant aspect ratio; changing aspect ratio in the middle of a file is intentionally unsupported. The original full-recording crop is retained when no timed sections exist.
 
 ## Reframe and captions
 
