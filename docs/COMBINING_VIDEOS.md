@@ -5,7 +5,7 @@ Upload the main recording, then open **Videos → Add presenter video…**. Free
 ## Placement and timing
 
 - Choose a corner and inset width, or set X/Y in source pixels.
-- In Select mode, drag the inset in the editor to move it. Drag its lower-right corner to resize it. Its aspect ratio is preserved. Presenter placement, timing, audio, and effect changes participate in Undo/Redo.
+- Use **Select (V)** in the preview toolbar to drag the inset in the editor to move it. The **Videos** inspector remains open while selecting and positioning the presenter. Drag its lower-right corner to resize it. Its aspect ratio is preserved. Presenter placement, timing, audio, and effect changes participate in Undo/Redo.
 - **Start in main video** sets when the presenter appears on the original main timeline.
 - **Presenter from/to** selects which part of the presenter recording is used.
 - The presenter disappears when that range ends; it never extends the main recording.
