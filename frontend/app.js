@@ -652,6 +652,7 @@ function addEdit(props) {
   if (e.type === "text") { const m = textMetrics(e); e.w = m.w; e.h = m.h; }
   S.edits.push(e);
   S.selected = e.id;
+  S.selectedZoom = null;
   renderList();
   render();
   updateTransport();
@@ -695,7 +696,6 @@ function cardTitle(e) {
 
 function renderList() {
   if (S.selected) window.dispatchEvent(new CustomEvent("freeedit:workspace", { detail: "selection" }));
-  if (typeof renderZoomSelectList === "function") renderZoomSelectList();
   const list = $("editsList");
   list.innerHTML = "";
   $("editCount").textContent = S.edits.length;
@@ -706,6 +706,7 @@ function renderList() {
     const tpl = $({ hide: "hideCardTpl", text: "textCardTpl", cut: "cutCardTpl" }[e.type]).content.cloneNode(true);
     const card = tpl.querySelector(".card");
     card.dataset.id = e.id;
+    card.dataset.start = e.start;
     card.classList.toggle("selected", e.id === S.selected);
     card.querySelector(".times").append($("timesTpl").content.cloneNode(true));
     const title = card.querySelector(".card-title");
@@ -765,6 +766,7 @@ function renderList() {
     });
     list.append(tpl);
   }
+  if (typeof renderZoomSelectList === "function") renderZoomSelectList();
 }
 
 document.addEventListener("keydown", (ev) => {
@@ -806,6 +808,7 @@ function restoreHistory(redo = false) {
   restorePresenter(restored.presenter, true);
   syncBackgroundControls(); invalidateBackgroundPreview();
   S.selected = null;
+  S.selectedZoom = null;
   renderList(); render(); updateTransport();
 }
 $("undoBtn").onclick = () => restoreHistory();
