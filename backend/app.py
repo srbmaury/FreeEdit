@@ -625,7 +625,8 @@ def healthz():
 
 @app.get("/api/jobs/{job_id}")
 def job_status(job_id: str):
-    return _job(job_id)
+    # Session identity is internal metadata, not part of the public job API.
+    return {key: value for key, value in _job(job_id).items() if key != "owner"}
 
 
 @app.api_route("/api/jobs/{job_id}/source", methods=["GET", "HEAD"])
