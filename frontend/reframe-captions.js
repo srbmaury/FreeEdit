@@ -22,16 +22,20 @@ function updateReframe() {
   };
   try { freeeditCropRect(S.job.width, S.job.height, next); }
   catch (error) { $("modeHint").textContent = error.message; return; }
-  checkpoint();
+  if (JSON.stringify(S.reframe) !== JSON.stringify(next)) checkpoint();
   S.reframe = next;
   syncReframeControls();
   refreshExportState();
   render();
 }
 for (const id of ["reframeAspect", "reframeZoom", "reframeX", "reframeY"]) {
-  $(id).addEventListener("change", updateReframe);
+  $(id).addEventListener("change", event => {
+    updateReframe();
+    delete event.target.dataset.dragging;
+  });
   if (id !== "reframeAspect") $(id).addEventListener("input", () => {
-    // Live feedback while dragging without filling undo history every pixel.
+    // Record a single undo step at the start of the drag, before mutating.
+    if (!event.target.dataset.dragging) { checkpoint(); event.target.dataset.dragging = "1"; }
     const previous = S.reframe || reframeDefaults();
     const next = {...previous, zoom:Number($("reframeZoom").value), focus_x:Number($("reframeX").value), focus_y:Number($("reframeY").value)};
     S.reframe = next;
