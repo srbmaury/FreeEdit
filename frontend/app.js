@@ -25,9 +25,21 @@ const S = {
   reviewLoop: null,
   background: null,
   reframe: null,
-  selectedZoom: null,
 };
 
+const editorStore = createEditorStore(S);
+function commitEdit(reason, mutation, saveUndo = true) {
+  if (saveUndo) checkpoint();
+  return editorStore.dispatch(reason, mutation);
+}
+editorStore.subscribe(() => {
+  if (!S.job) return;
+  renderList();
+  if (typeof renderReframeSections === "function") renderReframeSections();
+  render();
+  updateTransport();
+  refreshExportState();
+});
 let pollRevision = 0;
 
 const video = $("video");
@@ -170,13 +182,12 @@ function openEditor(job) {
   S.compareOriginal = false;
   S.job = job;
   S.edits = [];
-  S.selectedZoom = null;
   S.undo = []; S.redo = [];
   resetNoisePreview();
   resetBackground();
   resetVideos();
   S.exportSignature = null; S.reviewing = false;
-  S.reframe = {aspect: "original", zoom: 1, focus_x: .5, focus_y: .5, sections: []};
+  S.reframe = {...EditorModel.DEFAULT_REFRAME};
   if (typeof syncReframeControls === "function") syncReframeControls();
   S.operation = null; S.suggestions = [];
   resetTimeline();
@@ -389,7 +400,7 @@ function paintHide(e) {
 function render() {
   refreshExportState();
   $("toolbar").dataset.mode = S.mode;
-  $("toolbar").classList.toggle("has-edits", S.edits.length > 0 || !!S.reframe?.sections?.length || S.reframe?.zoom > 1 || S.reframe?.aspect && S.reframe.aspect !== "original");
+  $("toolbar").classList.toggle("has-edits", S.edits.length > 0 || !!EditorModel.sections(S.edits).length || S.reframe?.zoom > 1 || S.reframe?.aspect && S.reframe.aspect !== "original");
   if (!S.job?.has_video) return;
   const W = S.job.width, H = S.job.height;
   ctx.clearRect(0, 0, W, H);
@@ -452,7 +463,7 @@ function render() {
   }
   if (typeof updateReframePreview === "function") {
     const active = reframeGuideSection() || S.reframe && (S.reframe.aspect !== "original" || S.reframe.zoom > 1 || S.reframe.sections?.length);
-    updateReframePreview(active ? freeeditCropRect(W, H, freeeditReframeAt(S.reframe, video.currentTime)) : null);
+    updateReframePreview(active ? freeeditCropRect(W, H, freeeditReframeAt(EditorModel.exportReframe(S.reframe, S.edits), video.currentTime)) : null);
   }
 }
 
@@ -465,7 +476,7 @@ function normRect(d) {
 function toSource(ev) {
   const r = canvas.getBoundingClientRect();
   const crop = reframeGuideSection() ? {x: 0, y: 0, w: S.job.width, h: S.job.height}
-    : freeeditCropRect(S.job.width, S.job.height, freeeditReframeAt(S.reframe, video.currentTime));
+    : freeeditCropRect(S.job.width, S.job.height, freeeditReframeAt(EditorModel.exportReframe(S.reframe, S.edits), video.currentTime));
   return {
     x: crop.x + clamp((ev.clientX - r.left) / r.width, 0, 1) * crop.w,
     y: crop.y + clamp((ev.clientY - r.top) / r.height, 0, 1) * crop.h,
@@ -614,15 +625,7 @@ function addCut() {
 }
 
 // Merged [start, end] ranges of everything marked for removal
-function cutRanges(edits = S.edits) {
-  const spans = edits.filter((e) => e.type === "cut").map((e) => [e.start, e.end]).sort((a, b) => a[0] - b[0]);
-  const out = [];
-  for (const [a, b] of spans) {
-    if (out.length && a <= out[out.length - 1][1]) out[out.length - 1][1] = Math.max(out[out.length - 1][1], b);
-    else out.push([a, b]);
-  }
-  return out;
-}
+function cutRanges(edits = S.edits) { return EditorModel.cutRanges(edits); }
 
 // Push a changed edit's times into its sidebar card and the timeline
 function syncCard(e) {
@@ -639,42 +642,32 @@ function syncCard(e) {
 
 // ---------- edits ----------
 function addEdit(props) {
-  checkpoint();
   const d = duration();
   const start = sourcePlayer().currentTime >= d - 0.05 ? 0 : +sourcePlayer().currentTime.toFixed(1);
-  const e = { id: S.nextId++, start, end: +d.toFixed(2), ...props };
-  if (e.type === "text") { const m = textMetrics(e); e.w = m.w; e.h = m.h; }
-  S.edits.push(e);
-  S.selected = e.id;
-  S.selectedZoom = null;
-  renderList();
-  render();
-  updateTransport();
+  const e = {id:S.nextId++,start,end:+d.toFixed(2),...props};
+  if (e.type === "text") { const m = textMetrics(e); e.w=m.w;e.h=m.h; }
+  commitEdit("edit:add", state => {state.edits.push(e);state.selected=e.id;});
   return e;
 }
 
 function deleteEdit(id) {
-  checkpoint();
-  S.edits = S.edits.filter((e) => e.id !== id);
-  if (S.selected === id) {
-    S.selected = null;
-    window.dispatchEvent(new CustomEvent("freeedit:workspace", {detail: "selection"}));
-  }
-  renderList();
-  render();
-  updateTransport();
+  if (!getEdit(id)) return;
+  commitEdit("edit:delete", state => {
+    state.edits=state.edits.filter(e=>e.id!==id);
+    if(state.selected===id)state.selected=null;
+  });
+  window.dispatchEvent(new CustomEvent("freeedit:workspace",{detail:"selection"}));
 }
 
 function select(id) {
   stopReviewLoop();
   S.selected = id;
-  S.selectedZoom = null;
   if (typeof syncZoomSelection === "function") syncZoomSelection();
   window.dispatchEvent(new CustomEvent("freeedit:workspace", { detail: "selection" }));
   document.querySelectorAll(".card").forEach((c) => {
     const selected = +c.dataset.id === id;
     c.classList.toggle("selected", selected);
-    c.querySelector(".card-title").setAttribute("aria-expanded", String(selected));
+    c.querySelector(".card-title")?.setAttribute("aria-expanded", String(selected));
   });
   renderTimeline();
   updateTransport();
@@ -684,6 +677,7 @@ function select(id) {
 function cardTitle(e) {
   const range = `${fmt(e.start)}–${fmt(e.end)}`;
   if (e.type === "cut") return `${range} (${(e.end - e.start).toFixed(1)}s)`;
+  if (e.type === "reframe") return `Reframe ${e.zoom.toFixed(2)}× · ${range}`;
   if (e.type === "text") return `${(e.text || "").split("\n")[0]} · ${range}`;
   return `${{ blur: "Blur", pixelate: "Pixelate", black: "Solid cover" }[e.style]} · ${range}`;
 }
@@ -696,7 +690,7 @@ function renderList() {
   show($("editsEmpty"), S.edits.length === 0);
   renderTimeline();
 
-  for (const e of S.edits) {
+  for (const e of EditorModel.sorted(S.edits).filter(e=>e.type!=="reframe")) {
     const tpl = $({ hide: "hideCardTpl", text: "textCardTpl", cut: "cutCardTpl" }[e.type]).content.cloneNode(true);
     const card = tpl.querySelector(".card");
     card.dataset.id = e.id;
@@ -728,11 +722,8 @@ function renderList() {
           if (k === "start") v = clamp(v, 0, e.end);
           if (k === "end") v = clamp(v, e.start, duration());
         }
-        e[k] = v;
+        commitEdit("edit:property", () => { e[k] = v; }, false);
         title.textContent = cardTitle(e);
-        renderTimeline();
-        render();
-        updateTransport();
       });
     });
 
@@ -796,13 +787,12 @@ function restoreHistory(redo = false) {
   to.push(snapshot());
   const restored = JSON.parse(from.pop());
   S.edits = restored.edits; S.background = restored.background;
-  S.reframe = restored.reframe || {aspect:"original",zoom:1,focus_x:.5,focus_y:.5,sections:[]};
+  S.reframe = restored.reframe || {...EditorModel.DEFAULT_REFRAME};
   syncReframeControls();
   window.dispatchEvent(new CustomEvent("freeedit:workspace", {detail:"reframe-restore"}));
   restorePresenter(restored.presenter, true);
   syncBackgroundControls(); invalidateBackgroundPreview();
   S.selected = null;
-  S.selectedZoom = null;
   renderList(); render(); updateTransport();
 }
 $("undoBtn").onclick = () => restoreHistory();
@@ -811,7 +801,7 @@ function editSignature() {
   return JSON.stringify({ edits: S.edits.map(({ id, ...edit }) => {
     if (edit.type === "text") { delete edit.w; delete edit.h; }
     return edit;
-  }), presenter: presenterProject(), background: getBackgroundSettings(), reframe: S.reframe, denoise: $("denoise").checked, strength: $("strength").value, preset: $("exportPreset").value });
+  }), presenter: presenterProject(), background: getBackgroundSettings(), reframe: EditorModel.exportReframe(S.reframe, S.edits), denoise: $("denoise").checked, strength: $("strength").value, preset: $("exportPreset").value });
 }
 function refreshExportState() {
   if (!S.job) return;
@@ -822,7 +812,7 @@ function refreshExportState() {
   const removed = cutRanges().reduce((sum, [a, b]) => sum + b - a, 0);
   $("noisePreviewBtn").disabled = !!S.operation || !!getPresenterSettings();
   $("noisePreviewBtn").title = getPresenterSettings() ? "The noise sample uses the main recording. Export to hear noise reduction on the combined sound." : "";
-  $("exportSummary").textContent = `${fmt(Math.max(0, duration() - removed))} output · ${S.edits.filter(e => e.type === "cut").length} cuts · ${S.edits.filter(e => e.type === "hide").length} masks · Reframe ${S.reframe?.sections?.length ? S.reframe.sections.length + (S.reframe.sections.length === 1 ? " portion" : " portions") : S.reframe && (S.reframe.aspect !== "original" || S.reframe.zoom > 1.001) ? "whole video" : "off"} · Noise reduction ${$("denoise").checked ? "on" : "off"}${getBackgroundSettings() && $("exportPreset").value !== "audio_only" ? " · Background " + S.background.mode : ""}`;
+  $("exportSummary").textContent = `${fmt(Math.max(0, duration() - removed))} output · ${S.edits.filter(e => e.type === "cut").length} cuts · ${S.edits.filter(e => e.type === "hide").length} masks · Reframe ${EditorModel.sections(S.edits).length ? EditorModel.sections(S.edits).length + (EditorModel.sections(S.edits).length === 1 ? " portion" : " portions") : S.reframe && (S.reframe.aspect !== "original" || S.reframe.zoom > 1.001) ? "whole video" : "off"} · Noise reduction ${$("denoise").checked ? "on" : "off"}${getBackgroundSettings() && $("exportPreset").value !== "audio_only" ? " · Background " + S.background.mode : ""}`;
   const stale = S.exportSignature !== null && S.exportSignature !== editSignature();
   $("resultNote").textContent = stale ? "Edits changed. Export again to include them; this download is the previous result." : "Rendered export ready to review.";
   $("previewLabel").textContent = S.reviewing ? `${S.compareOriginal ? "Original recording" : "Rendered export"}${stale ? " · edits changed since export" : ""}` : "Editing preview";
@@ -905,7 +895,7 @@ function updatePresetInfo() {
   const scale = limits.length ? Math.min(1, Math.min(...limits) / Math.max(S.job.width, S.job.height)) : 1;
   const even = n => Math.max(2, (scale < 1 ? Math.round(n / 2) : Math.floor(n / 2)) * 2);
   const crop = freeeditCropRect(even(S.job.width * scale), even(S.job.height * scale),
-    {...S.reframe, zoom: S.reframe?.sections?.length ? 1 : S.reframe.zoom});
+    {...S.reframe, zoom: EditorModel.sections(S.edits).length ? 1 : S.reframe.zoom});
   const w = crop.w, h = crop.h;
   $("presetInfo").textContent = `MP4 · H.264 / AAC · ${w}×${h}. Size depends on the recording.${scale < 0.8 ? " Resolution will be reduced; check small text in the export." : ""}`;
 }
@@ -922,7 +912,7 @@ function textToPng(e) {
 
 function buildPayload() {
   const cuts = S.edits.filter((e) => e.type === "cut").map((e) => ({ start: e.start, end: e.end }));
-  const edits = S.edits.filter((e) => e.type !== "cut").map((e) => {
+  const edits = S.edits.filter((e) => e.type === "hide" || e.type === "text").map((e) => {
     const base = { type: e.type, start: e.start, end: e.end };
     if (e.type === "hide") return { ...base, style: e.style, x: e.x, y: e.y, w: e.w, h: e.h };
     return { ...base, x: Math.round(e.x), y: Math.round(e.y), image: textToPng(e) };
@@ -930,7 +920,7 @@ function buildPayload() {
   const strength = $("strength").value;
   return {
     presenter: getPresenterSettings(),
-    reframe: S.job.has_video && $("exportPreset").value !== "audio_only" ? S.reframe : null,
+    reframe: S.job.has_video && $("exportPreset").value !== "audio_only" ? EditorModel.exportReframe(S.reframe, S.edits) : null,
     background: $("exportPreset").value !== "audio_only" ? getBackgroundSettings() : null,
     denoise: (S.job.has_audio || !!presenterProject()?.source.has_audio) && $("denoise").checked,
     atten_lim: strength ? parseInt(strength, 10) : null,
@@ -1119,9 +1109,8 @@ function resetFile() {
   video.pause(); $("audio").pause(); $("resultVideo").pause(); $("resultAudio").pause();
   S.job = null;
   S.edits = []; S.suggestions = [];
-  S.selectedZoom = null;
   S.undo = []; S.redo = [];
-  S.selected = null; S.selectedZoom = null; S.exportSignature = null;
+  S.selected = null; S.exportSignature = null;
   S.reframe = null;
   setBusy(null);
   $("strength").value = "18";
