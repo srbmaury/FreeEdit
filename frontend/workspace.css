@@ -81,6 +81,36 @@ button.primary, a.button.primary { background: var(--accent); color: var(--accen
 .timeline-block.cut { background: var(--cut); }
 .timeline-help { font-size: 11px; line-height: 1.6; color: var(--muted); margin-bottom: 0; }
 .edits { max-height: 48vh; }
+/* The Select/Your edits inspector fills the available desktop column height.
+   Only the edit list scrolls, not the header or processing controls. */
+@media (min-width: 851px) {
+  .editor > .side.is-edit-inspector {
+    min-height: min(720px, calc(100vh - 72px));
+    min-height: min(720px, calc(100dvh - 72px));
+    min-width: 0;
+  }
+  .side.is-edit-inspector #workspace-edits:not([hidden]) {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .side.is-edit-inspector #editsPanel {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .side.is-edit-inspector #editsList {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-gutter: stable;
+  }
+  .side.is-edit-inspector #editsList:empty { flex-grow: 0; }
+}
 .workspace-footer { grid-column: 1 / -1; grid-row: 3; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 22px; border-top: 1px solid var(--border); background: var(--bg); }
 .workspace-retention { margin: 0; line-height: 1.6; font-size: 11px; }
 .workspace-footer button { padding: 5px 10px; font-size: 12px; flex-shrink: 0; }
