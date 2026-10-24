@@ -32,13 +32,9 @@ async function fingerprintSource(file) {
 
 function projectDocument() {
   if (!S.job || !projects.source) return null;
-  const edits = S.edits.map(({id, ...edit}) => {
-    const copy = {...edit};
-    if (copy.type === "text") { delete copy.w; delete copy.h; }
-    return copy;
-  });
+  const edits = S.edits.map(EditorModel.editableProperties);
   return {
-    format: "FreeEdit", version: 1,
+    format: "FreeEdit", version: 2,
     source: {...projects.source, duration: S.job.duration, width: S.job.width, height: S.job.height, has_video: S.job.has_video, has_audio: S.job.has_audio},
     view: {playhead: sourcePlayer().currentTime || 0, zoom: timeline.zoom},
     edits, settings: {presenter: presenterProject(), background: getBackgroundSettings(), reframe: S.reframe, denoise: $("denoise").checked, strength: $("strength").value, preset: $("exportPreset").value},
@@ -47,7 +43,7 @@ function projectDocument() {
 
 function validateProject(value) {
   const fail = () => { throw new Error("This project contains invalid or unsupported settings."); };
-  if (value?.format !== "FreeEdit" || value.version !== 1) throw new Error("This project format is not supported. Use a FreeEdit version 1 project.");
+  if (value?.format !== "FreeEdit" || value.version !== 2) throw new Error("This project format is not supported. Use a FreeEdit version 2 project.");
   const source = value.source;
   const finite = (n, min, max) => typeof n === "number" && Number.isFinite(n) && n >= min && n <= max;
   if (!source || typeof source.name !== "string" || source.name.length > 1024 || !finite(source.size, 1, Number.MAX_SAFE_INTEGER) ||
@@ -58,32 +54,25 @@ function validateProject(value) {
   const background = validateBackground(settings?.background, source);
   const presenter = validatePresenterProject(settings?.presenter, source);
   const reframe = settings?.reframe == null ? null : settings.reframe;
-  if (reframe) {
-    if (!source.has_video || !["original", "wide", "vertical", "square"].includes(reframe.aspect) ||
-        ![reframe.zoom, reframe.focus_x, reframe.focus_y].every(Number.isFinite) ||
-        reframe.zoom < 1 || reframe.zoom > 3 || reframe.focus_x < 0 || reframe.focus_x > 1 ||
-        reframe.focus_y < 0 || reframe.focus_y > 1) fail();
-    if (reframe.sections != null) {
-      if (!Array.isArray(reframe.sections) || reframe.sections.length > 20) fail();
-      const sections = [...reframe.sections].sort((a,b)=>a.start-b.start);
-      for (let i=0;i<sections.length;i++) {
-        const s=sections[i];
-        if (!finite(s.start,0,source.duration) || !finite(s.end,0,source.duration+.05) ||
-            s.end<=s.start || !finite(s.zoom,1,3) || !finite(s.focus_x,0,1) ||
-            !finite(s.focus_y,0,1) || !finite(s.transition,0,1.5) ||
-            (i>0 && sections[i-1].end>s.start)) fail();
-      }
-      reframe.sections = sections;
-    }
-  }
+  if (reframe && (!source.has_video || !["original", "wide", "vertical", "square"].includes(reframe.aspect) ||
+      ![reframe.zoom, reframe.focus_x, reframe.focus_y].every(Number.isFinite) ||
+      reframe.zoom < 1 || reframe.zoom > 3 || reframe.focus_x < 0 || reframe.focus_x > 1 ||
+      reframe.focus_y < 0 || reframe.focus_y > 1 || "sections" in reframe)) fail();
   if (!settings || typeof settings.denoise !== "boolean" || !["", "10", "18", "30"].includes(settings.strength) || !projectPresets.includes(settings.preset)) fail();
   if ((settings.preset === "audio_only" && !source.has_audio && !presenter?.source.has_audio) || (source.has_video && (!source.width || !source.height))) fail();
   if (!Array.isArray(value.edits) || value.edits.length > 200) fail();
+  const reframeEdits = [];
   const edits = value.edits.map(edit => {
-    if (!edit || !["cut", "hide", "text"].includes(edit.type) || !finite(edit.start, 0, source.duration) ||
+    if (!edit || !EditorModel.TIMELINE_TYPES.includes(edit.type) || !finite(edit.start, 0, source.duration) ||
         !finite(edit.end, 0, source.duration + 0.05) || edit.end <= edit.start) fail();
     const result = {type: edit.type, start: edit.start, end: Math.min(edit.end, source.duration)};
-    if (result.type !== "cut") {
+    if (result.type === "reframe") {
+      const section = {...edit, start:result.start, end:result.end};
+      if (!source.has_video || EditorModel.validateReframe(section, source.duration, reframeEdits)) fail();
+      Object.assign(result, {zoom:section.zoom,focus_x:section.focus_x,focus_y:section.focus_y,transition:section.transition});
+      reframeEdits.push(result);
+    }
+    if (result.type === "hide" || result.type === "text") {
       if (!source.has_video || !finite(edit.x, -65536, 65536) || !finite(edit.y, -65536, 65536)) fail();
       Object.assign(result, {x: edit.x, y: edit.y});
     }
@@ -100,8 +89,9 @@ function validateProject(value) {
     }
     return result;
   });
-  if (edits.filter(e => e.type === "cut").length > 100 || edits.filter(e => e.type !== "cut").length > 100) fail();
-  return {format: "FreeEdit", version: 1,
+  if (edits.filter(e => e.type === "cut").length > 100 ||
+      edits.filter(e => e.type === "hide" || e.type === "text").length > 100) fail();
+  return {format: "FreeEdit", version: 2,
     source: {name: source.name, size: source.size, fingerprint: source.fingerprint, algorithm: source.algorithm,
       duration: source.duration, width: source.width, height: source.height, has_video: source.has_video, has_audio: source.has_audio},
     view: {playhead: finite(value.view?.playhead, 0, source.duration) ? value.view.playhead : 0,
@@ -153,14 +143,16 @@ function projectSourceReady(identity) {
 function applyProject(project) {
   projects.writing = true;
   restorePresenter(project.settings.presenter);
-  S.reframe = project.settings.reframe || {aspect:"original",zoom:1,focus_x:.5,focus_y:.5,sections:[]};
+  const imported = project.edits.map(edit => ({...edit, id: S.nextId++}));
+  editorStore.dispatch("project:load", state => {
+    state.reframe = project.settings.reframe || {...EditorModel.DEFAULT_REFRAME};
+    state.background = project.settings.background || {mode: "off", blur: 16, color: "#e5e7eb", image: null, region: null, preset: "studio"};
+    state.edits = imported;
+    state.undo = []; state.redo = []; state.selected = null;
+  });
   syncReframeControls();
-  window.dispatchEvent(new CustomEvent("freeedit:workspace", {detail:"reframe-restore"}));
-  S.background = project.settings.background || {mode: "off", blur: 16, color: "#e5e7eb", image: null, region: null, preset: "studio"};
   syncBackgroundControls(); invalidateBackgroundPreview();
   $("backgroundPanel").open = !!project.settings.background;
-  S.edits = project.edits.map(edit => ({...edit, id: S.nextId++}));
-  S.undo = []; S.redo = []; S.selected = null;
   $("denoise").checked = project.settings.denoise && (S.job.has_audio || !!project.settings.presenter?.source.has_audio);
   $("strength").value = project.settings.strength;
   $("exportPreset").value = S.job.has_video ? project.settings.preset : "audio_only";

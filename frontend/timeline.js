@@ -43,7 +43,7 @@ function renderTimeline() {
     if (!visible) continue;
     const laneHeight = window.matchMedia("(max-width: 600px)").matches ? 48 : 32;
     const laneEnds = [];
-    const edits = S.edits.filter(e => e.type === row.type).sort((a, b) => a.start - b.start);
+    const edits = EditorModel.sorted(EditorModel.byType(S.edits, row.type));
     for (const edit of edits) {
       let lane = laneEnds.findIndex(end => end <= edit.start);
       if (lane === -1) lane = laneEnds.length;

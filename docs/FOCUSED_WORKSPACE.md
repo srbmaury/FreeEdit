@@ -30,7 +30,7 @@ Reframe can now apply smooth zoom and pan only between selected original-timelin
 ## Integration
 
 No build step or new production dependencies. Run FreeEdit normally with `./run.sh`.
-The two new files are frontend/workspace.css and frontend/workspace.js; index.html loads them after the existing styles and scripts. app.js dispatches six lightweight workspace events at mode/selection/upload/export transitions.
+The workspace is composed from small frontend controllers. `editor-model.js` defines the shared timeline document, while `app.js` boots state and transport, `editor-edits.js` handles editing, `editor-render.js` draws the preview, `editor-history.js` maintains undo/redo, and `editor-export.js` adapts the document to FFmpeg. The full dependency graph is documented in `docs/ARCHITECTURE.md`.
 
 If applying the accompanying patch to your own checkout:
 
