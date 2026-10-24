@@ -46,8 +46,8 @@ test("smoothed zoom is 1x at the section boundaries and returns to 1x", () => {
   const ctx = vm.createContext({});
   vm.runInContext(script, ctx);
   const s = {aspect:"original",zoom:2,focus_x:.7,focus_y:.6,
-    sections:[{start:1,end:3,zoom:2,focus_x:.7,focus_y:.6,transition:.5}]};
-  for (const [time, expected] of [[0,1],[1,1],[1.25,1.5],[2,2],[2.75,1.5],[3,1],[4,1]]) {
+    sections:[{start:1,end:3,zoom:2.5,focus_x:.7,focus_y:.6,transition:.5}]};
+  for (const [time, expected] of [[0,2],[1,2],[1.25,2.25],[2,2.5],[2.75,2.25],[3,2],[4,2]]) {
     const actual = vm.runInContext("freeeditReframeAt(" + JSON.stringify(s) + "," + time + ").zoom", ctx);
     assert.ok(Math.abs(actual - expected) < 1e-8, "time=" + time + " got " + actual);
   }
