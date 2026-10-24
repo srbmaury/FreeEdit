@@ -41,7 +41,8 @@ try {
     name:"sample.srt",mimeType:"text/plain",
     buffer:Buffer.from("1\n00:00:00,800 --> 00:00:01,300\nSample caption\n")
   });
-  await page.locator("#captionStatus").getByText(/Imported 1/).waitFor();
+  // Import deliberately opens the Edits inspector, hiding Captions panel.
+  await page.waitForFunction(() => document.getElementById("captionStatus")?.textContent.includes("Imported 1"));
   await page.locator("#toolbar [data-mode=select]").click();
   const list=await page.locator("#editsList").innerText();
   assert.match(list,/Reframe/);
