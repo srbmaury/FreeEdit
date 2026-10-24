@@ -240,9 +240,10 @@ def reframe_expressions(sections: list[dict], axis: str) -> str:
         else:
             incoming = f"min(1,max(0,(T-{start:.3f})/{ease:.3f}))"
             outgoing = f"min(1,max(0,({end:.3f}-T)/{ease:.3f}))"
-            # Both ends use cubic ease-in/ease-out: C1-continuous at joins.
+            # Quintic smootherstep: both velocity and acceleration vanish at
+            # each boundary. The preview uses the same easing function.
             weight = f"({incoming})*({outgoing})"
-            weight = f"({weight})*({weight})*(3-2*({weight}))"
+            weight = f"({weight})*({weight})*({weight})*(10-15*({weight})+6*({weight})*({weight}))"
         value = section["zoom"] - 1 if axis == "z" else section["focus_" + axis] - .5
         if abs(value) >= .000001:
             expr += f"+({value:.6f})*({weight})"
