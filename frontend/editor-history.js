@@ -15,14 +15,15 @@ function restoreHistory(redo = false) {
   if (!from.length) return;
   to.push(snapshot());
   const restored = JSON.parse(from.pop());
-  S.edits = restored.edits; S.background = restored.background;
-  S.reframe = restored.reframe || {...EditorModel.DEFAULT_REFRAME};
-  syncReframeControls();
-  window.dispatchEvent(new CustomEvent("freeedit:workspace", {detail:"reframe-restore"}));
   restorePresenter(restored.presenter, true);
+  editorStore.dispatch("history:restore", state => {
+    state.edits = restored.edits;
+    state.background = restored.background;
+    state.reframe = restored.reframe || {...EditorModel.DEFAULT_REFRAME};
+    state.selected = null;
+  });
+  syncReframeControls();
   syncBackgroundControls(); invalidateBackgroundPreview();
-  S.selected = null;
-  renderList(); render(); updateTransport();
 }
 $("undoBtn").onclick = () => restoreHistory();
 $("redoBtn").onclick = () => restoreHistory(true);
