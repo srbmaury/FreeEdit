@@ -234,7 +234,9 @@ function layoutStage() {
   const wrap = $("stageWrap");
   const style = getComputedStyle(wrap);
   const maxW = wrap.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
-  const maxH = Math.max(240, window.innerHeight * 0.54);
+  // Use more of the workspace while preserving the recording's aspect ratio.
+  // The timeline stays beneath the preview and never gets overlapped.
+  const maxH = Math.max(280, window.innerHeight * (window.innerWidth <= 850 ? 0.60 : 0.76));
   const { width: W, height: H } = S.job;
   const scale = Math.min(maxW / W, maxH / H);
   const dw = Math.round(W * scale), dh = Math.round(H * scale);
