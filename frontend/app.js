@@ -429,8 +429,8 @@ function render() {
 
   drawCameraRegion(ctx, lw);
   // Display the retained region without altering input coordinates or selection.
-  if (S.reframe && (S.reframe.aspect !== "original" || S.reframe.zoom > 1)) {
-    const r = freeeditCropRect(W, H, S.reframe);
+  if (S.reframe && (S.reframe.aspect !== "original" || S.reframe.zoom > 1 || S.reframe.sections?.length)) {
+    const r = freeeditCropRect(W, H, freeeditReframeAt(S.reframe, video.currentTime));
     ctx.save();
     ctx.fillStyle = "rgba(0,0,0,0.42)";
     ctx.fillRect(0, 0, W, r.y);
