@@ -178,6 +178,7 @@ function renderZoomSelectList() {
   const list=$("editsList");if(!list)return;
   // renderList() owns the regular edit cards; append zoom cards to that list
   // and sort the combined entries by their original-timeline start.
+  list.querySelectorAll(".zoom-edit-row").forEach(row=>row.remove());
   const sections=zoomSections();
   $("editCount").textContent=S.edits.length+sections.length;
   show($("editsEmpty"),S.edits.length===0&&sections.length===0);
