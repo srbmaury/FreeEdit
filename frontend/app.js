@@ -38,6 +38,12 @@ editorStore.subscribe(({reason}) => {
   // A lightweight mutation only invalidates timeline, canvas and export.
   if (reason === "edit:property" || reason === "edit:drag") {
     renderTimeline();
+  } else if (reason === "edit:update-reframe" ||
+             reason === "scene:reframe" || reason === "scene:reset-reframe") {
+    // Keep focused controls and existing text/mask cards mounted during sliders.
+    renderZoomSelectList();
+    renderReframeSections();
+    renderTimeline();
   } else {
     renderList();
     if (typeof renderReframeSections === "function") renderReframeSections();
