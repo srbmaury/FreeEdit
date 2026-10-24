@@ -17,6 +17,8 @@
     Videos: '<rect x="2" y="4" width="16" height="14" rx="2"/><path d="m18 9 4-3v10l-4-3"/><rect x="10" y="12" width="6" height="4" rx="1"/>',
     Audio: '<path d="m11 5-6 4H2v6h3l6 4Z"/><path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>',
     Pauses: '<path d="M3 10v4m4-8v12m5-15v18m5-15v12m4-8v4"/>',
+    Reframe: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M10 4v16"/>',
+    Captions: '<rect x="2" y="4" width="20" height="16" rx="3"/><path d="M6 11h5m2 0h5M6 15h8m2 0h2"/>',
     Background: '<rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="12" cy="9" r="3"/><path d="M6 20v-2a6 6 0 0 1 12 0v2"/>',
     Cut: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="m8 8 13 13M8 16 21 3"/>',
     Text: '<path d="M4 6V3h16v3M12 3v18m-4 0h8"/>',
@@ -24,7 +26,7 @@
     Export: '<path d="M12 16V3m-5 5 5-5 5 5M4 15v6h16v-6"/>'
   };
   const panes = {};
-  for (const [name, node] of [["videos", byId("videosPanel")], ["cut", byId("cutDraftPanel")], ["edits", edits], ["audio", noise], ["pauses", pauses], ["background", byId("backgroundPanel")], ["export", exportPanel]]) {
+  for (const [name, node] of [["videos", byId("videosPanel")], ["cut", byId("cutDraftPanel")], ["edits", edits], ["audio", noise], ["pauses", pauses], ["background", byId("backgroundPanel")], ["reframe", byId("reframePanel")], ["captions", byId("captionsPanel")], ["export", exportPanel]]) {
     const pane = document.createElement("section");
     pane.id = `workspace-${name}`;
     pane.className = "workspace-pane";
@@ -37,7 +39,7 @@
   editor.prepend(rail);
   const tasks = [
     ["videos", "Videos"], ["audio", "Audio"], ["pauses", "Pauses"],
-    ["background", "Background"], ["cut", "Cut", "cut"], ["edits", "Text", "text"], ["edits", "Hide area", "hide"],
+    ["background", "Background"], ["reframe", "Reframe"], ["captions", "Captions"], ["cut", "Cut", "cut"], ["edits", "Text", "text"], ["edits", "Hide area", "hide"],
     ["export", "Export"]
   ];
   let current = "edits";
@@ -118,7 +120,7 @@
   const heading = document.createElement("div");
   heading.className = "inspector-heading"; heading.textContent = "Edit settings";
   side.prepend(heading);
-  const labels = {videos: "Videos", cut: "Cut", edits: "Your edits", audio: "Audio", pauses: "Pauses", background: "Background", export: "Export"};
+  const labels = {videos: "Videos", cut: "Cut", edits: "Your edits", audio: "Audio", pauses: "Pauses", background: "Background", reframe: "Reframe", captions: "Captions", export: "Export"};
   const syncHeading = () => { heading.textContent = current === "edits" && S.selected != null ? "Edit properties" : labels[current]; };
   window.addEventListener("freeedit:workspace", event => {
     const reason = event.detail;
@@ -151,7 +153,7 @@
     if (reason === "export") activate("export");
     if (reason === "open") {
       for (const button of rail.querySelectorAll("button")) {
-        const visual = button.dataset.mode === "hide" || button.dataset.mode === "text" || ["background", "videos"].includes(button.dataset.pane);
+        const visual = button.dataset.mode === "hide" || button.dataset.mode === "text" || ["background", "videos", "reframe", "captions"].includes(button.dataset.pane);
         button.disabled = visual && !S.job.has_video ||
           ["audio", "pauses"].includes(button.dataset.pane) && !S.job.has_audio;
       }
