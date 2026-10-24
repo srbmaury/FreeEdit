@@ -20,6 +20,22 @@ function freeeditCropRect(width, height, settings) {
   return {x, y, w, h};
 }
 
+function freeeditReframeAt(settings, time) {
+  const base=settings || {aspect:"original",zoom:1,focus_x:.5,focus_y:.5,sections:[]};
+  if (!base.sections?.length) return base;
+  const result={aspect:base.aspect,zoom:1,focus_x:.5,focus_y:.5};
+  for (const s of base.sections) {
+    if (time<s.start || time>s.end) continue;
+    const edge=Math.min(s.transition,(s.end-s.start)/2);
+    const t=edge>.0005
+      ? Math.min(1,Math.max(0,(time-s.start)/edge),Math.max(0,(s.end-time)/edge)) : 1;
+    const eased=t*t*(3-2*t);
+    result.zoom+=(s.zoom-1)*eased;
+    result.focus_x+=(s.focus_x-.5)*eased;
+    result.focus_y+=(s.focus_y-.5)*eased;
+  }
+  return result;
+}
 function freeeditParseSrt(source, duration) {
   if (typeof source !== "string" || source.length > 1000000) throw new Error("Choose an SRT file under 1 MB.");
   const blocks = source.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").trim().split(/\n\s*\n/);
