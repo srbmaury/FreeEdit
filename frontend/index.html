@@ -141,7 +141,7 @@
               <div id="pauseLabel" class="timeline-label">Pauses</div>
               <div id="cutLabel" class="timeline-label">Cuts</div>
               <div id="maskLabel" class="timeline-label">Masks</div>
-              <div id="textLabel" class="timeline-label">Text</div>
+              <div id="textLabel" class="timeline-label">Text</div><div id="zoomLabelTrack" class="timeline-label">Zoom</div>
             </div>
             <div id="timelineViewport" class="timeline-viewport" tabindex="0" aria-label="Timeline; scroll horizontally when zoomed">
               <div id="timelineContent" class="timeline-content">
@@ -157,7 +157,7 @@
                 <div id="pauseTrack" class="timeline-track" aria-label="Suggested pauses"></div>
                 <div id="cutTrack" class="timeline-track" aria-label="Cuts"></div>
                 <div id="maskTrack" class="timeline-track" aria-label="Masks"></div>
-                <div id="textTrack" class="timeline-track" aria-label="Text overlays"></div>
+                <div id="textTrack" class="timeline-track" aria-label="Text overlays"></div><div id="zoomTrack" class="timeline-track" aria-label="Zoom sections"></div>
                 <div id="timelinePlayhead" class="timeline-playhead" aria-hidden="true"></div>
               </div>
             </div>
@@ -238,6 +238,18 @@
         <div id="editsPanel" class="panel">
           <h2 class="section-title">Edits <span id="editCount" class="count">0</span></h2>
           <div id="editsList" class="edits"></div>
+          <section id="selectedZoomPanel" class="selected-zoom-panel hidden" aria-label="Zoom section properties">
+            <h3>Zoom properties</h3>
+            <label class="field"><span>From (seconds)</span><input id="selectedZoomStart" type="number" min="0" step="0.01"></label>
+            <label class="field"><span>To (seconds)</span><input id="selectedZoomEnd" type="number" min="0" step="0.01"></label>
+            <label class="field"><span>Zoom</span><input id="selectedZoomStrength" type="range" min="1" max="3" step="0.05"><output id="selectedZoomStrengthLabel"></output></label>
+            <label class="field"><span>Horizontal focus</span><input id="selectedZoomX" type="range" min="0" max="1" step="0.01"></label>
+            <label class="field"><span>Vertical focus</span><input id="selectedZoomY" type="range" min="0" max="1" step="0.01"></label>
+            <label class="field"><span>Transition (seconds)</span><input id="selectedZoomTransition" type="number" min="0" max="1.5" step="0.05"></label>
+            <button id="selectedZoomRemove" type="button" class="ghost">Remove zoom section</button>
+            <p id="selectedZoomError" class="small" role="status"></p>
+          </section>
+          <div id="zoomEditsList" class="zoom-edits-list"></div>
           <p id="editsEmpty" class="small">No edits yet. Add Text, Hide area, or Cut from the task rail. Select (V) in the preview toolbar lets you move existing overlays and edit their properties.</p>
         </div>
 
