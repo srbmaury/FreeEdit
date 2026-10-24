@@ -39,7 +39,7 @@ try {
   await page.locator(".workspace-rail button").filter({hasText:"Captions"}).click();
   await page.locator("#captionInput").setInputFiles({
     name:"sample.srt",mimeType:"text/plain",
-    buffer:Buffer.from("1\\n00:00:00,800 --> 00:00:01,300\\nSample caption\\n")
+    buffer:Buffer.from("1\n00:00:00,800 --> 00:00:01,300\nSample caption\n")
   });
   await page.locator("#captionStatus").getByText(/Imported 1/).waitFor();
   await page.locator("#toolbar [data-mode=select]").click();
