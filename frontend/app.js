@@ -430,22 +430,8 @@ function render() {
   }
 
   drawCameraRegion(ctx, lw);
-  // Display the retained region without altering input coordinates or selection.
-  if (S.reframe && (S.reframe.aspect !== "original" || S.reframe.zoom > 1 || S.reframe.sections?.length)) {
-    const r = freeeditCropRect(W, H, freeeditReframeAt(S.reframe, video.currentTime));
-
-    ctx.save();
-    ctx.fillStyle = "rgba(0,0,0,0.42)";
-    ctx.fillRect(0, 0, W, r.y);
-    ctx.fillRect(0, r.y, r.x, r.h);
-    ctx.fillRect(r.x + r.w, r.y, W - r.x - r.w, r.h);
-    ctx.fillRect(0, r.y + r.h, W, H - r.y - r.h);
-    ctx.strokeStyle = "#e5e1ff";
-    ctx.lineWidth = Math.max(2 * lw, W / 800);
-    ctx.setLineDash([7 * lw, 4 * lw]);
-    ctx.strokeRect(r.x, r.y, r.w, r.h);
-    ctx.restore();
-  }
+  // The live reframe compositor displays the actual zoomed picture rather
+  // than painting a dashed crop guide into the export-style overlay.
 
   if (S.drag?.kind === "new") {
     const r = normRect(S.drag);
