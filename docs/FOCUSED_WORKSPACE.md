@@ -16,6 +16,10 @@ Feature branch: design/focused-workspace.
 - At 850px and below, the task rail wraps above the preview; timeline and inspector stack below it.
 - Explicit light/dark foreground pairs improve secondary labels, selected controls, disabled controls, primary actions, badges, and timeline text.
 
+## Timed Reframe
+
+Reframe can now apply smooth zoom and pan only between selected original-timeline start/end values. Set the aspect ratio and desired zoom/focus, choose start/end and transition duration (0–1.5 seconds per edge), then add a section. Sections cannot overlap; up to 20 are supported. FFmpeg uses a smoothstep ease-in/ease-out, and returns to the full fixed-aspect frame outside every section. The preview outlines the cropped region during playback. The exported MP4 has one constant aspect ratio; changing aspect ratio in the middle of a file is intentionally unsupported. The original full-recording crop is retained when no timed sections exist.
+
 ## Reframe and captions
 
 - Reframe presets: original aspect, 16:9 landscape, 9:16 portrait, 1:1 square. Adjust zoom (1–3×) and horizontal/vertical focus; an overlay guide marks the retained region.
