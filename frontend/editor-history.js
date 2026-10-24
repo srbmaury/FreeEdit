@@ -28,10 +28,7 @@ function restoreHistory(redo = false) {
 $("undoBtn").onclick = () => restoreHistory();
 $("redoBtn").onclick = () => restoreHistory(true);
 function editSignature() {
-  return JSON.stringify({ edits: S.edits.map(({ id, ...edit }) => {
-    if (edit.type === "text") { delete edit.w; delete edit.h; }
-    return edit;
-  }), presenter: presenterProject(), background: getBackgroundSettings(), reframe: EditorModel.exportReframe(S.reframe, S.edits), denoise: $("denoise").checked, strength: $("strength").value, preset: $("exportPreset").value });
+  return JSON.stringify({ edits: S.edits.map(EditorModel.editableProperties), presenter: presenterProject(), background: getBackgroundSettings(), reframe: EditorModel.exportReframe(S.reframe, S.edits), denoise: $("denoise").checked, strength: $("strength").value, preset: $("exportPreset").value });
 }
 function refreshExportState() {
   if (!S.job) return;
