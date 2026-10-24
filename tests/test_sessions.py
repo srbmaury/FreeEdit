@@ -34,6 +34,25 @@ class SessionTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(response.json()["id"], job_id)
 
+    def test_cross_origin_modification_is_rejected(self):
+        with TestClient(api.app) as client:
+            response = client.post(
+                "/api/storage/cleanup?keep=none",
+                headers={"Origin": "https://untrusted.example"},
+            )
+            self.assertEqual(response.status_code, 403)
+
+    def test_owner_not_exposed_in_job_status(self):
+        owner, token = create_session()
+        job_id = "abcdef123456"
+        with patch.dict(api.jobs, {job_id: {
+            "id": job_id, "owner": owner, "status": "uploaded",
+        }}, clear=True):
+            with TestClient(api.app, cookies={COOKIE: token}) as client:
+                response = client.get(f"/api/jobs/{job_id}")
+                self.assertEqual(response.status_code, 200)
+                self.assertNotIn("owner", response.json())
+
     def test_storage_cleanup_only_deletes_own_jobs(self):
         a, cookie_a = create_session()
         b, cookie_b = create_session()
