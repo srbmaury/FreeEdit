@@ -228,6 +228,7 @@ def _run(job_id: str, req: ProcessRequest, previous: dict) -> None:
             denoise_audio=req.denoise, atten_lim=req.atten_lim, preset=req.preset,
             edits=[e.model_dump() for e in req.edits], cuts=[c.model_dump() for c in req.cuts], progress=progress,
             background=req.background.model_dump() if req.background and not req.presenter else None,
+            reframe=req.reframe.model_dump() if req.reframe else None,
         )
         _update(job_id, status="done", stage="Done", progress=1.0, output=out.name)
         event("export_ready", job_id=job_id, duration_ms=round((time.monotonic() - started) * 1000), bytes=out.stat().st_size)
