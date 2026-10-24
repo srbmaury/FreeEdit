@@ -626,7 +626,10 @@ function addEdit(props) {
 function deleteEdit(id) {
   checkpoint();
   S.edits = S.edits.filter((e) => e.id !== id);
-  if (S.selected === id) S.selected = null;
+  if (S.selected === id) {
+    S.selected = null;
+    window.dispatchEvent(new CustomEvent("freeedit:workspace", {detail: "selection"}));
+  }
   renderList();
   render();
   updateTransport();
