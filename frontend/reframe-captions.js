@@ -227,3 +227,30 @@ $("selectedZoomRemove").onclick=()=>{
   renderReframeSections();renderZoomSelectList();renderTimeline();refreshExportState();render();
   window.dispatchEvent(new CustomEvent("freeedit:workspace",{detail:"zoom-selection"}));
 };
+
+// Render the *actual* cropped recording + overlays while playing; the
+// underlying source video remains intact for hit-testing and export.
+const reframePreview=document.createElement("canvas");
+reframePreview.id="reframePreviewCanvas";
+reframePreview.setAttribute("aria-hidden","true");
+reframePreview.hidden=true;
+$("stage").append(reframePreview);
+const reframeCtx=reframePreview.getContext("2d",{alpha:false});
+function updateReframePreview(rect){
+  if(!S.job?.has_video||!rect||video.readyState<2){
+    reframePreview.hidden=true;return;
+  }
+  if(reframePreview.width!==canvas.width||reframePreview.height!==canvas.height){
+    reframePreview.width=canvas.width;reframePreview.height=canvas.height;
+  }
+  // Render the same video region to the full preview. The overlay gets the
+  // identical crop so text and masks retain their original pixel positions.
+  reframeCtx.clearRect(0,0,reframePreview.width,reframePreview.height);
+  try {
+    reframeCtx.drawImage(video,rect.x,rect.y,rect.w,rect.h,0,0,reframePreview.width,reframePreview.height);
+    reframeCtx.drawImage(canvas,rect.x,rect.y,rect.w,rect.h,0,0,reframePreview.width,reframePreview.height);
+    reframePreview.hidden=false;
+  } catch {
+    reframePreview.hidden=true;
+  }
+}
