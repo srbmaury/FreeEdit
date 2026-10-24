@@ -1,7 +1,7 @@
 "use strict";
 
 // Reframe is non-destructive; crop coordinates are saved with the project.
-const reframeDefaults = () => ({aspect: "original", zoom: 1, focus_x: .5, focus_y: .5});
+const reframeDefaults = () => ({aspect: "original", zoom: 1, focus_x: .5, focus_y: .5, sections: []});
 function syncReframeControls() {
   const r = S.reframe || reframeDefaults();
   $("reframeAspect").value = r.aspect;
@@ -23,7 +23,7 @@ function updateReframe() {
   try { freeeditCropRect(S.job.width, S.job.height, next); }
   catch (error) { $("modeHint").textContent = error.message; return; }
   if (JSON.stringify(S.reframe) !== JSON.stringify(next)) checkpoint();
-  S.reframe = next;
+  S.reframe = {...next, sections:S.reframe?.sections || []};
   syncReframeControls();
   refreshExportState();
   render();
@@ -46,6 +46,7 @@ for (const id of ["reframeAspect", "reframeZoom", "reframeX", "reframeY"]) {
 $("reframeReset").onclick = () => {
   checkpoint();
   S.reframe = reframeDefaults();
+  renderReframeSections();
   syncReframeControls();
   refreshExportState();
   render();
@@ -82,3 +83,63 @@ $("captionInput").onchange = async event => {
     $("captionStatus").textContent = error.message;
   }
 };
+
+function renderReframeSections() {
+  const list = $("reframeSections");
+  if (!list) return;
+  list.replaceChildren();
+  const sections = S.reframe?.sections || [];
+  for (const section of sections) {
+    const row = document.createElement("div");
+    row.className = "reframe-section";
+    const label = document.createElement("span");
+    label.textContent = `${fmt(section.start)}–${fmt(section.end)} · ${section.zoom.toFixed(2)}× · ${section.transition.toFixed(2)}s easing`;
+    const seek = document.createElement("button");
+    seek.type = "button"; seek.textContent = "Preview";
+    seek.onclick = () => {
+      sourcePlayer().currentTime = Math.min(duration(),section.start+Math.max(.05,section.transition));
+      render();
+    };
+    const remove = document.createElement("button");
+    remove.type = "button"; remove.textContent = "Remove";
+    remove.onclick = () => {
+      checkpoint();
+      S.reframe.sections = S.reframe.sections.filter(item=>item!==section);
+      renderReframeSections(); render(); refreshExportState();
+    };
+    row.append(label,seek,remove);
+    list.append(row);
+  }
+  if (!sections.length) list.textContent = "No timed sections: current crop applies to the whole recording.";
+}
+$("reframeAddSection").onclick = () => {
+  if (!S.job?.has_video) return;
+  const start = $("reframeStart").valueAsNumber, end = $("reframeEnd").valueAsNumber;
+  const transition = $("reframeTransition").valueAsNumber;
+  const status = $("reframeStatus");
+  const sections = S.reframe.sections || (S.reframe.sections = []);
+  if (![start,end,transition].every(Number.isFinite) ||
+      start<0 || end>duration()+.005 || end<=start ||
+      transition<0 || transition>1.5 || sections.length>=20) {
+    status.textContent = "Enter a start and end within the video. Maximum 20 sections.";
+    return;
+  }
+  if (sections.some(s => start<s.end && end>s.start)) {
+    status.textContent = "Zoom sections cannot overlap.";
+    return;
+  }
+  checkpoint();
+  sections.push({start,end:Math.min(duration(),end),transition,
+    zoom:Number($("reframeZoom").value),
+    focus_x:Number($("reframeX").value),focus_y:Number($("reframeY").value)});
+  sections.sort((a,b)=>a.start-b.start);
+  renderReframeSections(); refreshExportState(); render();
+  status.textContent = "Zoom section added. Play across its boundaries to review easing.";
+};
+window.addEventListener("freeedit:workspace",event=>{
+  if(event.detail==="open"){
+    $("reframeStart").value=0;
+    $("reframeEnd").value=Math.min(3,duration());
+    renderReframeSections();
+  } else if(event.detail==="reframe-restore") renderReframeSections();
+});
