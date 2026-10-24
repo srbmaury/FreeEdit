@@ -153,8 +153,9 @@ function projectSourceReady(identity) {
 function applyProject(project) {
   projects.writing = true;
   restorePresenter(project.settings.presenter);
-  S.reframe = project.settings.reframe || {aspect:"original",zoom:1,focus_x:.5,focus_y:.5};
+  S.reframe = project.settings.reframe || {aspect:"original",zoom:1,focus_x:.5,focus_y:.5,sections:[]};
   syncReframeControls();
+  window.dispatchEvent(new CustomEvent("freeedit:workspace", {detail:"reframe-restore"}));
   S.background = project.settings.background || {mode: "off", blur: 16, color: "#e5e7eb", image: null, region: null, preset: "studio"};
   syncBackgroundControls(); invalidateBackgroundPreview();
   $("backgroundPanel").open = !!project.settings.background;
