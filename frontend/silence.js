@@ -97,12 +97,14 @@ $("applyPausesBtn").onclick = () => {
     $("silenceStatus").textContent = "Keep at most 100 cuts. Select fewer pauses or remove existing cuts.";
     return;
   }
-  checkpoint();
-  S.edits.push(...selected.map(({start, end}) => ({id: S.nextId++, type: "cut", start, end})));
-  S.suggestions = S.suggestions.filter(s => !s.selected);
-  S.selected = S.edits.at(-1)?.id;
+  const added = selected.map(({start,end}) => ({id:S.nextId++,type:"cut",start,end}));
+  commitEdit("pauses:apply", state => {
+    state.edits.push(...added);
+    state.suggestions = state.suggestions.filter(item=>!item.selected);
+    state.selected = added.at(-1)?.id ?? state.selected;
+  });
   setReview(false);
-  renderSilenceReview(); renderList(); render(); updateTransport();
+  renderSilenceReview();
   $("silenceStatus").textContent = "Selected pauses marked for removal. Adjust them in Edits, or choose Undo to keep them.";
 };
 
