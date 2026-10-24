@@ -24,6 +24,7 @@ const S = {
   busySince: null,
   reviewLoop: null,
   background: null,
+  reframe: null,
 };
 
 let pollRevision = 0;
@@ -173,6 +174,8 @@ function openEditor(job) {
   resetBackground();
   resetVideos();
   S.exportSignature = null; S.reviewing = false;
+  S.reframe = {aspect: "original", zoom: 1, focus_x: .5, focus_y: .5};
+  if (typeof syncReframeControls === "function") syncReframeControls();
   S.operation = null; S.suggestions = [];
   resetTimeline();
   show($("silenceReview"), false);
@@ -425,6 +428,21 @@ function render() {
   }
 
   drawCameraRegion(ctx, lw);
+  // Display the retained region without altering input coordinates or selection.
+  if (S.reframe && (S.reframe.aspect !== "original" || S.reframe.zoom > 1)) {
+    const r = freeeditCropRect(W, H, S.reframe);
+    ctx.save();
+    ctx.fillStyle = "rgba(0,0,0,0.42)";
+    ctx.fillRect(0, 0, W, r.y);
+    ctx.fillRect(0, r.y, r.x, r.h);
+    ctx.fillRect(r.x + r.w, r.y, W - r.x - r.w, r.h);
+    ctx.fillRect(0, r.y + r.h, W, H - r.y - r.h);
+    ctx.strokeStyle = "#e5e1ff";
+    ctx.lineWidth = Math.max(2 * lw, W / 800);
+    ctx.setLineDash([7 * lw, 4 * lw]);
+    ctx.strokeRect(r.x, r.y, r.w, r.h);
+    ctx.restore();
+  }
 
   if (S.drag?.kind === "new") {
     const r = normRect(S.drag);
@@ -783,7 +801,7 @@ function editSignature() {
   return JSON.stringify({ edits: S.edits.map(({ id, ...edit }) => {
     if (edit.type === "text") { delete edit.w; delete edit.h; }
     return edit;
-  }), presenter: presenterProject(), background: getBackgroundSettings(), denoise: $("denoise").checked, strength: $("strength").value, preset: $("exportPreset").value });
+  }), presenter: presenterProject(), background: getBackgroundSettings(), reframe: S.reframe, denoise: $("denoise").checked, strength: $("strength").value, preset: $("exportPreset").value });
 }
 function refreshExportState() {
   if (!S.job) return;
@@ -900,6 +918,7 @@ function buildPayload() {
   const strength = $("strength").value;
   return {
     presenter: getPresenterSettings(),
+    reframe: S.job.has_video && $("exportPreset").value !== "audio_only" ? S.reframe : null,
     background: $("exportPreset").value !== "audio_only" ? getBackgroundSettings() : null,
     denoise: (S.job.has_audio || !!presenterProject()?.source.has_audio) && $("denoise").checked,
     atten_lim: strength ? parseInt(strength, 10) : null,
@@ -1090,6 +1109,7 @@ function resetFile() {
   S.edits = []; S.suggestions = [];
   S.undo = []; S.redo = [];
   S.selected = null; S.exportSignature = null;
+  S.reframe = null;
   setBusy(null);
   $("strength").value = "18";
   video.removeAttribute("src"); video.load();
