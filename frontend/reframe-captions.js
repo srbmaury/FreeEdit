@@ -9,8 +9,10 @@ function syncReframeControls() {
   $("reframeX").value = r.focus_x;
   $("reframeY").value = r.focus_y;
   $("reframeZoomLabel").textContent = Number(r.zoom).toFixed(2) + "×";
-  $("reframeX").disabled = r.aspect === "original" && r.zoom === 1;
-  $("reframeY").disabled = r.aspect === "original" && r.zoom === 1;
+  // Focus also configures the next timed section. Do not disable it when
+  // the whole-recording zoom is 1×; Add section will default to 1.8×.
+  $("reframeX").disabled = false;
+  $("reframeY").disabled = false;
 }
 function updateReframe() {
   if (!S.job?.has_video) return;
@@ -22,7 +24,9 @@ function updateReframe() {
   };
   try { freeeditCropRect(S.job.width, S.job.height, next); }
   catch (error) { $("modeHint").textContent = error.message; return; }
-  if (JSON.stringify(S.reframe) !== JSON.stringify(next)) checkpoint();
+  const previous = S.reframe || reframeDefaults();
+  if (previous.aspect !== next.aspect || previous.zoom !== next.zoom ||
+      previous.focus_x !== next.focus_x || previous.focus_y !== next.focus_y) checkpoint();
   S.reframe = {...next, sections:S.reframe?.sections || []};
   syncReframeControls();
   renderZoomSelectList();
@@ -153,7 +157,7 @@ window.addEventListener("freeedit:workspace",event=>{
     $("reframeStart").value=0;
     $("reframeEnd").value=Math.min(3,duration());
     renderReframeSections();
-  } else if(event.detail==="reframe-restore"){S.selectedZoom=null;renderReframeSections();renderZoomSelectList();renderTimeline();}
+  } else if(event.detail==="reframe-restore"){S.selectedZoom=null;renderReframeSections();renderList();renderTimeline();}
 });
 
 function zoomSections() { return S.reframe?.sections || []; }
