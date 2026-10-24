@@ -188,7 +188,9 @@ function renderZoomSelectList() {
     button.type="button";button.setAttribute("aria-pressed",String(S.selectedZoom===index));
     button.textContent="Zoom "+fmt(section.start)+"–"+fmt(section.end)+" · "+section.zoom.toFixed(2)+"×";
     button.onclick=()=>selectZoom(index);
-    row.append(button);list.append(row);
+    row.append(button);
+    const next=[...list.querySelectorAll(".card")].find(card=>Number(card.dataset.start)>section.start);
+    if(next)list.insertBefore(row,next);else list.append(row);
   });
   [...list.children].sort((a,b)=>Number(a.dataset.start)-Number(b.dataset.start)).forEach(el=>list.append(el));
   syncZoomSelection();
