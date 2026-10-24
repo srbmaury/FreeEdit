@@ -551,14 +551,8 @@ def process(
         args += ["-i", str(img)]
     audio_in = "[1:a]" if clean_wav else ("[0:a]" if info.has_audio else None)
 
-    out_duration = info.duration
-    alabel = None
-    if keep:
-        cut_parts, vlabel, alabel = build_cuts(vlabel, audio_in, keep)
-        parts += cut_parts
-        out_duration = sum(b - a for a, b in keep)
-
-    # Crop after all overlays to preserve source-pixel positioning and timings.
+    # Reframe before cutting: zoom keyframes use the original recording's
+    # timestamps, just like text, masks and the editor's timeline.
     if reframe:
         if reframe.get("sections"):
             reframe_parts, vlabel = build_timed_reframe(
@@ -569,6 +563,13 @@ def process(
             x, y, w, h = reframe_geometry(_even(info.width * scale), _even(info.height * scale), reframe)
             parts.append(f"{vlabel}crop={w}:{h}:{x}:{y}[reframed]")
             vlabel = "[reframed]"
+
+    out_duration = info.duration
+    alabel = None
+    if keep:
+        cut_parts, vlabel, alabel = build_cuts(vlabel, audio_in, keep)
+        parts += cut_parts
+        out_duration = sum(b - a for a, b in keep)
     # Every video preset produces compatible H.264 MP4 with even dimensions.
     parts.append(f"{vlabel}scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p[vout]")
     graph = ";".join(parts)
