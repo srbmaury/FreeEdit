@@ -118,10 +118,19 @@ class PresenterSettings(BaseModel):
             raise HTTPException(422, "The presenter video has no sound. Choose Main or Muted.")
 
 
+class ReframeSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    aspect: Literal["original", "wide", "vertical", "square"] = "original"
+    zoom: float = Field(default=1, ge=1, le=3)
+    focus_x: float = Field(default=.5, ge=0, le=1)
+    focus_y: float = Field(default=.5, ge=0, le=1)
+
+
 class ProcessRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     presenter: PresenterSettings | None = None
     background: BackgroundSettings | None = None
+    reframe: ReframeSettings | None = None
     denoise: bool = True
     atten_lim: int | None = Field(default=None, ge=0, le=100)
     preset: Literal["balanced", "small", "high", "audio_only"] = "balanced"
@@ -129,6 +138,8 @@ class ProcessRequest(BaseModel):
     cuts: list[TimeRange] = Field(default_factory=list, max_length=100)
 
     def validate_media(self, media):
+        if self.reframe and (not media["has_video"] or self.preset == "audio_only"):
+            raise HTTPException(422, "Reframing requires video output.")
         if self.background:
             self.background.validate_media(media)
             if self.preset == "audio_only":
