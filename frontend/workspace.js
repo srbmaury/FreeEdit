@@ -43,6 +43,7 @@
   let current = "edits";
   function activate(pane, mode) {
     current = pane;
+    side.classList.toggle("is-edit-inspector", pane === "edits");
     side.setAttribute("aria-label", `${pane === "edits" ? "Edit" : pane.charAt(0).toUpperCase() + pane.slice(1)} settings`);
     if (pane === "background") byId("backgroundPanel").open = true;
     for (const [name, node] of Object.entries(panes)) node.hidden = name !== pane;
