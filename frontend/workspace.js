@@ -15,7 +15,6 @@
   rail.setAttribute("aria-label", "Editing tasks");
   const icons = {
     Videos: '<rect x="2" y="4" width="16" height="14" rx="2"/><path d="m18 9 4-3v10l-4-3"/><rect x="10" y="12" width="6" height="4" rx="1"/>',
-    Select: '<path d="m5 3 14 9-7 1-3 7Z"/>',
     Audio: '<path d="m11 5-6 4H2v6h3l6 4Z"/><path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>',
     Pauses: '<path d="M3 10v4m4-8v12m5-15v18m5-15v12m4-8v4"/>',
     Background: '<rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="12" cy="9" r="3"/><path d="M6 20v-2a6 6 0 0 1 12 0v2"/>',
@@ -37,7 +36,7 @@
   cleanup.remove();
   editor.prepend(rail);
   const tasks = [
-    ["edits", "Select", "select"], ["videos", "Videos"], ["audio", "Audio"], ["pauses", "Pauses"],
+    ["videos", "Videos"], ["audio", "Audio"], ["pauses", "Pauses"],
     ["background", "Background"], ["cut", "Cut", "cut"], ["edits", "Text", "text"], ["edits", "Hide area", "hide"],
     ["export", "Export"]
   ];
@@ -51,6 +50,7 @@
       const active = button.dataset.pane === pane && (pane !== "edits" || button.dataset.mode === (mode || "select"));
       button.setAttribute("aria-pressed", String(active));
     }
+    syncHeading();
     if (S.job) requestAnimationFrame(layoutStage);
   }
   for (const [pane, label, mode] of tasks) {
@@ -117,9 +117,8 @@
   const heading = document.createElement("div");
   heading.className = "inspector-heading"; heading.textContent = "Edit settings";
   side.prepend(heading);
-  const labels = {videos: "Videos", cut: "Cut", edits: "Edit settings", audio: "Audio", pauses: "Pauses", background: "Background", export: "Export"};
-  const syncHeading = () => { heading.textContent = labels[current]; };
-  new MutationObserver(syncHeading).observe(side, {subtree: true, attributes: true, attributeFilter: ["hidden"]});
+  const labels = {videos: "Videos", cut: "Cut", edits: "Your edits", audio: "Audio", pauses: "Pauses", background: "Background", export: "Export"};
+  const syncHeading = () => { heading.textContent = current === "edits" && S.selected != null ? "Edit properties" : labels[current]; };
   window.addEventListener("freeedit:workspace", event => {
     const reason = event.detail;
     if (reason === "videos") activate("videos");
@@ -134,7 +133,10 @@
     if (reason === "open") activate("edits");
     if (reason === "selection") activate("edits", S.mode);
     if (reason === "mode") {
-      if (S.mode === "background" || current === "background" && S.mode === "select") activate("background");
+      if (S.mode === "background") activate("background");
+      // Select is a preview tool, not a task. Keep the Videos inspector visible
+      // while positioning the presenter, and preserve other active inspectors.
+      else if (S.mode === "select") activate(current);
       else activate("edits", S.mode);
     }
     if (reason === "export") activate("export");
