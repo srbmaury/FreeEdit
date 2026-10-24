@@ -169,6 +169,7 @@ function selectZoom(index) {
   if(!zoomSections()[index])return;
   S.selected=null;
   S.selectedZoom=index;
+  document.querySelectorAll(".card.selected").forEach(card=>card.classList.remove("selected"));
   sourcePlayer().currentTime=(zoomSections()[index].start+zoomSections()[index].end)/2;
   syncZoomSelection();renderZoomSelectList();renderTimeline();render();updateTransport();
   window.dispatchEvent(new CustomEvent("freeedit:workspace",{detail:"zoom-selection"}));
