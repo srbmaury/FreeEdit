@@ -49,7 +49,14 @@ button.primary, a.button.primary { background: var(--accent); color: var(--accen
 .workspace-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
 #previewLabel { color: var(--muted); font-size: 11px; }
 #toolbar { border: 0; background: transparent; padding: 0; margin: 0 0 14px; }
-#toolbar > .tool, #toolbar > #cutBtn { display: none !important; }
+#toolbar > .tool:not([data-mode="select"]), #toolbar > #cutBtn { display: none !important; }
+/* Select stays beside the preview; it is not a sidebar feature. */
+#toolbar > .tool[data-mode="select"] { gap: 8px; padding: 8px 12px; font-weight: 600; }
+#toolbar > .tool[data-mode="select"] svg { flex: none; }
+#toolbar > .tool[data-mode="select"] kbd { font-size: 10px; font-family: inherit; font-weight: 600; line-height: 1.4; padding: 1px 5px; border: 1px solid currentColor; border-radius: 4px; opacity: .75; }
+#toolbar > .tool[data-mode="select"].active { color: #383080; background: #ecebff; border-color: #bcb4f0; }
+:root[data-theme="dark"] #toolbar > .tool[data-mode="select"].active { color: #e5e1ff; background: #35314e; border-color: #7067ac; }
+#toolbar > .tool[data-mode="select"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 #toolbar .hint { width: auto; margin: 0; font-size: 12px; }
 .stage-wrap { min-height: 260px; padding: 16px; background: var(--stage); border: 0; border-radius: 9px; }
 .stage { flex-shrink: 0; box-shadow: 0 12px 30px #0002; }
