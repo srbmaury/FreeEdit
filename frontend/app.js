@@ -571,7 +571,17 @@ function setMode(mode) {
   $("modeHint").textContent = MODE_HINTS[mode];
   canvas.className = (mode === "hide" || mode === "background") ? "crosshair" : mode === "text" ? "text" : "";
 }
-document.querySelectorAll(".tool").forEach((b) => (b.onclick = () => setMode(b.dataset.mode)));
+function chooseSelectTool() {
+  if (S.reviewing) setReview(false);
+  setMode("select");
+  // An explicit Select action must reveal the edits inspector, even when
+  // selection mode is already active (the default after uploading).
+  window.dispatchEvent(new CustomEvent("freeedit:workspace", {detail: "select-tool"}));
+}
+document.querySelectorAll(".tool").forEach((b) => (b.onclick = () => {
+  if (b.dataset.mode === "select") chooseSelectTool();
+  else setMode(b.dataset.mode);
+}));
 
 // ---------- removing parts ----------
 $("cutBtn").onclick = addCut;
@@ -739,7 +749,7 @@ document.addEventListener("keydown", (ev) => {
   if (ev.key === " ") { ev.preventDefault(); sourcePlayer().paused ? sourcePlayer().play() : sourcePlayer().pause(); }
   else if ((ev.key === "Delete" || ev.key === "Backspace") && S.selected) { ev.preventDefault(); deleteEdit(S.selected); }
   else if (ev.key === "Escape") { select(null); setMode("select"); }
-  else if (ev.key === "v" && S.job.has_video) setMode("select");
+  else if (ev.key.toLowerCase() === "v" && S.job.has_video) chooseSelectTool();
   else if (ev.key === "h" && S.job.has_video) setMode("hide");
   else if (ev.key === "t" && S.job.has_video) setMode("text");
   else if (ev.key === "x") addCut();
