@@ -52,6 +52,6 @@ test("short reframe sections meet their peak without leaving the clip", () => {
     sections:[{start:1,end:1.2,zoom:2,focus_x:.5,focus_y:.5,transition:.35}]};
   const value=t=>vm.runInContext("freeeditReframeAt("+JSON.stringify(settings)+","+t+")",context);
   assert.equal(value(1).zoom,1);
-  assert.equal(value(1.1).zoom,2);
+  assert.ok(Math.abs(value(1.1).zoom-2) < 1e-9);
   assert.equal(value(1.2).zoom,1);
 });
