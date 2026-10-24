@@ -232,6 +232,9 @@ canvas.addEventListener("pointercancel", () => { S.drag = null; render(); });
 canvas.addEventListener("pointerup", () => {
   const d = S.drag;
   S.drag = null;
+  if (d?.kind === "move" || d?.kind === "resize") {
+    editorStore.dispatch("edit:drag", () => {});
+  }
   if (d?.kind === "new") {
     const r = normRect(d);
     if (r.w >= 8 && r.h >= 8 && d.background) {
