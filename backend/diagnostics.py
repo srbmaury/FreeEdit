@@ -47,9 +47,9 @@ print(json.dumps({'missing':missing,'model':model}))
     return {'checks': checks}
 
 
-def require_export_space(work: Path, duration: float):
+def require_export_space(work: Path, duration: float, channels: int):
     # Reserve room for decoded/clean WAV, output, and encoder overhead.
     source = next(work.glob('source.*'))
-    required = max(256 * 1024**2, source.stat().st_size * 2 + int(duration * 48000 * 8))
+    required = max(256 * 1024**2, source.stat().st_size * 2 + int(duration * 48000 * max(1, channels) * 4))
     if shutil.disk_usage(work).free < required:
         raise pipeline.PipelineError('Not enough temporary disk space. Free disk space or use a shorter recording.')

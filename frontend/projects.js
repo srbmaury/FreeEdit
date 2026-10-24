@@ -245,7 +245,7 @@ async function locateProjectSource(project, recovery) {
         if (["queued", "processing", "cancelling"].includes(job.status)) {
           S.submittedRanges = keptRangesForExport();
           S.exportSignature = editSignature();
-          setBusy(job.operation === "silence" ? "silence" : "export");
+          setBusy(job.operation);
           show($("procProgress"));
           setProgress("Reconnecting to processing…", null);
           poll();

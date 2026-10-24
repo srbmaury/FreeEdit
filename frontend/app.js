@@ -25,6 +25,8 @@ const S = {
   reviewLoop: null,
 };
 
+let pollRevision = 0;
+
 const video = $("video");
 const canvas = $("overlay");
 const ctx = canvas.getContext("2d");
@@ -86,9 +88,9 @@ api("/api/limits").then((l) => {
   $("storageDetails").textContent = `Temporary files expire after ${l.job_ttl_hours} hours of inactivity. Active processing is protected.`;
   $("retentionNote").textContent = `Processed on this server. Files expire after ${l.job_ttl_hours} hours when inactive.`;
   const parts = [];
-  if (l.max_upload_mb < 1024) parts.push(`up to ${l.max_upload_mb} MB`);
+  if (l.max_upload_mb) parts.push(`up to ${l.max_upload_mb} MB`);
   if (l.max_duration_min) parts.push(`${l.max_duration_min} min`);
-  let text = parts.length ? "Max " + parts.join(", ") : "";
+  let text = parts.length ? parts.join(" · ") : "";
   if (l.max_output_side) text += `${text ? " · " : ""}Edited videos are saved at up to ${l.max_output_side}px`;
   $("dzLimits").textContent = text;
 }).catch(() => {});
@@ -165,6 +167,7 @@ function openEditor(job) {
   S.job = job;
   S.edits = [];
   S.undo = []; S.redo = [];
+  resetNoisePreview();
   S.exportSignature = null; S.reviewing = false;
   S.operation = null; S.suggestions = [];
   resetTimeline();
@@ -285,6 +288,7 @@ function updateTransport() {
   if (document.activeElement !== $("scrubber")) {
     $("scrubber").value = d ? (sourcePlayer().currentTime / d) * 1000 : 0;
   }
+  $("scrubber").setAttribute("aria-valuetext", `${fmt(sourcePlayer().currentTime)} of ${fmt(d)}`);
   const sel = getEdit(S.selected);
   show($("reviewSelectionBtn"), !!sel && !S.reviewing);
   const track = $("rangeTrack");
@@ -751,7 +755,7 @@ function refreshExportState() {
   $("exportSummary").textContent = `${fmt(Math.max(0, duration() - removed))} output · ${S.edits.filter(e => e.type === "cut").length} cuts · ${S.edits.filter(e => e.type === "hide").length} masks · Noise reduction ${$("denoise").checked ? "on" : "off"}`;
   const stale = S.exportSignature !== null && S.exportSignature !== editSignature();
   $("resultNote").textContent = stale ? "Edits changed. Export again to include them; this download is the previous result." : "Rendered export ready to review.";
-  $("previewLabel").textContent = S.reviewing ? `${S.compareOriginal ? "Original recording" : "Rendered export"}${stale ? " · edits changed since export" : ""}` : "Edits preview · noise reduction is heard after export";
+  $("previewLabel").textContent = S.reviewing ? `${S.compareOriginal ? "Original recording" : "Rendered export"}${stale ? " · edits changed since export" : ""}` : "Edits preview · use the audio sample to hear noise removal";
 }
 $("denoise").addEventListener("change", refreshExportState);
 $("strength").addEventListener("change", refreshExportState);
@@ -795,11 +799,14 @@ function mapComparisonTime(t, fromOriginal) {
 }
 
 function setBusy(operation) {
+  ++pollRevision;
+  clearTimeout(S.pollTimer);
   const wasBusy = !!S.operation;
   S.operation = operation;
   $("processBtn").disabled = !!operation;
   $("detectSilenceBtn").disabled = !!operation;
   $("retryPausesBtn").disabled = !!operation;
+  $("noisePreviewBtn").disabled = !!operation;
   $("cancelProcessingBtn").disabled = false;
   $("cancelProcessingBtn").textContent = "Cancel";
   if (operation && !wasBusy) {
@@ -888,7 +895,8 @@ async function startExport() {
 }
 
 function setProgress(stage, pct) {
-  $("procStage").textContent = stage || "Working…";
+  const stageText = stage || "Working…";
+  if ($("procStage").textContent !== stageText) $("procStage").textContent = stageText;
   const bar = $("procBar").parentElement;
   bar.classList.toggle("indeterminate", pct == null);
   $("procBar").style.width = pct == null ? "" : Math.round(pct * 100) + "%";
@@ -896,23 +904,31 @@ function setProgress(stage, pct) {
 }
 
 function poll(delay = 800) {
+  const revision = ++pollRevision;
+  const operation = S.operation;
   clearTimeout(S.pollTimer);
+  if (!operation) return;
   const id = S.job?.id;
   S.pollTimer = setTimeout(async () => {
-    if (S.job?.id !== id) return;
+    if (S.job?.id !== id || S.operation !== operation || revision !== pollRevision) return;
     try {
       const j = await api(`/api/jobs/${id}`);
-      if (S.job?.id !== id) return;
+      if (S.job?.id !== id || S.operation !== operation || revision !== pollRevision) return;
       if (j.queued_at) S.busySince = j.queued_at * 1000;
       if (j.status === "cancelled") {
         const wasSilence = S.operation === "silence";
+        const wasPreview = S.operation === "preview";
         setBusy(null); show($("procProgress"), false);
+        if (wasPreview) return noisePreviewDone({error: "Sample processing stopped."});
         if (wasSilence) $("silenceStatus").textContent = "Detection stopped. Your edits are unchanged.";
         else { $("procError").textContent = "Export stopped. Your recording and edits are ready to try again."; show($("procError")); }
         return;
       }
       if (j.status === "cancelling") { setProgress("Stopping…", null); poll(); return; }
-      if (S.operation === "silence") {
+      if (S.operation === "preview") {
+        if (j.preview) return noisePreviewDone(j.preview);
+        if (!["queued", "processing", "cancelling"].includes(j.status)) return noisePreviewDone({error: "Sample was not started. Please retry."});
+      } else if (S.operation === "silence") {
         if (j.silence) return silenceDone(j.silence);
         if (!["queued", "processing", "cancelling"].includes(j.status)) return silenceDone({error: "Detection was not started. Please retry."});
       } else if (j.status === "done") return processDone(j);
@@ -921,7 +937,7 @@ function poll(delay = 800) {
       setProgress(j.stage, j.progress);
       poll();
     } catch (err) {
-      if (S.job?.id !== id) return;
+      if (S.job?.id !== id || S.operation !== operation || revision !== pollRevision) return;
       if (err.status === 404) return procFailed("This file expired or the server restarted. Upload a replacement to continue.", true);
       setProgress("Connection interrupted. Reconnecting to processing…", null);
       poll(Math.min(delay * 2, 10000));
@@ -934,6 +950,7 @@ function procFailed(msg, replaceFile = false, reference = null) {
   show($("procReference"), !!reference);
   $("procReference").textContent = reference ? `Reference: ${reference}` : "";
   if (S.operation === "silence") return silenceDone({error: msg});
+  if (S.operation === "preview") return noisePreviewDone({error: msg});
   setBusy(null);
   $("processBtn").textContent = "Retry export";
   show($("procProgress"), false);
@@ -996,6 +1013,7 @@ $("newFileDialog").addEventListener("close", () => {
 
 function resetFile() {
   resetProject();
+  resetNoisePreview();
   clearTimeout(S.pollTimer);
   const id = S.job?.id;
   stopReviewLoop();

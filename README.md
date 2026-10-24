@@ -8,7 +8,7 @@ A small web app for cleaning up screen recordings and other audio or video files
 - **Remove parts of the video**: mark one or more ranges on the timeline and they're cut out
 - **Write text on the video**: click to place it, set the font, size, color and background, and choose when it appears
 - **Hide part of the video**: drag a box, then blur it, pixelate it or cover it with black, for a time range you choose
-- Compare the original and cleaned versions, then download the result
+- Preview a 10-second noise-removal sample before exporting; compare original and exported recordings afterward
 
 Live at **https://freeedit.srbmaury.com**, or run it on your own Mac. Files are processed by the server running FreeEdit and stored in `./jobs/`. A scheduled cleanup expires inactive files after 24 hours locally or 1 hour when hosted; active uploads and queued/processing exports are protected.
 
@@ -30,6 +30,8 @@ You need [Homebrew](https://brew.sh/). Then run:
 ./run.sh       # opens the server at http://localhost:8000
 ```
 
+Startup checks the media tools, noise environment, and temporary disk space. Use `./setup.sh --warm-model` to download and load the noise model during setup instead of first use. See [local setup and troubleshooting](docs/TROUBLESHOOTING.md).
+
 Why it's set up this way (from the DeepFilterNet macOS guide):
 
 - **Python 3.12.** Python 3.14 breaks the dependencies.
@@ -50,7 +52,7 @@ Denoising runs `backend/df_worker.py` with `DEEPFILTER_PYTHON`, which defaults t
 ## Using it
 
 1. Drop in a file (MOV, MP4, WEBM, MKV, WAV, MP3, M4A, …).
-2. **Audio:** leave *Remove background noise* on and pick a strength. *Natural* caps the reduction at 18 dB, which sounds less processed. *Maximum* applies no cap.
+2. **Audio:** use **Preview noise removal** to hear up to 10 seconds from the playhead and switch between Original and Noise removed. The sample ignores cuts and visual edits. Then leave *Remove background noise* on and pick a strength. *Natural* caps the reduction at 18 dB, which sounds less processed. *Maximum* applies no cap.
 3. **✂ Remove part** (`X`): marks 3 seconds from the playhead as a red block on the timeline under the scrubber. Drag the block's edges to adjust it, or drag the whole block. Add as many as you need. Playback skips removed parts, and the final length is shown next to the time.
 4. **Hide area** (`H`): drag over the part to hide. Solid cover is the default. Choose Blur or Pixelate only for non-sensitive details.
 5. **Add text** (`T`): click on the video, then type in the sidebar.
@@ -88,7 +90,7 @@ All video presets re-encode to compatible MP4, preserve the frame without croppi
 - Homebrew's ffmpeg is built without `drawtext`. Text is therefore drawn in the browser, exported as a transparent PNG, and placed with ffmpeg's `overlay` filter. The preview and the final render use the same drawing code, so they match.
 - Jobs run one at a time, because DeepFilterNet and x264 both use a lot of CPU. At most four jobs may be queued or processing; further submissions receive a retry message. Run one API process per jobs directory; admission and status are held in memory.
 - Some formats won't preview in some browsers, for example HEVC `.mov` in Chrome, or `.mkv`/`.avi`. Use Safari or convert the file to MP4 first.
-- DeepFilterNet's `enhance()` holds the whole clip plus autograd buffers in memory (about 13 MB per second of audio). `df_worker.py` instead runs it under `inference_mode` on short chunks, with 1 s of warm-up audio before each chunk and a 50 ms crossfade between chunks. Memory stays flat for any length, and on speech the output is within 39 dB of whole-file processing.
+- DeepFilterNet's `enhance()` holds the whole clip plus autograd buffers in memory (about 13 MB per second of audio). `df_worker.py` instead runs it under `inference_mode` on short chunks, with 1 s of warm-up audio before each chunk and a 50 ms crossfade between chunks. This bounds the audio-processing buffer as duration increases; on speech the output is within 39 dB of whole-file processing.
 
 ## Hosting (Render)
 
@@ -166,3 +168,12 @@ backend/pipeline.py   ffprobe/ffmpeg pipeline; filtergraph for overlays and cuts
 backend/df_worker.py  DeepFilterNet3 denoiser (chunked, runs as a subprocess)
 frontend/             Static UI (no build step): index.html, style.css, app.js, silence.js, timeline.js
 ```
+
+
+## Local operation and releases
+
+- **Storage:** **⋯ → Storage and cleanup** shows temporary-file usage and free disk space. Cleanup preserves the open recording and active processing, and removes other inactive sessions and exports on that server.
+- **Continue later:** save a project and retain the original media. Downloaded projects do not contain media or rendered exports; temporary files expire.
+- **Long recordings:** no local duration cap is configured by default; the upload limit is 1,024 MB. See [performance measurements and limits](docs/PERFORMANCE.md) before planning long exports.
+- **Accessibility:** native dialogs, keyboard editing controls, a skip link, visible focus, readable seek values, and reduced-motion support. This is not a claim of full accessibility conformance.
+- **License:** FreeEdit source is [MIT licensed](LICENSE). See [release preparation](docs/RELEASING.md) and the [dependency/model audit](docs/LICENSE_AUDIT.md) for separately distributed components.

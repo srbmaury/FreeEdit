@@ -94,3 +94,15 @@ class SilenceRequest(BaseModel):
     def validate_media(self, media):
         if not media["has_audio"]:
             raise HTTPException(422, "Silence detection requires an audio track.")
+
+
+class PreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    start: float = Field(default=0, ge=0)
+    atten_lim: int | None = Field(default=18, ge=0, le=100)
+
+    def validate_media(self, media):
+        if not media["has_audio"]:
+            raise HTTPException(422, "This recording has no audio track.")
+        if self.start >= media["duration"]:
+            raise HTTPException(422, "Preview must start inside the recording.")

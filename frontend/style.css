@@ -335,3 +335,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .diagnostic-check strong { color: var(--text); }
 .project-recovery { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
 .project-recovery .project-status { margin: 0; }
+
+/* Keyboard and reduced-motion preferences apply to the whole editor. */
+:focus-visible { outline: 3px solid var(--accent, #4f8cff); outline-offset: 3px; }
+.skip-link { position: fixed; top: 12px; left: 12px; z-index: 100; padding: 12px; background: var(--surface); color: var(--text); transform: translateY(calc(-100% - 24px)); }
+.skip-link:focus-visible { transform: translateY(0); }
+#noiseSample { margin-top: 12px; }
+#noiseSample audio { width: 100%; margin-top: 10px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
+}

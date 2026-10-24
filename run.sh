@@ -6,5 +6,6 @@ if [ ! -x .venv/bin/python ]; then
   echo "No .venv found. Run ./setup.sh first." >&2
   exit 1
 fi
+.venv/bin/python -m backend.preflight
 echo "FreeEdit is running at http://localhost:${PORT}"
 exec .venv/bin/python -m uvicorn backend.app:app --no-access-log --host 127.0.0.1 --port "$PORT"

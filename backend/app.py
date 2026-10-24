@@ -7,6 +7,8 @@ Run from the project root:
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import re
 import os
 from contextlib import asynccontextmanager
 import shutil
@@ -17,13 +19,13 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import pipeline
 from .diagnostics import inspect_setup, require_export_space
 from .execution import Cancelled, JobControl, cancellation_scope
-from .models import ProcessRequest, SilenceRequest
+from .models import ProcessRequest, SilenceRequest, PreviewRequest
 from .observability import event, install_error_handling, public_processing_error
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -135,6 +137,8 @@ async def upload(request: Request, filename: str):
             with source.open("wb") as f:
                 async for chunk in request.stream():
                     size += len(chunk)
+                    if shutil.disk_usage(work).free < len(chunk) + 64 * 1024**2:
+                        raise HTTPException(507, "Temporary storage is full. Use Storage and cleanup or free disk space.")
                     if size > limit:
                         raise HTTPException(413, f"File is larger than {MAX_UPLOAD_MB} MB.")
                     f.write(chunk)
@@ -200,7 +204,7 @@ def _run(job_id: str, req: ProcessRequest, previous: dict) -> None:
     _update(job_id, status="processing", stage="Starting", progress=None, error=None, error_code=None, output=None)
     try:
         source = next(work.glob("source.*"))
-        require_export_space(work, previous["media"]["duration"])
+        require_export_space(work, previous["media"]["duration"], previous["media"]["audio_channels"])
         for stale in [*work.glob("output.*"), *work.glob("text_*.png"), work / "raw.wav"]:
             stale.unlink(missing_ok=True)
         shutil.rmtree(work / "denoised", ignore_errors=True)
@@ -226,6 +230,8 @@ def _execute(worker, job_id, req, previous, control):
             worker(job_id, req, previous)
     except Cancelled:
         work = JOBS_DIR / job_id
+        if worker is _preview_noise:
+            shutil.rmtree(work / "preview", ignore_errors=True)
         if worker is _run:
             for path in [*work.glob("output.*"), *work.glob("text_*.png"), work / "raw.wav"]:
                 path.unlink(missing_ok=True)
@@ -278,12 +284,15 @@ def _submit(job_id, req, worker):
         previous["queued_at"] = time.time()
         control = JobControl()
         job_controls[job_id] = control
-        event("job_queued", job_id=job_id, operation="silence" if worker is _analyze_silence else "export")
+        operation = "silence" if worker is _analyze_silence else "preview" if worker is _preview_noise else "export"
+        event("job_queued", job_id=job_id, operation=operation)
         job.update(status="queued", stage="Waiting in queue", progress=None, error=None, updated_at=time.time(),
-                   operation="silence" if worker is _analyze_silence else "export",
+                   operation=operation,
                    queued_at=time.time(), started_at=None, cancel_requested=False)
         if worker is _analyze_silence:
             job["silence"] = None
+        if worker is _preview_noise:
+            job["preview"] = None
         try:
             job_futures[job_id] = executor.submit(_execute, worker, job_id, req, previous, control)
         except RuntimeError as exc:
@@ -317,6 +326,79 @@ def _analyze_silence(job_id: str, req: SilenceRequest, previous: dict) -> None:
 @app.post("/api/jobs/{job_id}/silence")
 def analyze_silence(job_id: str, req: SilenceRequest):
     return _submit(job_id, req, _analyze_silence)
+
+
+def _preview_noise(job_id: str, req: PreviewRequest, previous: dict) -> None:
+    work = JOBS_DIR / job_id
+    preview = work / "preview"
+    _update(job_id, status="processing", started_at=time.time(), stage="Preparing audio sample")
+    try:
+        shutil.rmtree(preview, ignore_errors=True)
+        if shutil.disk_usage(work).free < 32 * 1024**2:
+            raise pipeline.PipelineError("Not enough disk space for an audio sample.")
+        length = min(10, previous["media"]["duration"] - req.start)
+        pipeline.noise_preview(next(work.glob("source.*")), preview, req.start, length,
+                               req.atten_lim, lambda stage, pct: _update(job_id, stage=stage, progress=pct))
+        result = {"start": req.start, "duration": length, "atten_lim": req.atten_lim, "error": None}
+    except Cancelled:
+        raise
+    except Exception as exc:
+        shutil.rmtree(preview, ignore_errors=True)
+        code, message = public_processing_error(exc)
+        event("preview_failed", job_id=job_id, code=code, detail=str(exc))
+        result = {"error": message}
+    _update(job_id, status="done" if previous.get("output") else "uploaded",
+            stage=None, progress=None, preview=result)
+
+
+@app.post("/api/jobs/{job_id}/preview")
+def preview_noise(job_id: str, req: PreviewRequest):
+    return _submit(job_id, req, _preview_noise)
+
+
+@app.api_route("/api/jobs/{job_id}/preview/{variant}", methods=["GET", "HEAD"])
+def preview_audio(job_id: str, variant: str):
+    job = _job(job_id)
+    if variant not in ("original", "clean") or not job.get("preview") or job["preview"].get("error"):
+        raise HTTPException(404, "Audio sample is not ready.")
+    path = JOBS_DIR / job_id / "preview" / f"{variant}.wav"
+    if not path.is_file():
+        raise HTTPException(404, "Audio sample expired. Create another sample.")
+    return FileResponse(path)
+
+
+def _storage_inventory():
+    entries = []
+    for directory in JOBS_DIR.iterdir():
+        if directory.is_dir() and len(directory.name) == 12 and all(c in "0123456789abcdef" for c in directory.name):
+            size = sum(p.stat().st_size for p in directory.rglob("*") if p.is_file())
+            entries.append((directory, size))
+    return entries
+
+
+@app.get("/api/storage")
+def storage(keep: str = ""):
+    with jobs_lock:
+        entries = _storage_inventory()
+        protected = active_uploads | set(job_controls) | {keep}
+        return {"used_bytes": sum(size for _, size in entries),
+                "reclaimable_bytes": sum(size for path, size in entries if path.name not in protected),
+                "files": len(entries), "free_bytes": shutil.disk_usage(JOBS_DIR).free}
+
+
+@app.post("/api/storage/cleanup")
+def cleanup_storage(keep: str):
+    # The open recording is explicitly preserved alongside every active operation.
+    with jobs_lock:
+        protected = active_uploads | set(job_controls) | {keep}
+        removed = 0
+        for path, size in _storage_inventory():
+            if path.name in protected:
+                continue
+            shutil.rmtree(path)
+            jobs.pop(path.name, None)
+            removed += size
+    return {"removed_bytes": removed}
 
 
 @app.get("/api/limits")
@@ -377,4 +459,25 @@ def delete_job(job_id: str):
     return {"ok": True}
 
 
-app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+@app.get("/index.html", response_class=HTMLResponse, include_in_schema=False)
+def index():
+    # Content hashes keep a new page from mixing cached scripts/styles with new UI.
+    html = (FRONTEND_DIR / "index.html").read_text()
+    def version_asset(match):
+        attribute, filename = match.groups()
+        digest = hashlib.sha256((FRONTEND_DIR / filename).read_bytes()).hexdigest()[:12]
+        return f'{attribute}="{filename}?v={digest}"'
+    html = re.sub(r'(src|href)="([\w-]+\.(?:js|css))"', version_asset, html)
+    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+
+class FrontendFiles(StaticFiles):
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        if Path(path).suffix in {".js", ".css", ".html"}:
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/", FrontendFiles(directory=FRONTEND_DIR, html=True), name="frontend")

@@ -66,6 +66,7 @@ class MediaInfo:
     has_audio: bool
     width: int = 0
     height: int = 0
+    audio_channels: int = 0
 
 
 def probe(path: Path) -> MediaInfo:
@@ -100,6 +101,7 @@ def probe(path: Path) -> MediaInfo:
         has_audio=audio is not None,
         width=width,
         height=height,
+        audio_channels=int(audio.get("channels", 2)) if audio else 0,
     )
 
 
@@ -162,7 +164,7 @@ def denoise(wav_in: Path, out_dir: Path, atten_lim: int | None, duration: float)
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / f"{wav_in.stem}_DeepFilterNet3.wav"
     python = os.environ.get("DEEPFILTER_PYTHON", sys.executable)
-    cmd = [python, str(WORKER), str(wav_in), str(out), str(atten_lim or "")]
+    cmd = [python, str(WORKER), str(wav_in), str(out), str(atten_lim) if atten_lim is not None else ""]
     try:
         proc = run_process(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL,
                               timeout=300 + duration * 5)
@@ -480,3 +482,17 @@ def process(
 
     _run_ffmpeg(args, out_duration, "Rendering video", progress)
     return out
+
+
+def noise_preview(source: Path, work: Path, start: float, length: float,
+                  atten_lim: int | None, progress: ProgressFn) -> None:
+    """A bounded audio-only sample, independent of cuts and rendered exports."""
+    work.mkdir(parents=True, exist_ok=True)
+    raw = work / "original.wav"
+    _run_ffmpeg(["-ss", str(start), "-i", str(source), "-t", str(length),
+                 "-vn", "-ar", "48000", "-ac", "2", str(raw)],
+                length, "Preparing audio sample", progress)
+    progress("Removing noise from sample", None)
+    clean = denoise(raw, work / "denoised", atten_lim, length)
+    shutil.move(str(clean), work / "clean.wav")
+    shutil.rmtree(work / "denoised")

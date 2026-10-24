@@ -33,6 +33,7 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <a class="skip-link" href="#main">Skip to editor</a>
   <header class="topbar">
     <div class="brand">FreeEdit</div>
     <div class="tagline">A little cleanup. A recording ready to share.</div>
@@ -59,6 +60,7 @@
     </details>
   </header>
 
+  <main id="main" tabindex="-1">
   <!-- 1. Upload -->
   <section id="uploadView" class="view">
     <div id="resumePanel" class="resume-panel hidden">
@@ -90,7 +92,7 @@
       <div class="main">
         <div class="project-recovery"><p id="projectStatus" class="project-status" role="status" aria-live="polite"></p><button id="takeRecoveryBtn" class="mini hidden">Use recovery for this tab</button></div>
         <div class="preview-heading">
-          <div><h2 class="workspace-title">Your recording</h2><span id="previewLabel" role="status">Edits preview · noise reduction is heard after export</span></div>
+          <div><h2 class="workspace-title">Your recording</h2><span id="previewLabel" role="status">Edits preview · use the audio sample to hear noise removal</span></div>
           <div class="preview-actions">
             <div id="previewSwitch" class="segmented hidden" role="group" aria-label="Compare recording">
               <button id="originalPreviewBtn" aria-pressed="false">Original</button>
@@ -186,7 +188,16 @@
                 <option value="10">Gentle</option>
               </select>
             </label>
-            <p class="small">Start with Natural sound to reduce noise while keeping voices clear. Listen to the exported file to check the result.</p>
+            <p class="small">Start with Natural sound. Preview up to 10 seconds from the playhead before exporting. The sample ignores cuts and visual edits.</p>
+            <button id="noisePreviewBtn" type="button">Preview noise removal</button>
+            <div id="noiseSample" class="hidden">
+              <p id="noiseSampleStatus" class="small" role="status"></p>
+              <div class="segmented" role="group" aria-label="Audio sample">
+                <button id="sampleOriginalBtn" type="button" aria-pressed="true">Original</button>
+                <button id="sampleCleanBtn" type="button" aria-pressed="false">Noise removed</button>
+              </div>
+              <audio id="noiseSamplePlayer" controls aria-label="Noise removal sample"></audio>
+            </div>
           </div>
           <p id="noAudio" class="small hidden">This file has no audio track.</p>
         </div>
@@ -228,10 +239,10 @@
           <p id="presetInfo" class="small"></p>
           <p id="exportSummary" class="small"></p>
           <button id="processBtn" class="primary">Export file</button>
-          <div id="procProgress" class="progress hidden" role="status" aria-live="polite">
-            <div class="progress-label"><span id="procStage">Starting…</span> <span id="procPct"></span></div>
+          <div id="procProgress" class="progress hidden">
+            <div class="progress-label"><span id="procStage" role="status">Starting…</span> <span id="procPct"></span></div>
             <div class="bar"><div id="procBar"></div></div>
-            <div class="processing-meta"><span id="elapsedTime"></span><button id="cancelProcessingBtn" class="ghost">Cancel</button></div>
+            <div class="processing-meta"><span id="elapsedTime" aria-live="off"></span><button id="cancelProcessingBtn" class="ghost">Cancel</button></div>
           </div>
           <div id="procError" class="error hidden" role="alert"></div>
           <p id="procReference" class="small hidden"></p>
@@ -321,6 +332,7 @@
     </div>
   </template>
 
+  </main>
   <dialog id="newFileDialog" aria-labelledby="newFileTitle" aria-describedby="newFileWarning">
     <form method="dialog">
       <h2 id="newFileTitle">Start with a new file?</h2>
@@ -344,6 +356,9 @@
       <p>Files are processed by the computer running FreeEdit. If you opened a hosted instance, that computer is its server.</p>
       <p id="storageDetails">Temporary files expire automatically. Active processing is protected.</p>
       <p>Your original file stays unchanged. Use Save project to keep edits for another day, and keep the original recording. Browser recovery stores your latest session on this browser only. Starting another file discards that recovery.</p>
+      <p id="storageUsage" role="status">Open this dialog to check disk usage.</p>
+      <p class="small">Cleanup removes other inactive recordings and their exports on this server, including other browser sessions. Your open recording and active processing are kept. Download anything you need first.</p>
+      <button id="cleanupStorageBtn" type="button">Clean other temporary files…</button>
       <button class="primary">Done</button></form>
   </dialog>
   <dialog id="aboutDialog" class="info-dialog" aria-labelledby="aboutTitle">
@@ -364,5 +379,6 @@
   <script src="silence.js"></script>
   <script src="timeline.js"></script>
   <script src="projects.js"></script>
+  <script src="noise-preview.js"></script>
 </body>
 </html>

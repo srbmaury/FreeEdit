@@ -31,6 +31,7 @@ RUN python -c "from df.enhance import init_df; init_df(log_level='ERROR')"
 COPY backend backend
 COPY frontend frontend
 COPY docs/LICENSE_AUDIT.md docs/LICENSE_AUDIT.md
+COPY LICENSE LICENSE
 
 # Tuned for small hosts (Render free: 512 MB, shared CPU); see README
 ENV PYTHONUNBUFFERED=1 \
