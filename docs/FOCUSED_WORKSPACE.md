@@ -6,7 +6,8 @@ Feature branch: design/focused-workspace.
 ## What changes
 
 - Desktop: task rail, recording preview, one focused inspector, full-width timeline beneath preview and inspector.
-- Tasks: Select, Audio, Pauses, Background, Cut, Text, Hide area, Export.
+- Tasks: Videos, Audio, Pauses, Background, Cut, Text, Hide area, Export. **Select (V)** lives in the preview toolbar instead of the task rail.
+- The inspector shows **Your edits** until an edit is selected, then **Edit properties**. Using Select preserves the active Videos inspector so presenter insets can be moved or resized.
 - Original edit controls, timeline lanes, waveform, upload, project recovery, save/open, themes, processing APIs, and output comparison remain connected to their existing handlers.
 - Background retains blur/color/image choices, built-in and uploaded images, fixed camera inset selection, numeric region fields, and the real three-second processed sample from main.
 - Undo/redo and an export shortcut sit next to preview actions.
