@@ -81,6 +81,7 @@ function renderTimeline() {
     track.style.height = height;
     $(row.label).style.height = height;
   }
+  if (typeof renderZoomTimeline === "function") renderZoomTimeline();
   renderWaveform();
   updateTimelinePlayhead();
 }
