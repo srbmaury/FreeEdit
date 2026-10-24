@@ -248,7 +248,7 @@ function updateReframePreview(rect){
   reframeCtx.clearRect(0,0,reframePreview.width,reframePreview.height);
   try {
     reframeCtx.drawImage(video,rect.x,rect.y,rect.w,rect.h,0,0,reframePreview.width,reframePreview.height);
-    reframeCtx.drawImage(canvas,rect.x,rect.y,rect.w,rect.h,0,0,reframePreview.width,reframePreview.height);
+    reframeCtx.drawImage(canvas,rect.x*canvas.width/S.job.width,rect.y*canvas.height/S.job.height,rect.w*canvas.width/S.job.width,rect.h*canvas.height/S.job.height,0,0,reframePreview.width,reframePreview.height);
     reframePreview.hidden=false;
   } catch {
     reframePreview.hidden=true;
