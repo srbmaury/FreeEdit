@@ -199,6 +199,25 @@
           </div>
           <p id="compositionStatus" class="small" role="status">Preview three seconds from the playhead, including your sound choice. Main background effects, cuts, text, and privacy masks are applied in the full export.</p>
         </section>
+        <section id="reframePanel" class="panel">
+          <h2 class="section-title">Reframe recording</h2>
+          <p class="small">Crop or zoom without changing the original. The dashed guide shows what the export will retain.</p>
+          <label class="field"><span>Aspect ratio</span><select id="reframeAspect">
+            <option value="original">Original</option><option value="wide">16:9 · Landscape</option>
+            <option value="vertical">9:16 · Portrait</option><option value="square">1:1 · Square</option>
+          </select></label>
+          <label class="field"><span>Zoom</span><input id="reframeZoom" type="range" min="1" max="3" step="0.05" value="1"><output id="reframeZoomLabel">1.00×</output></label>
+          <label class="field"><span>Horizontal focus</span><input id="reframeX" type="range" min="0" max="1" step="0.01" value="0.5"></label>
+          <label class="field"><span>Vertical focus</span><input id="reframeY" type="range" min="0" max="1" step="0.01" value="0.5"></label>
+          <button id="reframeReset" type="button" class="ghost">Reset crop</button>
+        </section>
+        <section id="captionsPanel" class="panel">
+          <h2 class="section-title">Captions</h2>
+          <p class="small">Import an SRT subtitle file. Captions become editable, timed text overlays in the existing timeline.</p>
+          <button id="captionImportBtn" type="button">Import SRT subtitles…</button>
+          <input id="captionInput" type="file" accept=".srt,text/plain" hidden>
+          <p id="captionStatus" class="small" role="status"></p>
+        </section>
         <section id="cutDraftPanel" class="panel">
           <h2 class="section-title">Remove a section</h2>
           <p class="small">Choose a range on the original recording. Nothing is removed until you add the cut.</p>
@@ -448,6 +467,7 @@
     <form method="dialog"><h2 id="diagnosticsTitle">Check setup</h2><div id="diagnosticsResults" role="status" aria-live="polite"></div><button class="primary">Done</button></form>
   </dialog>
   <script src="ui.js"></script>
+  <script src="media-utils.js"></script>
   <script src="app.js"></script>
   <script src="silence.js"></script>
   <script src="timeline.js"></script>
