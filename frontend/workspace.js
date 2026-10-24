@@ -121,7 +121,7 @@
   heading.className = "inspector-heading"; heading.textContent = "Edit settings";
   side.prepend(heading);
   const labels = {videos: "Videos", cut: "Cut", edits: "Your edits", audio: "Audio", pauses: "Pauses", background: "Background", reframe: "Reframe", captions: "Captions", export: "Export"};
-  const syncHeading = () => { heading.textContent = current === "edits" && S.selected != null ? "Edit properties" : labels[current]; };
+  const syncHeading = () => { heading.textContent = current === "edits" && (S.selected != null || S.selectedZoom != null) ? "Edit properties" : labels[current]; };
   window.addEventListener("freeedit:workspace", event => {
     const reason = event.detail;
     if (reason === "videos") activate("videos");
@@ -135,6 +135,7 @@
     }
     if (reason === "open") activate("edits");
     if (reason === "selection") activate("edits", S.mode);
+    if (reason === "zoom-selection") activate("edits", "select");
     if (reason === "select-tool") {
       activate("edits", "select");
       byId("modeHint").textContent = S.selected != null
