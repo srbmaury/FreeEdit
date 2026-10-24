@@ -33,7 +33,7 @@ for (const id of ["reframeAspect", "reframeZoom", "reframeX", "reframeY"]) {
     updateReframe();
     delete event.target.dataset.dragging;
   });
-  if (id !== "reframeAspect") $(id).addEventListener("input", () => {
+  if (id !== "reframeAspect") $(id).addEventListener("input", event => {
     // Record a single undo step at the start of the drag, before mutating.
     if (!event.target.dataset.dragging) { checkpoint(); event.target.dataset.dragging = "1"; }
     const previous = S.reframe || reframeDefaults();
