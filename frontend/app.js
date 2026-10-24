@@ -174,7 +174,7 @@ function openEditor(job) {
   resetBackground();
   resetVideos();
   S.exportSignature = null; S.reviewing = false;
-  S.reframe = {aspect: "original", zoom: 1, focus_x: .5, focus_y: .5};
+  S.reframe = {aspect: "original", zoom: 1, focus_x: .5, focus_y: .5, sections: []};
   if (typeof syncReframeControls === "function") syncReframeControls();
   S.operation = null; S.suggestions = [];
   resetTimeline();
@@ -790,8 +790,9 @@ function restoreHistory(redo = false) {
   to.push(snapshot());
   const restored = JSON.parse(from.pop());
   S.edits = restored.edits; S.background = restored.background;
-  S.reframe = restored.reframe || {aspect:"original",zoom:1,focus_x:.5,focus_y:.5};
+  S.reframe = restored.reframe || {aspect:"original",zoom:1,focus_x:.5,focus_y:.5,sections:[]};
   syncReframeControls();
+  window.dispatchEvent(new CustomEvent("freeedit:workspace", {detail:"reframe-restore"}));
   restorePresenter(restored.presenter, true);
   syncBackgroundControls(); invalidateBackgroundPreview();
   S.selected = null;
