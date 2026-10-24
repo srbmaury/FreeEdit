@@ -63,6 +63,18 @@ function validateProject(value) {
         ![reframe.zoom, reframe.focus_x, reframe.focus_y].every(Number.isFinite) ||
         reframe.zoom < 1 || reframe.zoom > 3 || reframe.focus_x < 0 || reframe.focus_x > 1 ||
         reframe.focus_y < 0 || reframe.focus_y > 1) fail();
+    if (reframe.sections != null) {
+      if (!Array.isArray(reframe.sections) || reframe.sections.length > 20) fail();
+      const sections = [...reframe.sections].sort((a,b)=>a.start-b.start);
+      for (let i=0;i<sections.length;i++) {
+        const s=sections[i];
+        if (!finite(s.start,0,source.duration) || !finite(s.end,0,source.duration+.05) ||
+            s.end<=s.start || !finite(s.zoom,1,3) || !finite(s.focus_x,0,1) ||
+            !finite(s.focus_y,0,1) || !finite(s.transition,0,1.5) ||
+            (i>0 && sections[i-1].end>s.start)) fail();
+      }
+      reframe.sections = sections;
+    }
   }
   if (!settings || typeof settings.denoise !== "boolean" || !["", "10", "18", "30"].includes(settings.strength) || !projectPresets.includes(settings.preset)) fail();
   if ((settings.preset === "audio_only" && !source.has_audio && !presenter?.source.has_audio) || (source.has_video && (!source.width || !source.height))) fail();
