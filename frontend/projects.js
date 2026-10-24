@@ -32,11 +32,7 @@ async function fingerprintSource(file) {
 
 function projectDocument() {
   if (!S.job || !projects.source) return null;
-  const edits = S.edits.map(({id, ...edit}) => {
-    const copy = {...edit};
-    if (copy.type === "text") { delete copy.w; delete copy.h; }
-    return copy;
-  });
+  const edits = S.edits.map(EditorModel.editableProperties);
   return {
     format: "FreeEdit", version: 2,
     source: {...projects.source, duration: S.job.duration, width: S.job.width, height: S.job.height, has_video: S.job.has_video, has_audio: S.job.has_audio},
