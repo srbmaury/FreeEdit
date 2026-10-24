@@ -65,7 +65,7 @@ test("unified inspector, timeline and persistence are wired",()=>{
  }
  assert.match(html,/script src="editor-model\.js"/);
  assert.match(app,/const editorStore = createEditorStore\(S\)/);
- assert.match(app,/EditorModel\.exportReframe\(S\.reframe, S\.edits\)/);
+ assert.match(drawing+exporter,/EditorModel\.exportReframe\(S\.reframe, S\.edits\)/);
  assert.match(projects,/version: 2/);
  assert.match(projects,/EditorModel\.TIMELINE_TYPES/);
  assert.match(reframe,/const zoomSections = \(\) => EditorModel\./);
