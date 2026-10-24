@@ -41,7 +41,7 @@ function projectDocument() {
     format: "FreeEdit", version: 1,
     source: {...projects.source, duration: S.job.duration, width: S.job.width, height: S.job.height, has_video: S.job.has_video, has_audio: S.job.has_audio},
     view: {playhead: sourcePlayer().currentTime || 0, zoom: timeline.zoom},
-    edits, settings: {presenter: presenterProject(), background: getBackgroundSettings(), denoise: $("denoise").checked, strength: $("strength").value, preset: $("exportPreset").value},
+    edits, settings: {presenter: presenterProject(), background: getBackgroundSettings(), reframe: S.reframe, denoise: $("denoise").checked, strength: $("strength").value, preset: $("exportPreset").value},
   };
 }
 
@@ -57,6 +57,13 @@ function validateProject(value) {
   const settings = value.settings;
   const background = validateBackground(settings?.background, source);
   const presenter = validatePresenterProject(settings?.presenter, source);
+  const reframe = settings?.reframe == null ? null : settings.reframe;
+  if (reframe) {
+    if (!source.has_video || !["original", "wide", "vertical", "square"].includes(reframe.aspect) ||
+        ![reframe.zoom, reframe.focus_x, reframe.focus_y].every(Number.isFinite) ||
+        reframe.zoom < 1 || reframe.zoom > 3 || reframe.focus_x < 0 || reframe.focus_x > 1 ||
+        reframe.focus_y < 0 || reframe.focus_y > 1) fail();
+  }
   if (!settings || typeof settings.denoise !== "boolean" || !["", "10", "18", "30"].includes(settings.strength) || !projectPresets.includes(settings.preset)) fail();
   if ((settings.preset === "audio_only" && !source.has_audio && !presenter?.source.has_audio) || (source.has_video && (!source.width || !source.height))) fail();
   if (!Array.isArray(value.edits) || value.edits.length > 200) fail();
@@ -87,7 +94,7 @@ function validateProject(value) {
       duration: source.duration, width: source.width, height: source.height, has_video: source.has_video, has_audio: source.has_audio},
     view: {playhead: finite(value.view?.playhead, 0, source.duration) ? value.view.playhead : 0,
       zoom: [1, 2, 4, 8, 16].includes(value.view?.zoom) ? value.view.zoom : 1},
-    edits, settings: {presenter, background, denoise: settings.denoise, strength: settings.strength, preset: settings.preset}};
+    edits, settings: {presenter, background, reframe, denoise: settings.denoise, strength: settings.strength, preset: settings.preset}};
 }
 
 function projectEditSignature(project) {
@@ -134,6 +141,8 @@ function projectSourceReady(identity) {
 function applyProject(project) {
   projects.writing = true;
   restorePresenter(project.settings.presenter);
+  S.reframe = project.settings.reframe || {aspect:"original",zoom:1,focus_x:.5,focus_y:.5};
+  syncReframeControls();
   S.background = project.settings.background || {mode: "off", blur: 16, color: "#e5e7eb", image: null, region: null, preset: "studio"};
   syncBackgroundControls(); invalidateBackgroundPreview();
   $("backgroundPanel").open = !!project.settings.background;
