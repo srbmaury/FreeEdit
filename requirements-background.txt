@@ -1,0 +1,7 @@
+# Isolated from DeepFilterNet's torch/numpy environment.
+mediapipe==0.10.21
+# Known-compatible versions avoid dependency backtracking and numpy 2 conflicts.
+numpy==1.26.4
+opencv-contrib-python==4.11.0.86
+jax==0.7.1
+jaxlib==0.7.1

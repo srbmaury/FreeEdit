@@ -345,3 +345,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
 }
+
+.background-panel > summary { cursor: pointer; font-size: 14px; font-weight: 650; }
+.background-panel[open] > summary { margin-bottom: 14px; }
+.background-panel .field { margin-top: 12px; }
+.background-panel button { margin-top: 8px; }
+.camera-coordinates { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.camera-coordinates input { min-width: 0; width: 100%; }
+#backgroundPreviewPlayer { width: 100%; max-height: 250px; margin-top: 8px; border-radius: 8px; background: #000; }

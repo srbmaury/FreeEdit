@@ -173,6 +173,38 @@
           <p id="editsEmpty" class="small">Choose a tool above the preview to add an edit. Select an edit here or on the timeline to adjust it.</p>
         </div>
 
+        <details id="backgroundPanel" class="panel background-panel">
+          <summary>Background</summary>
+          <p class="small">Keep a person clear while changing what is behind them. Best for one clearly visible person.</p>
+          <label class="field"><span>Background effect</span><select id="backgroundMode">
+            <option value="off">Original</option><option value="blur">Blur</option><option value="color">Solid color</option><option value="image">Background image</option>
+          </select></label>
+          <div id="backgroundControls" class="hidden">
+            <label id="backgroundBlurField" class="field"><span>Blur strength</span><input id="backgroundBlur" type="range" min="4" max="40" step="1" value="16" /></label>
+            <label id="backgroundColorField" class="field hidden"><span>Background color</span><input id="backgroundColor" type="color" value="#e5e7eb" /></label>
+            <div id="backgroundImageField" class="hidden">
+              <label class="field"><span>Image</span><select id="backgroundImagePreset"><option value="studio">Soft studio</option><option value="twilight">Twilight</option><option value="forest">Forest</option><option value="custom" disabled>Uploaded image</option></select></label>
+              <button id="uploadBackgroundBtn" type="button">Upload an image…</button>
+              <input id="backgroundImageInput" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+              <p class="small">PNG, JPEG, or WebP. The image is cropped to fill the selected area and included in saved projects.</p>
+            </div>
+            <label class="field"><span>Apply to</span><select id="backgroundArea"><option value="full">Whole video</option><option value="camera">Camera area only</option></select></label>
+            <div id="cameraAreaControls" class="hidden">
+              <button id="drawCameraAreaBtn" type="button">Draw camera area</button>
+              <details><summary>Camera area position</summary><div class="camera-coordinates">
+                <label class="field"><span>X</span><input id="cameraX" type="number" min="0" step="1" /></label>
+                <label class="field"><span>Y</span><input id="cameraY" type="number" min="0" step="1" /></label>
+                <label class="field"><span>Width</span><input id="cameraW" type="number" min="8" step="1" /></label>
+                <label class="field"><span>Height</span><input id="cameraH" type="number" min="8" step="1" /></label>
+              </div></details>
+            </div>
+            <button id="backgroundPreviewBtn" type="button">Preview background</button>
+            <p id="backgroundStatus" class="small" role="status">Preview a silent, 3-second sample from the playhead. Cuts, text, and privacy masks are applied during export.</p>
+            <video id="backgroundPreviewPlayer" class="hidden" controls playsinline aria-label="Processed background sample"></video>
+            <p class="small">Edges may flicker around hair or moving hands. This effect is not a reliable way to hide sensitive details; use Hide area for those.</p>
+          </div>
+        </details>
+
         <section class="audio-cleanup">
           <h2 class="section-title">Audio cleanup</h2>
         <div class="panel">
@@ -380,5 +412,6 @@
   <script src="timeline.js"></script>
   <script src="projects.js"></script>
   <script src="noise-preview.js"></script>
+  <script src="background.js"></script>
 </body>
 </html>

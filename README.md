@@ -4,6 +4,7 @@ A small web app for cleaning up screen recordings and other audio or video files
 
 - **Remove background noise** with [DeepFilterNet3](https://github.com/Rikorose/DeepFilterNet)
 - **Shorten pauses**: detect quiet sections, listen to suggestions, and choose which become cuts
+- **Person-aware backgrounds**: blur, solid colors, or built-in/uploaded images, with camera-inset selection and a short processed preview ([optional setup](docs/BACKGROUNDS.md))
 - **Export presets**: Balanced, Small file, High quality, or Audio only
 - **Remove parts of the video**: mark one or more ranges on the timeline and they're cut out
 - **Write text on the video**: click to place it, set the font, size, color and background, and choose when it appears
@@ -18,7 +19,8 @@ Browser (upload, place edits, preview)
    ▼
 FastAPI  ──►  ffmpeg: extract audio (48 kHz)
          ──►  DeepFilterNet3: denoise (streamed in short chunks)
-         ──►  ffmpeg: blur/pixelate/box + text overlays + cuts + clean audio  ──►  download
+         ──►  MediaPipe: person mask (optional background effects)
+         ──►  ffmpeg: background + privacy masks + text + cuts + clean audio  ──►  download
 ```
 
 ## Setup (macOS, Apple Silicon)
@@ -26,8 +28,8 @@ FastAPI  ──►  ffmpeg: extract audio (48 kHz)
 You need [Homebrew](https://brew.sh/). Then run:
 
 ```bash
-./setup.sh     # installs python@3.12, rust, ffmpeg, then creates .venv with pinned deps
-./run.sh       # opens the server at http://localhost:8000
+./setup.sh     # installs python@3.12, rust, ffmpeg, then creates .venv with the app and noise-removal dependencies
+./run.sh       # starts the server at http://localhost:8000
 ```
 
 Startup checks the media tools, noise environment, and temporary disk space. Use `./setup.sh --warm-model` to download and load the noise model during setup instead of first use. See [local setup and troubleshooting](docs/TROUBLESHOOTING.md).
@@ -49,16 +51,27 @@ DEEPFILTER_PYTHON=~/Desktop/.venv312/bin/python ./run.sh
 
 Denoising runs `backend/df_worker.py` with `DEEPFILTER_PYTHON`, which defaults to the server's own Python. It calls DeepFilterNet's Python API rather than the `deepFilter` CLI, because the CLI can hang on exit when it isn't started from a terminal. ffmpeg and ffprobe are looked up in the venv first, then on `PATH`. You can override them with `FFMPEG_BIN` and `FFPROBE_BIN`.
 
+### Optional background effects
+
+After the main setup, install the separate person-segmentation environment:
+
+```bash
+./setup-background.sh  # creates .venv-background and downloads the verified model
+./run.sh
+```
+
+This uses MediaPipe without changing DeepFilterNet's environment. You can set `BACKGROUND_PYTHON` to another compatible Python environment and `FREEEDIT_MODEL_DIR` to a different model-cache directory. Ordinary editing and noise removal do not require this optional setup.
+
 ## Using it
 
 1. Drop in a file (MOV, MP4, WEBM, MKV, WAV, MP3, M4A, …).
-2. **Audio:** use **Preview noise removal** to hear up to 10 seconds from the playhead and switch between Original and Noise removed. The sample ignores cuts and visual edits. Then leave *Remove background noise* on and pick a strength. *Natural* caps the reduction at 18 dB, which sounds less processed. *Maximum* applies no cap.
-3. **✂ Remove part** (`X`): marks 3 seconds from the playhead as a red block on the timeline under the scrubber. Drag the block's edges to adjust it, or drag the whole block. Add as many as you need. Playback skips removed parts, and the final length is shown next to the time.
+2. **Audio:** use **Preview noise removal** to hear up to 10 seconds from the playhead and switch between Original and Noise removed. The sample ignores cuts and visual edits. Then leave *Remove background noise* on and pick a strength. *Natural sound* caps the reduction at 18 dB, which sounds less processed. *Strongest reduction* applies no cap.
+3. **✂ Cut section** (`X`): marks up to 3 seconds from the playhead as a red block on the timeline under the scrubber. Drag the block's edges to adjust it, or drag the whole block. Add as many as you need. Playback skips removed parts, and the final length is shown next to the time.
 4. **Hide area** (`H`): drag over the part to hide. Solid cover is the default. Choose Blur or Pixelate only for non-sensitive details.
 5. **Add text** (`T`): click on the video, then type in the sidebar.
-6. Each edit has a **From/To** time on the original timeline. The **now** buttons set it to the playhead. New text and hide edits start at the current playhead and run to the end of the video.
+6. Each edit has a **From/To** time on the original timeline. The **Use playhead** buttons set it to the playhead. New text and hide edits start at the current playhead and run to the end of the video.
 7. Select an edit to move it. For hide boxes, drag the corner handle to resize. `Delete` removes the selected edit.
-8. Click **Export**. The rendered result opens in the main player. Switch between **Play original** and the cleaned version, return with **Back to editing**, or **Download**. Comparison follows corresponding positions after cuts.
+8. Click **Export**. The rendered result opens in the main player. Switch between **Original** and the cleaned version, return with **Back to editing**, or **Download**. Comparison follows corresponding positions after cuts.
 
 Undo/redo buttons restore edit changes; use `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z` outside text fields. If edits change after export, the result is marked as outdated until you export again. Temporary connection interruptions retry status checks automatically.
 
@@ -74,6 +87,27 @@ Open **Shorten pauses → Detect pauses**. Suggestions start unselected and appe
 
 Detection defaults to −40 dB, a minimum 0.8-second pause, and 0.2 seconds kept on each side. Raise the threshold to detect more quiet sections, with a greater risk of including quiet speech. Up to 100 suggestions are returned per pass. Detection and export share the bounded processing queue.
 
+### Person-aware backgrounds
+
+Open **Background** in the sidebar and choose:
+
+| Effect | Controls |
+|---|---|
+| Original | Keep the original background |
+| Blur | Adjust blur strength while retaining the person |
+| Solid color | Choose a background color |
+| Background image | Soft studio, Twilight, Forest, or an uploaded PNG/JPEG/WebP |
+
+Use **Preview background** to render a silent sample of up to three seconds from the playhead. The main editor continues to show the source; the sample shows the processed background without cuts, text, or privacy masks. Full export applies the background effect before the other visual edits and cuts.
+
+For a webcam inset within a screen recording, choose **Camera area only**, then **Draw camera area** around the inset. Numeric position and size fields provide keyboard access. The rectangle stays fixed throughout the recording; it does not track a moving camera window. **Whole video** applies the effect across the frame.
+
+Uploaded images are resized and embedded in saved projects. Background settings participate in undo/redo and mark existing exports as outdated when changed. The feature is opt-in: uploads are not automatically scanned for people.
+
+This first version works best with a clearly visible person. Hair, fast movement, low light, and small subjects can cause halos or flicker. Use a solid **Hide area** mask for sensitive details; person segmentation is not a privacy guarantee. Background effects add processing time and temporary disk use. Real moving-person footage and long background-effect exports need broader validation; current checks used short person-image clips, including simulated camera motion.
+
+See [background setup, model information, and limitations](docs/BACKGROUNDS.md).
+
 ### Output
 
 | Preset | Output |
@@ -83,7 +117,7 @@ Detection defaults to −40 dB, a minimum 0.8-second pause, and 0.2 seconds kept
 | High quality | H.264/AAC MP4, CRF 18, source resolution within the server cap |
 | Audio only | 48 kHz, 16-bit PCM WAV with cuts and optional noise reduction |
 
-All video presets re-encode to compatible MP4, preserve the frame without cropping, and use even dimensions. The export panel shows the intended dimensions and warns about significant downscaling. Compressed file size depends on content, so it is not predicted. Audio inputs always export as WAV. Audio-only export excludes text and masks, but retains cuts and noise reduction.
+All video presets re-encode to compatible MP4, preserve the frame without cropping, and use even dimensions. The export panel shows the intended dimensions and warns about significant downscaling. Compressed file size depends on content, so it is not predicted. Audio inputs always export as WAV. Audio-only export excludes background effects, text, and masks, but retains cuts and noise reduction.
 
 ## Notes
 
@@ -96,6 +130,14 @@ All video presets re-encode to compatible MP4, preserve the frame without croppi
 
 `Dockerfile` and `render.yaml` deploy the app as a Docker web service on Render's free plan, with the custom domain `freeedit.srbmaury.com`. The image compiles DeepFilterLib with Rust in a builder stage, installs CPU-only torch, and includes the model so a new instance doesn't have to download it.
 
+Background effects are excluded from the default Docker image. To include the optional engine:
+
+```bash
+docker build --build-arg INSTALL_BACKGROUND=true -t freeedit .
+```
+
+The background model downloads on first use; it is not baked into this image. Background effects have not been validated within the 512 MB hosted memory limit described below. Local availability does not imply that the live site has the optional engine installed.
+
 These environment variables set limits for the public site. Locally they default to generous values.
 
 | Variable | Hosted | Local default | Purpose |
@@ -103,7 +145,7 @@ These environment variables set limits for the public site. Locally they default
 | `MAX_UPLOAD_MB` | 100 | 1024 | Upload size limit |
 | `MAX_DURATION_MIN` | 10 | none | Length limit |
 | `JOB_TTL_HOURS` | 1 | 24 | Files are deleted after this |
-| `MAX_PENDING_JOBS` | 4 | 4 | Maximum queued and processing exports combined |
+| `MAX_PENDING_JOBS` | 4 | 4 | Maximum queued/running operations, including previews and pause detection |
 | `FFMPEG_TIMEOUT_SECONDS` | auto | auto | Per FFmpeg stage timeout; defaults to 300 seconds plus 10 times media duration |
 | `FREEEDIT_JOBS_DIR` | `./jobs` | `./jobs` | Optional dedicated media directory |
 | `DF_CHUNK_SECONDS` | 3 | 5 | Denoise chunk size (lower uses less RAM) |
@@ -124,13 +166,13 @@ The dependency/license findings and outstanding release decisions are documented
 
 ## Processing and review
 
-**Cancel** appears only while an export or pause detection is running. Queued work is removed from the queue; active FFmpeg/DeepFilterNet subprocesses are stopped and incomplete export files are removed. The original recording and edits remain. Elapsed time includes waiting in the queue; the stage label distinguishes waiting from processing. Percentages apply to the current rendering stage, not a promised overall ETA.
+**Cancel** appears while export, pause detection, or a processed audio/background sample is running. Queued work is removed from the queue; active processing subprocesses are stopped and incomplete export files are removed. The original recording and edits remain. Elapsed time includes waiting in the queue; the stage label distinguishes waiting from processing. Percentages apply to the current rendering stage, not a promised overall ETA.
 
-Pause detection offers **Conservative**, **Balanced**, and **More pauses** presets, with numeric settings under Advanced. These change threshold, minimum length, and speech padding; every suggestion still needs review. Select an edit and choose **Review selection** to loop a short original-timeline section (up to about nine seconds) with its live overlays. Cuts are shown rather than skipped during this review. Noise reduction still requires export to hear it.
+Pause detection offers **Conservative**, **Balanced**, and **More pauses** presets, with numeric settings under Advanced. These change threshold, minimum length, and speech padding; every suggestion still needs review. Select an edit and choose **Review selection** to loop a short original-timeline section (up to about nine seconds) with its live overlays. Cuts are shown rather than skipped during this review. Use **Preview noise removal** to hear a short processed audio sample before exporting.
 
-Audio-only export with visual edits asks for confirmation that masks/text will be excluded. Small-file exports with text show a readability reminder. Other exports proceed directly.
+Audio-only export with visual edits asks for confirmation that background effects, masks, and text will be excluded. Small-file exports with text show a readability reminder. Other exports proceed directly.
 
-**⋯ → Check setup** runs on-demand checks for FFmpeg/FFprobe, denoising dependencies, the standard model cache, and available disk. It does not download a model or import the neural network runtime. A disk-space preflight protects exports; the estimate is a conservative allowance rather than a guarantee of maximum disk use. Model-cache detection reports only the default DeepFilterNet3 location; it does not prove the weights can load.
+**⋯ → Check setup** checks FFmpeg/FFprobe, denoising dependencies, background-engine imports, cached models, and available disk. It does not download models or initialize segmentation/denoising models. Background-engine imports run in a separate subprocess. A disk-space preflight protects exports; the estimate is a conservative allowance rather than a guarantee of maximum disk use. Model-cache detection reports only the default DeepFilterNet3 location; it does not prove the weights can load.
 
 ## Errors and server logs
 
@@ -140,7 +182,7 @@ Server application events are JSON lines: request failures, uploads, queue admis
 
 ## Save and resume a project
 
-Use **⋯ → Save project…** to download a `.freeedit.json` file containing cuts, masks, text, noise-reduction settings, and the export preset. This is an editable project, separate from an exported video/audio file. **The recording is not included:** keep the original with your project file.
+Use **⋯ → Save project…** to download a `.freeedit.json` file containing cuts, masks, text, noise-reduction settings, background effects and camera area, and the export preset. Background images are embedded in the project; the source recording and rendered export are not. This is an editable project, separate from an exported video/audio file. **The recording is not included:** keep the original with your project file.
 
 Use **⋯ → Open project…**, then select the original recording. FreeEdit compares its size and a fingerprint of every byte before restoring edits. Renaming the recording is fine; changing or re-encoding its contents is not. Project format version 1 uses `sha256-chunks-4m-v1`: SHA-256 of the concatenated SHA-256 digests of consecutive 4 MiB chunks. Hashing uses bounded memory. Project files are validated and limited to 2 MB.
 
@@ -152,7 +194,7 @@ Leaving a project with changes not yet downloaded prompts the browser's standard
 
 ## Editor layout
 
-The workspace keeps the preview and timeline together, with edit settings, Audio cleanup, and Export in the sidebar. Select an edit to expand its controls. After export, the **Original / Exported** switch compares corresponding positions above the preview. **Back to editing** returns to the timeline. The **⋯** menu contains Appearance (System, Light, or Dark), keyboard shortcuts, storage information, About, and repository links. Appearance defaults to System and is remembered in this browser. Narrow screens stack the workspace and settings vertically.
+The workspace keeps the preview and timeline together, with edit settings, a collapsible Background panel, Audio cleanup, and Export in the sidebar. Select an edit to expand its controls. After export, the **Original / Exported** switch compares corresponding positions above the preview. **Back to editing** returns to the timeline. The **⋯** menu contains Appearance (System, Light, or Dark), keyboard shortcuts, storage information, About, and repository links. Appearance defaults to System and is remembered in this browser. Narrow screens stack the workspace and settings vertically.
 
 ## Keyboard and small-screen editing
 
@@ -166,7 +208,12 @@ backend/observability.py API errors, request IDs, structured events
 backend/models.py     Typed edit validation and media bounds
 backend/pipeline.py   ffprobe/ffmpeg pipeline; filtergraph for overlays and cuts
 backend/df_worker.py  DeepFilterNet3 denoiser (chunked, runs as a subprocess)
-frontend/             Static UI (no build step): index.html, style.css, app.js, silence.js, timeline.js
+backend/background.py Person-mask preparation and background composition filters
+backend/background_worker.py Streaming MediaPipe segmentation worker
+backend/preflight.py  Startup checks and optional noise-model preparation
+frontend/             Static UI (no build step), including background and project controls
+setup-background.sh   Optional isolated background-engine setup
+scripts/              Manual performance measurement and release inventory
 ```
 
 

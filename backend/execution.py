@@ -1,5 +1,7 @@
 """Cancellation shared by the job worker and its child processes."""
 
+import os
+import signal
 import subprocess
 import threading
 from contextlib import contextmanager
@@ -25,14 +27,14 @@ class JobControl:
         with self.lock:
             self.processes.append(process)
             if self.cancelled.is_set() and process.poll() is None:
-                process.kill()
+                kill_process(process)
 
     def cancel(self):
         self.cancelled.set()
         with self.lock:
             for process in self.processes:
                 if process.poll() is None:
-                    process.kill()
+                    kill_process(process)
 
 
 @contextmanager
@@ -52,8 +54,20 @@ def check_cancelled():
         control.check()
 
 
+def kill_process(process):
+    try:
+        if os.name == "posix" and os.getpgid(process.pid) == process.pid:
+            os.killpg(process.pid, signal.SIGKILL)
+        else:
+            process.kill()
+    except ProcessLookupError:
+        pass
+
+
 def start_process(*args, **kwargs):
     check_cancelled()
+    if os.name == "posix":
+        kwargs.setdefault("start_new_session", True)
     process = subprocess.Popen(*args, **kwargs)
     control = getattr(local, 'control', None)
     if control:
@@ -68,7 +82,7 @@ def run_process(args, *, capture_output=False, timeout=None, **kwargs):
     try:
         stdout, stderr = process.communicate(timeout=timeout)
     except BaseException:
-        process.kill()
+        kill_process(process)
         process.communicate()
         check_cancelled()
         raise

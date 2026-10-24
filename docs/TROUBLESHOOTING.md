@@ -23,6 +23,8 @@ Recheck independently with:
 
 The installation script targets macOS. Linux users can use the repository Dockerfile; the container downloads and includes the noise model during build. Windows users can run that Docker image with Docker Desktop. Native Windows installation is not validated. See the license audit before distributing built images.
 
+Background effects use an optional separate environment: run `./setup-background.sh`. See [background setup and controls](BACKGROUNDS.md).
+
 ## Common problems
 
 | Symptom | Action |

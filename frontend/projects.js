@@ -41,7 +41,7 @@ function projectDocument() {
     format: "FreeEdit", version: 1,
     source: {...projects.source, duration: S.job.duration, width: S.job.width, height: S.job.height, has_video: S.job.has_video, has_audio: S.job.has_audio},
     view: {playhead: sourcePlayer().currentTime || 0, zoom: timeline.zoom},
-    edits, settings: {denoise: $("denoise").checked, strength: $("strength").value, preset: $("exportPreset").value},
+    edits, settings: {background: getBackgroundSettings(), denoise: $("denoise").checked, strength: $("strength").value, preset: $("exportPreset").value},
   };
 }
 
@@ -55,6 +55,7 @@ function validateProject(value) {
       !finite(source.duration, 0.001, 1e8) || !finite(source.width, 0, 65536) || !finite(source.height, 0, 65536) ||
       typeof source.has_video !== "boolean" || typeof source.has_audio !== "boolean" || (!source.has_video && !source.has_audio)) fail();
   const settings = value.settings;
+  const background = validateBackground(settings?.background, source);
   if (!settings || typeof settings.denoise !== "boolean" || !["", "10", "18", "30"].includes(settings.strength) || !projectPresets.includes(settings.preset)) fail();
   if ((settings.preset === "audio_only" && !source.has_audio) || (source.has_video && (!source.width || !source.height))) fail();
   if (!Array.isArray(value.edits) || value.edits.length > 200) fail();
@@ -85,7 +86,7 @@ function validateProject(value) {
       duration: source.duration, width: source.width, height: source.height, has_video: source.has_video, has_audio: source.has_audio},
     view: {playhead: finite(value.view?.playhead, 0, source.duration) ? value.view.playhead : 0,
       zoom: [1, 2, 4, 8, 16].includes(value.view?.zoom) ? value.view.zoom : 1},
-    edits, settings: {denoise: settings.denoise, strength: settings.strength, preset: settings.preset}};
+    edits, settings: {background, denoise: settings.denoise, strength: settings.strength, preset: settings.preset}};
 }
 
 function projectEditSignature(project) {
@@ -131,6 +132,9 @@ function projectSourceReady(identity) {
 
 function applyProject(project) {
   projects.writing = true;
+  S.background = project.settings.background || {mode: "off", blur: 16, color: "#e5e7eb", image: null, region: null, preset: "studio"};
+  syncBackgroundControls(); invalidateBackgroundPreview();
+  $("backgroundPanel").open = !!project.settings.background;
   S.edits = project.edits.map(edit => ({...edit, id: S.nextId++}));
   S.undo = []; S.redo = []; S.selected = null;
   $("denoise").checked = project.settings.denoise && S.job.has_audio;

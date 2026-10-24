@@ -37,6 +37,10 @@ try:
             models.append({"file": str(file.relative_to(root)), "sha256": checksum(file), "bytes": file.stat().st_size})
 except ImportError:
     pass
+from backend.background import model_path
+background_model = model_path()
+if background_model.is_file():
+    models.append({"file": background_model.name, "sha256": checksum(background_model), "bytes": background_model.stat().st_size})
 print(json.dumps({"python": platform.python_version(), "platform": platform.platform(),
                   "packages": sorted(packages, key=lambda item: (item["name"] or "").lower()),
                   "noise_model_files": models}, indent=2))

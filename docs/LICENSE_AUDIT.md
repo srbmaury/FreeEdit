@@ -15,6 +15,10 @@ Reviewed 23 October 2026; project license and upstream model-license issue reche
 | FastAPI, Pydantic, Uvicorn | Local installed metadata: FastAPI 0.141.1 (MIT), Pydantic 2.13.5 (MIT), Uvicorn 0.54.0 (BSD-3-Clause) | These local versions are an observation, not a production lockfile. Preserve each package's installed license files. Pydantic 2 is now explicitly required because the API uses its model validators. |
 | FFmpeg / libx264 | Docker installs Debian FFmpeg and the pipeline uses libx264; [FFmpeg's licensing explanation](https://www.ffmpeg.org/legal.html) | The resulting FFmpeg binary's terms depend on build configuration. Enabling GPL components such as libx264 changes FFmpeg's licensing. Inspect `ffmpeg -version`, `ffmpeg -L`, and Debian copyright/source records in the actual built image. Do not label the shipped FFmpeg binary simply LGPL without checking. |
 
+## Optional background engine (24 October 2026)
+
+MediaPipe 0.10.21 and its dependencies are installed separately through `requirements-background.txt`. The SelfieSegmenter v1 URL and SHA-256 are recorded in [BACKGROUNDS.md](BACKGROUNDS.md). The model is not committed or baked into the optional Docker environment; it downloads on first use or through setup. Inventory this environment's native/Python dependencies separately and establish the exact model terms before redistributing weights. This record does not claim a completed redistribution audit for the new engine.
+
 ## Release decisions still open
 
 1. FreeEdit source license: MIT; retain the root LICENSE in source distributions.

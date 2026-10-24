@@ -56,8 +56,46 @@ class TextEdit(TimeRange):
         return value
 
 
+class CameraRegion(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    x: int = Field(ge=0)
+    y: int = Field(ge=0)
+    w: int = Field(ge=8)
+    h: int = Field(ge=8)
+
+
+class BackgroundSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    mode: Literal["blur", "color", "image"]
+    preset: Literal["studio", "twilight", "forest", "custom"] = "custom"
+    blur: int = Field(default=16, ge=4, le=40)
+    color: str = Field(default="#e5e7eb", pattern=r"^#[a-fA-F0-9]{6}$")
+    image: str | None = Field(default=None, max_length=900_000)
+    region: CameraRegion | None = None
+
+    @field_validator("image")
+    @classmethod
+    def valid_image(cls, value):
+        return TextEdit.valid_png(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def image_required(self):
+        if self.mode == "image" and not self.image:
+            raise ValueError("Choose a background image first.")
+        if self.mode != "image":
+            self.image = None
+        return self
+
+    def validate_media(self, media):
+        if not media["has_video"]:
+            raise HTTPException(422, "Background effects require a video.")
+        if self.region and (self.region.x + self.region.w > media["width"] or self.region.y + self.region.h > media["height"]):
+            raise HTTPException(422, "Camera area extends beyond the video.")
+
+
 class ProcessRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    background: BackgroundSettings | None = None
     denoise: bool = True
     atten_lim: int | None = Field(default=None, ge=0, le=100)
     preset: Literal["balanced", "small", "high", "audio_only"] = "balanced"
@@ -65,6 +103,10 @@ class ProcessRequest(BaseModel):
     cuts: list[TimeRange] = Field(default_factory=list, max_length=100)
 
     def validate_media(self, media):
+        if self.background:
+            self.background.validate_media(media)
+            if self.preset == "audio_only":
+                raise HTTPException(422, "Background effects are not included in audio-only exports.")
         if self.edits and not media["has_video"]:
             raise HTTPException(422, "Visual edits require a video.")
         if self.preset == "audio_only" and not media["has_audio"]:
@@ -104,5 +146,16 @@ class PreviewRequest(BaseModel):
     def validate_media(self, media):
         if not media["has_audio"]:
             raise HTTPException(422, "This recording has no audio track.")
+        if self.start >= media["duration"]:
+            raise HTTPException(422, "Preview must start inside the recording.")
+
+
+class BackgroundPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    start: float = Field(default=0, ge=0)
+    background: BackgroundSettings
+
+    def validate_media(self, media):
+        self.background.validate_media(media)
         if self.start >= media["duration"]:
             raise HTTPException(422, "Preview must start inside the recording.")

@@ -5,7 +5,7 @@ FreeEdit source uses the root MIT LICENSE. Retain it in source packages and imag
 Before publishing a binary or container:
 
 1. Build in the actual target environment and record its OS/architecture and exact package versions. The current requirements retain ranges and are not a fully reproducible lockfile.
-2. Run `python -m scripts.release_inventory > release-inventory.json` with the denoising Python in that environment. It records installed Python package metadata, notice filenames, and SHA-256 checksums of standard-cache noise-model files. A separate denoising environment requires an inventory for both environments. The script does not download anything.
+2. Run `python -m scripts.release_inventory > release-inventory.json` with the denoising Python in that environment. It records installed Python package metadata, notice filenames, and SHA-256 checksums of standard-cache noise-model files. Separate denoising and background environments each require their own inventory. The background model URL/checksum is recorded in BACKGROUNDS.md; the inventory script includes it when present. The script does not download anything.
 3. Retain the actual dependency LICENSE/COPYING/NOTICE files. Metadata alone is not a substitute. Inventory system packages and native libraries separately; the script covers Python distributions and model files only.
 4. Save the shipped FFmpeg build's `ffmpeg -version` and `ffmpeg -L`, plus its distribution's copyright/source information.
 5. Record the applicable terms for the exact DeepFilterNet3 checkpoint. This remains unresolved in the existing audit; FreeEdit's MIT license does not establish those terms.

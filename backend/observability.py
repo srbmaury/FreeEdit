@@ -26,6 +26,14 @@ def public_processing_error(exc):
         return "media_tools_unavailable", "A media tool is missing. Open Check setup in the menu for configuration details."
     if "disk space" in str(exc):
         return "disk_space_low", "Not enough temporary disk space. Free disk space or use a shorter recording."
+    if "No person was found" in str(exc):
+        return "person_not_found", "No person was found in the selected area. Choose the camera area or preview a different part of the recording."
+    if "Camera area is too small" in str(exc):
+        return "camera_area_too_small", str(exc)
+    if "Background model" in str(exc):
+        return "background_model_unavailable", str(exc)
+    if "Background processing failed" in str(exc):
+        return "background_processing_failed", "Background processing could not finish. Open Check setup, or run ./setup-background.sh to install the background engine."
     if "No module named" in str(exc):
         return "processor_unavailable", "Noise reduction is not configured on this server. Turn it off to export other edits, or configure the denoising environment."
     if "timed out" in str(exc).lower():

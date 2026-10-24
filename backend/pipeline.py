@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from .execution import check_cancelled, run_process, start_process
+from .execution import check_cancelled, run_process, start_process, kill_process
 
 ProgressFn = Callable[[str, float | None], None]
 
@@ -127,7 +127,7 @@ def _run_ffmpeg(args: list[str], duration: float, label: str, progress: Progress
         proc = start_process(cmd, stdout=subprocess.PIPE, stderr=errors, text=True, stdin=subprocess.DEVNULL)
         def terminate():
             expired.set()
-            proc.kill()
+            kill_process(proc)
         timer = threading.Timer(timeout, terminate)
         timer.start()
         try:
@@ -143,7 +143,7 @@ def _run_ffmpeg(args: list[str], duration: float, label: str, progress: Progress
         finally:
             timer.cancel()
             if proc.poll() is None:
-                proc.kill()
+                kill_process(proc)
             proc.wait()
             if proc.stdout:
                 proc.stdout.close()
@@ -199,7 +199,8 @@ def output_scale(info: MediaInfo, preset: str = "balanced") -> float:
 
 
 def build_video_edits(
-    edits: list[dict], info: MediaInfo, work: Path, scale: float = 1.0
+    edits: list[dict], info: MediaInfo, work: Path, scale: float = 1.0,
+    background=None, mask_input=None, image_input=None,
 ) -> tuple[list[str], list[Path], str]:
     """Filter chains for hide regions and text overlays.
 
@@ -225,6 +226,11 @@ def build_video_edits(
         nonlocal n
         n += 1
         return f"[v{n}]"
+
+    if background:
+        from .background import filters
+        background_parts, cur = filters(cur, info, scale, background, mask_input, image_input)
+        parts += background_parts
 
     for i, e in enumerate(edits):
         kind = e.get("type")
@@ -413,6 +419,7 @@ def process(
     cuts: list[dict],
     progress: ProgressFn,
     preset: str = "balanced",
+    background: dict | None = None,
 ) -> Path:
     progress("Reading file", None)
     info = probe(source)
@@ -441,7 +448,16 @@ def process(
 
     settings = EXPORT_PRESETS[preset]
     scale = output_scale(info, preset)
-    parts, images, vlabel = build_video_edits(edits, info, work, scale)
+    mask = None
+    replacement = None
+    extra_index = 2 if clean_wav else 1
+    if background:
+        from .background import create_mask
+        mask = create_mask(source, work, info, background, progress)
+        if background["mode"] == "image":
+            replacement = work / "background.png"
+            replacement.write_bytes(base64.b64decode(background["image"].split(",", 1)[1]))
+    parts, images, vlabel = build_video_edits(edits, info, work, scale, background, extra_index, extra_index + 1)
 
     # Low-memory mode (hosting): single-threaded decode/filter/encode
     threads = os.environ.get("FFMPEG_THREADS")
@@ -449,7 +465,11 @@ def process(
     args += ["-i", str(source)]
     if clean_wav:
         args += ["-i", str(clean_wav)]
-    img_offset = 2 if clean_wav else 1
+    if mask:
+        args += ["-i", str(mask)]
+    if replacement:
+        args += ["-i", str(replacement)]
+    img_offset = extra_index + bool(mask) + bool(replacement)
     for img in images:
         args += ["-i", str(img)]
     audio_in = "[1:a]" if clean_wav else ("[0:a]" if info.has_audio else None)
@@ -478,9 +498,14 @@ def process(
         args += ["-map", "1:a:0"]
     elif info.has_audio:
         args += ["-map", "0:a:0?"]
-    args += ["-c:a", "aac", "-b:a", f"{settings['audio_kbps']}k", "-shortest", "-movflags", "+faststart", str(out)]
+    args += ["-c:a", "aac", "-b:a", f"{settings['audio_kbps']}k", "-shortest", "-t", str(out_duration), "-movflags", "+faststart", str(out)]
 
-    _run_ffmpeg(args, out_duration, "Rendering video", progress)
+    try:
+        _run_ffmpeg(args, out_duration, "Rendering video", progress)
+    finally:
+        for temporary in (mask, replacement):
+            if temporary:
+                temporary.unlink(missing_ok=True)
     return out
 
 

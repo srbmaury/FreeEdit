@@ -25,7 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from . import pipeline
 from .diagnostics import inspect_setup, require_export_space
 from .execution import Cancelled, JobControl, cancellation_scope
-from .models import ProcessRequest, SilenceRequest, PreviewRequest
+from .models import ProcessRequest, SilenceRequest, PreviewRequest, BackgroundPreviewRequest
 from .observability import event, install_error_handling, public_processing_error
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -204,7 +204,7 @@ def _run(job_id: str, req: ProcessRequest, previous: dict) -> None:
     _update(job_id, status="processing", stage="Starting", progress=None, error=None, error_code=None, output=None)
     try:
         source = next(work.glob("source.*"))
-        require_export_space(work, previous["media"]["duration"], previous["media"]["audio_channels"])
+        require_export_space(work, previous["media"]["duration"], previous["media"]["audio_channels"], background=bool(req.background))
         for stale in [*work.glob("output.*"), *work.glob("text_*.png"), work / "raw.wav"]:
             stale.unlink(missing_ok=True)
         shutil.rmtree(work / "denoised", ignore_errors=True)
@@ -213,6 +213,7 @@ def _run(job_id: str, req: ProcessRequest, previous: dict) -> None:
             source, work,
             denoise_audio=req.denoise, atten_lim=req.atten_lim, preset=req.preset,
             edits=[e.model_dump() for e in req.edits], cuts=[c.model_dump() for c in req.cuts], progress=progress,
+            background=req.background.model_dump() if req.background else None,
         )
         _update(job_id, status="done", stage="Done", progress=1.0, output=out.name)
         event("export_ready", job_id=job_id, duration_ms=round((time.monotonic() - started) * 1000), bytes=out.stat().st_size)
@@ -232,6 +233,8 @@ def _execute(worker, job_id, req, previous, control):
         work = JOBS_DIR / job_id
         if worker is _preview_noise:
             shutil.rmtree(work / "preview", ignore_errors=True)
+        if worker is _preview_background:
+            shutil.rmtree(work / "background-preview", ignore_errors=True)
         if worker is _run:
             for path in [*work.glob("output.*"), *work.glob("text_*.png"), work / "raw.wav"]:
                 path.unlink(missing_ok=True)
@@ -239,6 +242,8 @@ def _execute(worker, job_id, req, previous, control):
         _update(job_id, status="cancelled", stage="Stopped", progress=None, error=None, output=None if worker is _run else previous.get("output"))
         event("job_cancelled", job_id=job_id)
     finally:
+        for temporary in (JOBS_DIR / job_id / "person-mask.mkv", JOBS_DIR / job_id / "background-worker.json", JOBS_DIR / job_id / "background.png"):
+            temporary.unlink(missing_ok=True)
         with jobs_lock:
             job_controls.pop(job_id, None)
             job_futures.pop(job_id, None)
@@ -284,7 +289,7 @@ def _submit(job_id, req, worker):
         previous["queued_at"] = time.time()
         control = JobControl()
         job_controls[job_id] = control
-        operation = "silence" if worker is _analyze_silence else "preview" if worker is _preview_noise else "export"
+        operation = { _analyze_silence: "silence", _preview_noise: "preview", _preview_background: "background" }.get(worker, "export")
         event("job_queued", job_id=job_id, operation=operation)
         job.update(status="queued", stage="Waiting in queue", progress=None, error=None, updated_at=time.time(),
                    operation=operation,
@@ -293,6 +298,8 @@ def _submit(job_id, req, worker):
             job["silence"] = None
         if worker is _preview_noise:
             job["preview"] = None
+        if worker is _preview_background:
+            job["background_preview"] = None
         try:
             job_futures[job_id] = executor.submit(_execute, worker, job_id, req, previous, control)
         except RuntimeError as exc:
@@ -364,6 +371,49 @@ def preview_audio(job_id: str, variant: str):
     path = JOBS_DIR / job_id / "preview" / f"{variant}.wav"
     if not path.is_file():
         raise HTTPException(404, "Audio sample expired. Create another sample.")
+    return FileResponse(path)
+
+
+def _preview_background(job_id: str, req: BackgroundPreviewRequest, previous: dict):
+    work = JOBS_DIR / job_id
+    preview = work / "background-preview"
+    _update(job_id, status="processing", started_at=time.time(), stage="Preparing background preview")
+    try:
+        shutil.rmtree(preview, ignore_errors=True)
+        preview.mkdir()
+        length = min(3, previous["media"]["duration"] - req.start)
+        require_export_space(work, length, 0, background=True)
+        source = next(work.glob("source.*"))
+        sample = preview / "source.mp4"
+        pipeline._run_ffmpeg(["-ss", str(req.start), "-i", str(source), "-t", str(length),
+            "-an", "-vf", f"tpad=stop_mode=clone:stop_duration={length}", "-c:v", "libx264",
+            "-preset", "ultrafast", "-crf", "18", "-pix_fmt", "yuv420p", str(sample)],
+            length, "Preparing background preview", lambda stage, pct: _update(job_id, stage=stage, progress=pct))
+        pipeline.process(sample, preview, denoise_audio=False, atten_lim=None, edits=[], cuts=[], preset="small",
+            background=req.background.model_dump(), progress=lambda stage, pct: _update(job_id, stage=stage, progress=pct))
+        sample.unlink(missing_ok=True)
+        result = {"start": req.start, "duration": length, "error": None}
+    except Cancelled:
+        raise
+    except Exception as exc:
+        shutil.rmtree(preview, ignore_errors=True)
+        code, message = public_processing_error(exc)
+        event("background_preview_failed", job_id=job_id, code=code, detail=str(exc))
+        result = {"error": message}
+    _update(job_id, status="done" if previous.get("output") else "uploaded", stage=None, progress=None, background_preview=result)
+
+
+@app.post("/api/jobs/{job_id}/background-preview")
+def preview_background(job_id: str, req: BackgroundPreviewRequest):
+    return _submit(job_id, req, _preview_background)
+
+
+@app.api_route("/api/jobs/{job_id}/background-preview", methods=["GET", "HEAD"])
+def background_preview_result(job_id: str):
+    job = _job(job_id)
+    path = JOBS_DIR / job_id / "background-preview" / "output.mp4"
+    if not job.get("background_preview") or job["background_preview"].get("error") or not path.is_file():
+        raise HTTPException(404, "Background preview is not ready.")
     return FileResponse(path)
 
 

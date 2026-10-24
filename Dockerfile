@@ -22,8 +22,16 @@ WORKDIR /app
 RUN pip install --no-cache-dir torch==2.5.1 torchaudio==2.5.1 \
       --index-url https://download.pytorch.org/whl/cpu
 COPY --from=builder /wheels /wheels
-COPY requirements.txt .
+COPY requirements.txt requirements-background.txt ./
 RUN pip install --no-cache-dir --find-links /wheels -r requirements.txt && rm -rf /wheels
+
+# Optional person segmentation is isolated from the noise-removal environment.
+ARG INSTALL_BACKGROUND=false
+RUN if [ "$INSTALL_BACKGROUND" = "true" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 && \
+      rm -rf /var/lib/apt/lists/* && \
+      python -m venv .venv-background && \
+      .venv-background/bin/pip install --no-cache-dir -r requirements-background.txt; fi
 
 # Bake the DeepFilterNet3 model into the image so cold starts don't download it
 RUN python -c "from df.enhance import init_df; init_df(log_level='ERROR')"
