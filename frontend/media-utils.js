@@ -30,7 +30,8 @@ function freeeditReframeAt(settings, time) {
     const t=edge>.0005
       ? Math.min(1,Math.max(0,(time-s.start)/edge)) *
         Math.min(1,Math.max(0,(s.end-time)/edge)) : 1;
-    const eased=t*t*(3-2*t);
+    // Quintic smootherstep, matching the FFmpeg export at both boundaries.
+    const eased=t*t*t*(10-15*t+6*t*t);
     result.zoom+=(s.zoom-1)*eased;
     result.focus_x+=(s.focus_x-.5)*eased;
     result.focus_y+=(s.focus_y-.5)*eased;
