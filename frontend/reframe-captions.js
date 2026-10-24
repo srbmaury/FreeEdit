@@ -128,12 +128,10 @@ $("reframeAddSection").onclick = () => {
     status.textContent = "Zoom sections cannot overlap.";
     return;
   }
-  const zoom = Number($("reframeZoom").value);
-  if (zoom <= 1.001) {
-    status.textContent = "Choose Zoom above 1.00× first (try 1.80×). A 1.00× section cannot visibly zoom.";
-    $("reframeZoom").focus();
-    return;
-  }
+  // 1.00× is the correct default for the entire recording, but it creates
+  // an invisible section. Use a useful 1.80× target on the first click.
+  const requestedZoom = Number($("reframeZoom").value);
+  const zoom = requestedZoom <= 1.001 ? 1.8 : requestedZoom;
   checkpoint();
   sections.push({start,end:Math.min(duration(),end),transition,
     zoom, focus_x:Number($("reframeX").value),focus_y:Number($("reframeY").value)});
