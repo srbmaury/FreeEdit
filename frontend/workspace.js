@@ -132,6 +132,14 @@
     }
     if (reason === "open") activate("edits");
     if (reason === "selection") activate("edits", S.mode);
+    if (reason === "select-tool") {
+      activate("edits", "select");
+      byId("modeHint").textContent = S.selected != null
+        ? "Selection active · Drag the selected edit, or change its properties on the right."
+        : S.edits.length
+          ? "Selection active · Click an overlay in the preview, or select an edit on the timeline."
+          : "Selection active · No edits yet. Add Text, Hide area, or Cut using the task rail.";
+    }
     if (reason === "mode") {
       if (S.mode === "background") activate("background");
       // Select is a preview tool, not a task. Keep the Videos inspector visible
