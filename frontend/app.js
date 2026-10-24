@@ -32,10 +32,16 @@ function commitEdit(reason, mutation, saveUndo = true) {
   if (saveUndo) checkpoint();
   return editorStore.dispatch(reason, mutation);
 }
-editorStore.subscribe(() => {
+editorStore.subscribe(({reason}) => {
   if (!S.job) return;
-  renderList();
-  if (typeof renderReframeSections === "function") renderReframeSections();
+  // Never replace the user's focused text/number input while typing.
+  // A lightweight mutation only invalidates timeline, canvas and export.
+  if (reason === "edit:property" || reason === "edit:drag") {
+    renderTimeline();
+  } else {
+    renderList();
+    if (typeof renderReframeSections === "function") renderReframeSections();
+  }
   render();
   updateTransport();
   refreshExportState();
@@ -462,7 +468,7 @@ function render() {
     ctx.restore();
   }
   if (typeof updateReframePreview === "function") {
-    const active = reframeGuideSection() || S.reframe && (S.reframe.aspect !== "original" || S.reframe.zoom > 1 || S.reframe.sections?.length);
+    const active = reframeGuideSection() || S.reframe && (S.reframe.aspect !== "original" || S.reframe.zoom > 1 || EditorModel.sections(S.edits).length);
     updateReframePreview(active ? freeeditCropRect(W, H, freeeditReframeAt(EditorModel.exportReframe(S.reframe, S.edits), video.currentTime)) : null);
   }
 }
