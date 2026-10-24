@@ -776,7 +776,7 @@ document.addEventListener("keydown", (ev) => {
 });
 
 // ---------- history and export review ----------
-function snapshot() { return JSON.stringify({edits: S.edits, background: S.background, presenter: presenterProject()}); }
+function snapshot() { return JSON.stringify({edits: S.edits, background: S.background, presenter: presenterProject(), reframe: S.reframe}); }
 function checkpoint() {
   const current = snapshot();
   if (S.undo.at(-1) !== current) S.undo.push(current);
@@ -790,6 +790,8 @@ function restoreHistory(redo = false) {
   to.push(snapshot());
   const restored = JSON.parse(from.pop());
   S.edits = restored.edits; S.background = restored.background;
+  S.reframe = restored.reframe || {aspect:"original",zoom:1,focus_x:.5,focus_y:.5};
+  syncReframeControls();
   restorePresenter(restored.presenter, true);
   syncBackgroundControls(); invalidateBackgroundPreview();
   S.selected = null;
