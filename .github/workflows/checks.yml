@@ -1,0 +1,43 @@
+name: FreeEdit checks
+
+on:
+  push:
+    branches: [main, "hardening/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python-and-ffmpeg:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install FFmpeg and lightweight test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install --upgrade pip
+          python -m pip install "fastapi>=0.110,<1" "pydantic>=2.6,<3" "uvicorn>=0.29,<1" "httpx>=0.27,<1"
+      - name: Compile Python
+        run: python -m compileall -q backend tests
+      - name: Run Python integration and session tests
+        run: python -m unittest discover -s tests -v
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check JavaScript syntax
+        run: |
+          for file in frontend/*.js; do node --check "$file"; done
+      - name: Run frontend regression tests
+        run: node --test tests/*.cjs
