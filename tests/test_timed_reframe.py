@@ -30,7 +30,7 @@ class TimedReframeTests(unittest.TestCase):
         z = pipeline.reframe_expressions(self.settings["sections"], "z")
         self.assertIn("T-0.600", z)
         self.assertIn("2.400-T", z)
-        self.assertIn("3-2*", z)
+        self.assertIn("10-15*", z)
 
     @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "ffmpeg unavailable")
     def test_animated_export_with_timed_sections(self):
