@@ -220,6 +220,7 @@ function openEditor(job) {
   renderList();
   updateTransport();
   requestAnimationFrame(layoutStage);
+  window.dispatchEvent(new CustomEvent("freeedit:workspace", { detail: "open" }));
 }
 
 function layoutStage() {
@@ -555,6 +556,7 @@ $("placeEditBtn").onclick = () => {
 
 function setMode(mode) {
   S.mode = mode;
+  window.dispatchEvent(new CustomEvent("freeedit:workspace", { detail: "mode" }));
   $("drawCameraAreaBtn").setAttribute("aria-pressed", String(mode === "background"));
   $("drawCameraAreaBtn").textContent = mode === "background" ? "Cancel area selection" : "Draw camera area";
   show($("placeEditBtn"), mode !== "select" && mode !== "background" && !!S.job?.has_video);
@@ -631,6 +633,7 @@ function deleteEdit(id) {
 function select(id) {
   stopReviewLoop();
   S.selected = id;
+  window.dispatchEvent(new CustomEvent("freeedit:workspace", { detail: "selection" }));
   document.querySelectorAll(".card").forEach((c) => {
     const selected = +c.dataset.id === id;
     c.classList.toggle("selected", selected);
@@ -649,6 +652,7 @@ function cardTitle(e) {
 }
 
 function renderList() {
+  if (S.selected) window.dispatchEvent(new CustomEvent("freeedit:workspace", { detail: "selection" }));
   const list = $("editsList");
   list.innerHTML = "";
   $("editCount").textContent = S.edits.length;
@@ -881,6 +885,7 @@ function buildPayload() {
 }
 
 async function startExport() {
+  window.dispatchEvent(new CustomEvent("freeedit:workspace", { detail: "export" }));
   show($("procError"), false);
   show($("procReference"), false);
   show($("recoverFileBtn"), false);
@@ -972,6 +977,7 @@ function poll(delay = 800) {
 }
 
 function procFailed(msg, replaceFile = false, reference = null) {
+  if (S.operation === "export") window.dispatchEvent(new CustomEvent("freeedit:workspace", { detail: "export" }));
   show($("recoverFileBtn"), replaceFile);
   show($("procReference"), !!reference);
   $("procReference").textContent = reference ? `Reference: ${reference}` : "";
@@ -986,6 +992,7 @@ function procFailed(msg, replaceFile = false, reference = null) {
 }
 
 function processDone(job) {
+  window.dispatchEvent(new CustomEvent("freeedit:workspace", { detail: "export" }));
   setBusy(null);
   $("processBtn").textContent = "Export updated file";
   show($("procProgress"), false);
