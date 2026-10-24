@@ -198,6 +198,20 @@ def output_scale(info: MediaInfo, preset: str = "balanced") -> float:
     return limit / longest if limit and longest > limit else 1.0
 
 
+def reframe_geometry(width: int, height: int, settings: dict) -> tuple[int, int, int, int]:
+    """Even crop rectangle, matching frontend/media-utils.js for normal video sizes."""
+    ratios = {"wide": 16 / 9, "vertical": 9 / 16, "square": 1}
+    aspect = settings["aspect"]
+    ratio = ratios.get(aspect, width / height)
+    available_w = min(width, height * ratio)
+    available_h = min(height, width / ratio)
+    w = max(2, min(width // 2 * 2, int(available_w / settings["zoom"] / 2) * 2))
+    h = max(2, min(height // 2 * 2, int(available_h / settings["zoom"] / 2) * 2))
+    x = int((width - w) * settings["focus_x"] / 2) * 2
+    y = int((height - h) * settings["focus_y"] / 2) * 2
+    return x, y, w, h
+
+
 def build_video_edits(
     edits: list[dict], info: MediaInfo, work: Path, scale: float = 1.0,
     background=None, mask_input=None, image_input=None,
@@ -421,6 +435,7 @@ def process(
     preset: str = "balanced",
     background: dict | None = None,
     preserve_resolution: bool = False,
+    reframe: dict | None = None,
 ) -> Path:
     progress("Reading file", None)
     info = probe(source)
@@ -482,6 +497,11 @@ def process(
         parts += cut_parts
         out_duration = sum(b - a for a, b in keep)
 
+    # Crop after all overlays to preserve source-pixel positioning and timings.
+    if reframe:
+        x, y, w, h = reframe_geometry(_even(info.width * scale), _even(info.height * scale), reframe)
+        parts.append(f"{vlabel}crop={w}:{h}:{x}:{y}[reframed]")
+        vlabel = "[reframed]"
     # Every video preset produces compatible H.264 MP4 with even dimensions.
     parts.append(f"{vlabel}scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p[vout]")
     graph = ";".join(parts)
