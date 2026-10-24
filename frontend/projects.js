@@ -147,14 +147,16 @@ function projectSourceReady(identity) {
 function applyProject(project) {
   projects.writing = true;
   restorePresenter(project.settings.presenter);
-  S.reframe = project.settings.reframe || {...EditorModel.DEFAULT_REFRAME};
+  const imported = project.edits.map(edit => ({...edit, id: S.nextId++}));
+  editorStore.dispatch("project:load", state => {
+    state.reframe = project.settings.reframe || {...EditorModel.DEFAULT_REFRAME};
+    state.background = project.settings.background || {mode: "off", blur: 16, color: "#e5e7eb", image: null, region: null, preset: "studio"};
+    state.edits = imported;
+    state.undo = []; state.redo = []; state.selected = null;
+  });
   syncReframeControls();
-  window.dispatchEvent(new CustomEvent("freeedit:workspace", {detail:"reframe-restore"}));
-  S.background = project.settings.background || {mode: "off", blur: 16, color: "#e5e7eb", image: null, region: null, preset: "studio"};
   syncBackgroundControls(); invalidateBackgroundPreview();
   $("backgroundPanel").open = !!project.settings.background;
-  S.edits = project.edits.map(edit => ({...edit, id: S.nextId++}));
-  S.undo = []; S.redo = []; S.selected = null;
   $("denoise").checked = project.settings.denoise && (S.job.has_audio || !!project.settings.presenter?.source.has_audio);
   $("strength").value = project.settings.strength;
   $("exportPreset").value = S.job.has_video ? project.settings.preset : "audio_only";
