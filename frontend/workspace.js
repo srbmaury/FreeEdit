@@ -136,11 +136,14 @@
     if (reason === "open") activate("edits");
     if (reason === "selection") activate("edits", S.mode);
     if (reason === "zoom-selection") activate("edits", "select");
+    if (reason === "reframe-settings") activate("reframe");
     if (reason === "select-tool") {
+      // Rebuild from current settings, not the last ordinary text/mask edit.
+      renderList();
       activate("edits", "select");
       byId("modeHint").textContent = (S.selected != null || S.selectedZoom != null)
         ? "Selection active · Drag the selected edit, or change its properties on the right."
-        : S.edits.length
+        : (S.edits.length || S.reframe?.sections?.length || S.reframe?.zoom > 1 || S.reframe?.aspect !== "original")
           ? "Edits open · Choose any cut, mask, text, caption, or zoom section here or on the timeline."
           : "No edits yet · Add a cut, mask, caption, text, or zoom section using the task rail.";
     }
