@@ -25,7 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from . import pipeline
 from .diagnostics import inspect_setup, require_export_space
 from .execution import Cancelled, JobControl, cancellation_scope
-from .models import ProcessRequest, SilenceRequest, PreviewRequest, BackgroundPreviewRequest
+from .models import ProcessRequest, SilenceRequest, PreviewRequest, BackgroundPreviewRequest, CompositionPreviewRequest
 from .observability import event, install_error_handling, public_processing_error
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -209,11 +209,25 @@ def _run(job_id: str, req: ProcessRequest, previous: dict) -> None:
             stale.unlink(missing_ok=True)
         shutil.rmtree(work / "denoised", ignore_errors=True)
 
+        if req.presenter:
+            other_source = next(work.glob("presenter.*"))
+            free = shutil.disk_usage(work).free
+            required = source.stat().st_size * 4 + other_source.stat().st_size * 2 + int(previous["media"]["duration"] * 1024**2)
+            if free < required:
+                raise pipeline.PipelineError("Not enough temporary disk space to combine these recordings.")
+            from .composition import compose
+            composition_work = work / "composition"
+            shutil.rmtree(composition_work, ignore_errors=True)
+            composition_work.mkdir()
+            if req.background:
+                source = pipeline.process(source, composition_work, denoise_audio=False, atten_lim=None,
+                    edits=[], cuts=[], preset="high", background=req.background.model_dump(), progress=progress, preserve_resolution=True)
+            source = compose(source, next(work.glob("presenter.*")), composition_work, req.presenter.model_dump(), progress)
         out = pipeline.process(
             source, work,
             denoise_audio=req.denoise, atten_lim=req.atten_lim, preset=req.preset,
             edits=[e.model_dump() for e in req.edits], cuts=[c.model_dump() for c in req.cuts], progress=progress,
-            background=req.background.model_dump() if req.background else None,
+            background=req.background.model_dump() if req.background and not req.presenter else None,
         )
         _update(job_id, status="done", stage="Done", progress=1.0, output=out.name)
         event("export_ready", job_id=job_id, duration_ms=round((time.monotonic() - started) * 1000), bytes=out.stat().st_size)
@@ -235,6 +249,8 @@ def _execute(worker, job_id, req, previous, control):
             shutil.rmtree(work / "preview", ignore_errors=True)
         if worker is _preview_background:
             shutil.rmtree(work / "background-preview", ignore_errors=True)
+        if worker is _preview_composition:
+            shutil.rmtree(work / "composition-preview", ignore_errors=True)
         if worker is _run:
             for path in [*work.glob("output.*"), *work.glob("text_*.png"), work / "raw.wav"]:
                 path.unlink(missing_ok=True)
@@ -242,6 +258,7 @@ def _execute(worker, job_id, req, previous, control):
         _update(job_id, status="cancelled", stage="Stopped", progress=None, error=None, output=None if worker is _run else previous.get("output"))
         event("job_cancelled", job_id=job_id)
     finally:
+        shutil.rmtree(JOBS_DIR / job_id / "composition", ignore_errors=True)
         for temporary in (JOBS_DIR / job_id / "person-mask.mkv", JOBS_DIR / job_id / "background-worker.json", JOBS_DIR / job_id / "background.png"):
             temporary.unlink(missing_ok=True)
         with jobs_lock:
@@ -280,16 +297,23 @@ def _submit(job_id, req, worker):
         job = jobs.get(job_id)
         if not job:
             raise HTTPException(404, "Job not found")
-        if job_id in job_controls or job["status"] in ("queued", "processing", "cancelling"):
+        if job_id in active_uploads or job_id in job_controls or job["status"] in ("queued", "processing", "cancelling"):
             raise HTTPException(409, "This file is already being processed.")
         req.validate_media(job["media"])
+        presenter = getattr(req, "presenter", None)
+        if presenter:
+            if not job.get("presenter"):
+                raise HTTPException(422, "Add the presenter video again before processing.")
+            presenter.validate_media(job["media"], job["presenter"]["media"])
+            if getattr(req, "preset", None) == "audio_only" and presenter.sound == "muted":
+                raise HTTPException(422, "Choose an audio source for an audio-only export.")
         if sum(j["status"] in ("queued", "processing", "cancelling") for j in jobs.values()) >= MAX_PENDING_JOBS:
             raise HTTPException(429, "The processing queue is full. Please try again shortly.", headers={"Retry-After": "5"})
         previous = dict(job)
         previous["queued_at"] = time.time()
         control = JobControl()
         job_controls[job_id] = control
-        operation = { _analyze_silence: "silence", _preview_noise: "preview", _preview_background: "background" }.get(worker, "export")
+        operation = { _analyze_silence: "silence", _preview_noise: "preview", _preview_background: "background", _preview_composition: "composition" }.get(worker, "export")
         event("job_queued", job_id=job_id, operation=operation)
         job.update(status="queued", stage="Waiting in queue", progress=None, error=None, updated_at=time.time(),
                    operation=operation,
@@ -300,6 +324,8 @@ def _submit(job_id, req, worker):
             job["preview"] = None
         if worker is _preview_background:
             job["background_preview"] = None
+        if worker is _preview_composition:
+            job["composition_preview"] = None
         try:
             job_futures[job_id] = executor.submit(_execute, worker, job_id, req, previous, control)
         except RuntimeError as exc:
@@ -417,6 +443,87 @@ def background_preview_result(job_id: str):
     return FileResponse(path)
 
 
+@app.post("/api/jobs/{job_id}/presenter")
+async def upload_presenter(job_id: str, request: Request, filename: str):
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            raise HTTPException(404, "Main recording not found.")
+        if job_id in active_uploads or job_id in job_controls:
+            raise HTTPException(409, "Wait for the current operation to finish.")
+        if not job["media"]["has_video"]:
+            raise HTTPException(422, "The main recording must contain video.")
+        active_uploads.add(job_id)
+    temporary_id = None
+    try:
+        uploaded = await upload(request, filename)
+        temporary_id = uploaded["id"]
+        if not uploaded["has_video"]:
+            raise HTTPException(422, "Choose a presenter recording with video.")
+        with jobs_lock:
+            work = JOBS_DIR / job_id
+            for old in work.glob("presenter.*"):
+                old.unlink()
+            source = next((JOBS_DIR / temporary_id).glob("source.*"))
+            source.replace(work / ("presenter" + source.suffix))
+            metadata = {"filename": filename, "media": jobs[temporary_id]["media"]}
+            jobs[job_id].update(presenter=metadata, updated_at=time.time(), composition_preview=None)
+        return metadata
+    finally:
+        with jobs_lock:
+            active_uploads.discard(job_id)
+            if temporary_id:
+                jobs.pop(temporary_id, None)
+                shutil.rmtree(JOBS_DIR / temporary_id, ignore_errors=True)
+
+
+@app.api_route("/api/jobs/{job_id}/presenter", methods=["GET", "HEAD"])
+def presenter_source(job_id: str):
+    job = _job(job_id)
+    path = next((JOBS_DIR / job_id).glob("presenter.*"), None)
+    if not job.get("presenter") or path is None:
+        raise HTTPException(404, "Presenter recording unavailable. Select it again.")
+    return FileResponse(path)
+
+
+def _preview_composition(job_id, req, previous):
+    from .composition import compose
+    work = JOBS_DIR / job_id
+    target = work / "composition-preview"
+    _update(job_id, status="processing", started_at=time.time(), stage="Preparing combined preview")
+    try:
+        shutil.rmtree(target, ignore_errors=True)
+        target.mkdir()
+        length = min(3, previous["media"]["duration"] - req.start)
+        require_export_space(work, length, 2, background=req.presenter.effect != "original")
+        compose(next(work.glob("source.*")), next(work.glob("presenter.*")), target,
+                req.presenter.model_dump(), lambda stage, pct: _update(job_id, stage=stage, progress=pct),
+                start=req.start, length=length)
+        result = {"start": req.start, "duration": length, "error": None}
+    except Cancelled:
+        raise
+    except Exception as exc:
+        code, message = public_processing_error(exc)
+        event("composition_preview_failed", job_id=job_id, code=code, detail=str(exc))
+        shutil.rmtree(target, ignore_errors=True)
+        result = {"error": message}
+    _update(job_id, status="done" if previous.get("output") else "uploaded", stage=None, progress=None, composition_preview=result)
+
+
+@app.post("/api/jobs/{job_id}/composition-preview")
+def preview_composition(job_id: str, req: CompositionPreviewRequest):
+    return _submit(job_id, req, _preview_composition)
+
+
+@app.api_route("/api/jobs/{job_id}/composition-preview", methods=["GET", "HEAD"])
+def composition_preview_result(job_id: str):
+    job = _job(job_id)
+    path = JOBS_DIR / job_id / "composition-preview" / "combined.mp4"
+    if not job.get("composition_preview") or job["composition_preview"].get("error") or not path.is_file():
+        raise HTTPException(404, "Combined preview is not ready.")
+    return FileResponse(path)
+
+
 def _storage_inventory():
     entries = []
     for directory in JOBS_DIR.iterdir():
@@ -502,7 +609,7 @@ def delete_job(job_id: str):
         job = jobs.get(job_id)
         if not job:
             raise HTTPException(404, "Job not found")
-        if job_id in job_controls or job["status"] in ("queued", "processing", "cancelling"):
+        if job_id in active_uploads or job_id in job_controls or job["status"] in ("queued", "processing", "cancelling"):
             raise HTTPException(409, "Can't delete while processing.")
         shutil.rmtree(JOBS_DIR / job_id, ignore_errors=True)
         jobs.pop(job_id, None)

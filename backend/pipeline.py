@@ -420,6 +420,7 @@ def process(
     progress: ProgressFn,
     preset: str = "balanced",
     background: dict | None = None,
+    preserve_resolution: bool = False,
 ) -> Path:
     progress("Reading file", None)
     info = probe(source)
@@ -447,7 +448,7 @@ def process(
         return out
 
     settings = EXPORT_PRESETS[preset]
-    scale = output_scale(info, preset)
+    scale = 1.0 if preserve_resolution else output_scale(info, preset)
     mask = None
     replacement = None
     extra_index = 2 if clean_wav else 1

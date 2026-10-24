@@ -4,6 +4,7 @@ A small web app for cleaning up screen recordings and other audio or video files
 
 - **Remove background noise** with [DeepFilterNet3](https://github.com/Rikorose/DeepFilterNet)
 - **Shorten pauses**: detect quiet sections, listen to suggestions, and choose which become cuts
+- **Combine two videos**: add a presenter inset, blur/remove its background, and choose Main, Presenter, Both, or Muted sound ([workflow](docs/COMBINING_VIDEOS.md))
 - **Person-aware backgrounds**: blur, solid colors, or built-in/uploaded images, with camera-inset selection and a short processed preview ([optional setup](docs/BACKGROUNDS.md))
 - **Export presets**: Balanced, Small file, High quality, or Audio only
 - **Remove parts of the video**: mark one or more ranges on the timeline and they're cut out
@@ -66,7 +67,7 @@ This uses MediaPipe without changing DeepFilterNet's environment. You can set `B
 
 1. Drop in a file (MOV, MP4, WEBM, MKV, WAV, MP3, M4A, …).
 2. **Audio:** use **Preview noise removal** to hear up to 10 seconds from the playhead and switch between Original and Noise removed. The sample ignores cuts and visual edits. Then leave *Remove background noise* on and pick a strength. *Natural sound* caps the reduction at 18 dB, which sounds less processed. *Strongest reduction* applies no cap.
-3. **✂ Cut section** (`X`): marks up to 3 seconds from the playhead as a red block on the timeline under the scrubber. Drag the block's edges to adjust it, or drag the whole block. Add as many as you need. Playback skips removed parts, and the final length is shown next to the time.
+3. **Cut** (`X`): opens **Remove a section** without changing the recording. Set **From** and **To** in seconds, or use the playhead buttons, then choose **Add cut**. Select an existing cut to edit its timing or **Delete cut**. Drag its timeline block or edges to adjust it. Playback skips applied cuts; the draft is not applied until confirmed.
 4. **Hide area** (`H`): drag over the part to hide. Solid cover is the default. Choose Blur or Pixelate only for non-sensitive details.
 5. **Add text** (`T`): click on the video, then type in the sidebar.
 6. Each edit has a **From/To** time on the original timeline. The **Use playhead** buttons set it to the playhead. New text and hide edits start at the current playhead and run to the end of the video.
@@ -86,6 +87,12 @@ The timeline includes a waveform of the original audio and separate rows for sug
 Open **Shorten pauses → Detect pauses**. Suggestions start unselected and appear above the cut timeline. Use **Listen** to hear each pause with surrounding audio, select the ones to remove, then **Remove selected pauses**. Added cuts can be resized, edited, deleted, or undone. Audio-only files support the same cut controls.
 
 Detection defaults to −40 dB, a minimum 0.8-second pause, and 0.2 seconds kept on each side. Raise the threshold to detect more quiet sections, with a greater risk of including quiet speech. Up to 100 suggestions are returned per pass. Detection and export share the bounded processing queue.
+
+### Combine videos
+
+Upload the main recording, then open **Videos → Add presenter video…**. Choose an inset corner/size, adjust its timing, and choose **Sound from** Main video, Presenter video, Both videos, or Muted. Both provides separate volume controls. Preview a short combined clip before exporting. Background blur/removal uses the optional background engine.
+
+Saved projects retain the second recording’s identity and settings; keep both originals and reconnect the presenter when reopening. See [two-video composition and limitations](docs/COMBINING_VIDEOS.md).
 
 ### Person-aware backgrounds
 
@@ -194,7 +201,7 @@ Leaving a project with changes not yet downloaded prompts the browser's standard
 
 ## Editor layout
 
-The workspace keeps the preview and timeline together, with edit settings, a collapsible Background panel, Audio cleanup, and Export in the sidebar. Select an edit to expand its controls. After export, the **Original / Exported** switch compares corresponding positions above the preview. **Back to editing** returns to the timeline. The **⋯** menu contains Appearance (System, Light, or Dark), keyboard shortcuts, storage information, About, and repository links. Appearance defaults to System and is remembered in this browser. Narrow screens stack the workspace and settings vertically.
+The workspace uses a left tool rail, a central preview, and one settings inspector on the right. Select Audio, Pauses, Background, or an editing tool to show its controls. Undo/Redo and Export are in the header; the original-timing timeline spans the workspace below the preview, and the footer provides Save project and retention information. Select an edit to expand its controls. After export, the **Original / Exported** switch compares corresponding positions above the preview. **Back to editing** returns to the timeline. The **⋯** menu contains Appearance (System, Light, or Dark), keyboard shortcuts, storage information, About, and repository links. Appearance defaults to System and is remembered in this browser. Narrow screens stack the workspace and settings vertically.
 
 ## Keyboard and small-screen editing
 

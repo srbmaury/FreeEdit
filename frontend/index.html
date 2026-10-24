@@ -168,6 +168,46 @@
       </div>
 
       <aside class="side">
+        <section id="videosPanel" class="panel">
+          <h2 class="section-title">Combine videos</h2>
+          <p class="small">The main video fills the frame and sets the duration. Add one presenter video as an inset.</p>
+          <p id="presenterName" class="small">No presenter video added.</p>
+          <button id="choosePresenterBtn" type="button">Add presenter video…</button>
+          <input id="presenterInput" type="file" accept="video/*,.mov,.mkv,.mp4,.webm" hidden />
+          <div id="presenterControls" class="hidden">
+            <button id="removePresenterBtn" type="button" class="ghost">Remove presenter</button>
+            <label class="field"><span>Presenter background</span><select id="presenterEffect"><option value="original">Original</option><option value="blur">Blur</option><option value="remove">Remove background</option></select></label>
+            <label class="field"><span>Corner</span><select id="presenterCorner"><option value="bottom-right">Bottom right</option><option value="bottom-left">Bottom left</option><option value="top-right">Top right</option><option value="top-left">Top left</option></select></label>
+            <label class="field"><span>Inset width (% of main video)</span><input id="presenterSize" type="range" min="10" max="60" value="28" /></label>
+            <div class="camera-coordinates">
+              <label class="field"><span>X (pixels)</span><input id="presenterX" type="number" min="0" step="1" /></label>
+              <label class="field"><span>Y (pixels)</span><input id="presenterY" type="number" min="0" step="1" /></label>
+            </div>
+            <label class="field"><span>Start in main video (seconds)</span><input id="presenterOffset" type="number" min="0" step="0.1" value="0" /></label>
+            <div class="camera-coordinates">
+              <label class="field"><span>Presenter from (seconds)</span><input id="presenterFrom" type="number" min="0" step="0.1" value="0" /></label>
+              <label class="field"><span>Presenter to (seconds)</span><input id="presenterTo" type="number" min="0" step="0.1" /></label>
+            </div>
+            <p class="small">Drag the inset to move it, or its lower-right corner to resize. It keeps its aspect ratio and disappears when its selected range ends. Main-video cuts apply to both videos.</p>
+            <label class="field"><span>Sound from</span><select id="compositionSound"><option value="main">Main video</option><option value="presenter">Presenter video</option><option value="both">Both videos</option><option value="muted">Muted</option></select></label>
+            <div id="compositionVolumes" class="hidden">
+              <label class="field"><span>Main volume (%)</span><input id="mainVolume" type="range" min="0" max="200" value="100" /></label>
+              <label class="field"><span>Presenter volume (%)</span><input id="presenterVolume" type="range" min="0" max="200" value="100" /></label>
+            </div>
+            <button id="compositionPreviewBtn" type="button">Preview combined video</button>
+            <video id="compositionPreviewPlayer" class="hidden" controls playsinline aria-label="Combined video sample"></video>
+          </div>
+          <p id="compositionStatus" class="small" role="status">Preview three seconds from the playhead, including your sound choice. Main background effects, cuts, text, and privacy masks are applied in the full export.</p>
+        </section>
+        <section id="cutDraftPanel" class="panel">
+          <h2 class="section-title">Remove a section</h2>
+          <p class="small">Choose a range on the original recording. Nothing is removed until you add the cut.</p>
+          <label class="field"><span>From (seconds)</span><div class="with-btn"><input id="cutFrom" type="number" min="0" step="0.1" /><button id="cutFromNow" type="button" class="mini">Use playhead</button></div></label>
+          <label class="field"><span>To (seconds)</span><div class="with-btn"><input id="cutTo" type="number" min="0" step="0.1" /><button id="cutToNow" type="button" class="mini">Use playhead</button></div></label>
+          <p id="cutDraftStatus" class="small" role="status"></p>
+          <button id="addCutRangeBtn" type="button" class="primary">Add cut</button>
+          <p class="small">After adding, drag the cut or its edges on the timeline to adjust it. Select a cut to edit its times or delete it.</p>
+        </section>
         <div id="editsPanel" class="panel">
           <h2 class="section-title">Edits <span id="editCount" class="count">0</span></h2>
           <div id="editsList" class="edits"></div>
@@ -414,6 +454,7 @@
   <script src="projects.js"></script>
   <script src="noise-preview.js"></script>
   <script src="background.js"></script>
+  <script src="videos.js"></script>
   <script src="workspace.js"></script>
 </body>
 </html>

@@ -171,6 +171,7 @@ function openEditor(job) {
   S.undo = []; S.redo = [];
   resetNoisePreview();
   resetBackground();
+  resetVideos();
   S.exportSignature = null; S.reviewing = false;
   S.operation = null; S.suggestions = [];
   resetTimeline();
@@ -226,8 +227,9 @@ function openEditor(job) {
 function layoutStage() {
   if (!S.job?.has_video) return;
   const wrap = $("stageWrap");
-  const maxW = wrap.clientWidth;
-  const maxH = Math.max(240, window.innerHeight * 0.66);
+  const style = getComputedStyle(wrap);
+  const maxW = wrap.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+  const maxH = Math.max(240, window.innerHeight * 0.54);
   const { width: W, height: H } = S.job;
   const scale = Math.min(maxW / W, maxH / H);
   const dw = Math.round(W * scale), dh = Math.round(H * scale);
@@ -381,6 +383,8 @@ function render() {
   const W = S.job.width, H = S.job.height;
   ctx.clearRect(0, 0, W, H);
   const lw = W / (canvas.width / (window.devicePixelRatio || 1)); // 1 screen px in source px
+
+  drawPresenter(ctx);
 
   for (const e of S.edits) {
     if (e.type === "cut") continue;
@@ -573,13 +577,11 @@ document.querySelectorAll(".tool").forEach((b) => (b.onclick = () => setMode(b.d
 $("cutBtn").onclick = addCut;
 
 function addCut() {
-  const d = duration();
-  if (!d) return;
+  if (!S.job || !duration()) return;
   sourcePlayer().pause();
-  const len = Math.min(3, d / 4);
-  let start = sourcePlayer().currentTime;
-  if (start + len > d) start = Math.max(0, d - len);
-  addEdit({ type: "cut", start: +start.toFixed(2), end: +(start + len).toFixed(2) });
+  if (S.reviewing) setReview(false);
+  setMode("select");
+  window.dispatchEvent(new CustomEvent("freeedit:workspace", {detail: "cut"}));
 }
 
 // Merged [start, end] ranges of everything marked for removal
@@ -710,6 +712,10 @@ function renderList() {
       };
     });
 
+    if (e.type === "cut") {
+      card.querySelector(".del").textContent = "Delete cut";
+      card.querySelector(".del").setAttribute("aria-label", "Delete cut");
+    }
     card.querySelector(".del").onclick = (ev) => { ev.stopPropagation(); deleteEdit(e.id); };
     card.addEventListener("pointerdown", () => {
       if (S.selected === e.id) return;
@@ -739,7 +745,7 @@ document.addEventListener("keydown", (ev) => {
 });
 
 // ---------- history and export review ----------
-function snapshot() { return JSON.stringify({edits: S.edits, background: S.background}); }
+function snapshot() { return JSON.stringify({edits: S.edits, background: S.background, presenter: presenterProject()}); }
 function checkpoint() {
   const current = snapshot();
   if (S.undo.at(-1) !== current) S.undo.push(current);
@@ -753,6 +759,7 @@ function restoreHistory(redo = false) {
   to.push(snapshot());
   const restored = JSON.parse(from.pop());
   S.edits = restored.edits; S.background = restored.background;
+  restorePresenter(restored.presenter, true);
   syncBackgroundControls(); invalidateBackgroundPreview();
   S.selected = null;
   renderList(); render(); updateTransport();
@@ -763,7 +770,7 @@ function editSignature() {
   return JSON.stringify({ edits: S.edits.map(({ id, ...edit }) => {
     if (edit.type === "text") { delete edit.w; delete edit.h; }
     return edit;
-  }), background: getBackgroundSettings(), denoise: $("denoise").checked, strength: $("strength").value, preset: $("exportPreset").value });
+  }), presenter: presenterProject(), background: getBackgroundSettings(), denoise: $("denoise").checked, strength: $("strength").value, preset: $("exportPreset").value });
 }
 function refreshExportState() {
   if (!S.job) return;
@@ -772,6 +779,8 @@ function refreshExportState() {
   $("undoBtn").disabled = !S.undo.length;
   $("redoBtn").disabled = !S.redo.length;
   const removed = cutRanges().reduce((sum, [a, b]) => sum + b - a, 0);
+  $("noisePreviewBtn").disabled = !!S.operation || !!getPresenterSettings();
+  $("noisePreviewBtn").title = getPresenterSettings() ? "The noise sample uses the main recording. Export to hear noise reduction on the combined sound." : "";
   $("exportSummary").textContent = `${fmt(Math.max(0, duration() - removed))} output · ${S.edits.filter(e => e.type === "cut").length} cuts · ${S.edits.filter(e => e.type === "hide").length} masks · Noise reduction ${$("denoise").checked ? "on" : "off"}${getBackgroundSettings() && $("exportPreset").value !== "audio_only" ? " · Background " + S.background.mode : ""}`;
   const stale = S.exportSignature !== null && S.exportSignature !== editSignature();
   $("resultNote").textContent = stale ? "Edits changed. Export again to include them; this download is the previous result." : "Rendered export ready to review.";
@@ -826,10 +835,12 @@ function setBusy(operation) {
   $("processBtn").disabled = !!operation;
   $("detectSilenceBtn").disabled = !!operation;
   $("retryPausesBtn").disabled = !!operation;
-  $("noisePreviewBtn").disabled = !!operation;
+  $("noisePreviewBtn").disabled = !!operation || !!getPresenterSettings();
   $("backgroundPreviewBtn").disabled = !!operation;
   $("backgroundControls").inert = !!operation;
   $("backgroundMode").disabled = !!operation;
+  $("videosPanel").inert = !!operation;
+  $("compositionPreviewPlayer").pause();
   if (operation) $("backgroundPreviewPlayer").pause();
   $("cancelProcessingBtn").disabled = false;
   $("cancelProcessingBtn").textContent = "Cancel";
@@ -875,8 +886,9 @@ function buildPayload() {
   });
   const strength = $("strength").value;
   return {
+    presenter: getPresenterSettings(),
     background: $("exportPreset").value !== "audio_only" ? getBackgroundSettings() : null,
-    denoise: S.job.has_audio && $("denoise").checked,
+    denoise: (S.job.has_audio || !!presenterProject()?.source.has_audio) && $("denoise").checked,
     atten_lim: strength ? parseInt(strength, 10) : null,
     preset: $("exportPreset").value,
     edits: S.job.has_video && $("exportPreset").value !== "audio_only" ? edits : [],
@@ -885,6 +897,7 @@ function buildPayload() {
 }
 
 async function startExport() {
+  if (!validateVideos()) return;
   window.dispatchEvent(new CustomEvent("freeedit:workspace", { detail: "export" }));
   show($("procError"), false);
   show($("procReference"), false);
@@ -944,8 +957,10 @@ function poll(delay = 800) {
       if (j.status === "cancelled") {
         const wasSilence = S.operation === "silence";
         const wasPreview = S.operation === "preview";
+        const wasComposition = S.operation === "composition";
         const wasBackground = S.operation === "background";
         setBusy(null); show($("procProgress"), false);
+        if (wasComposition) return compositionPreviewDone({error: "Combined preview stopped."});
         if (wasBackground) return backgroundPreviewDone({error: "Background preview stopped."});
         if (wasPreview) return noisePreviewDone({error: "Sample processing stopped."});
         if (wasSilence) $("silenceStatus").textContent = "Detection stopped. Your edits are unchanged.";
@@ -953,7 +968,10 @@ function poll(delay = 800) {
         return;
       }
       if (j.status === "cancelling") { setProgress("Stopping…", null); poll(); return; }
-      if (S.operation === "background") {
+      if (S.operation === "composition") {
+        if (j.composition_preview) return compositionPreviewDone(j.composition_preview);
+        if (!["queued", "processing", "cancelling"].includes(j.status)) return compositionPreviewDone({error: "Combined preview was not started. Please retry."});
+      } else if (S.operation === "background") {
         if (j.background_preview) return backgroundPreviewDone(j.background_preview);
         if (!["queued", "processing", "cancelling"].includes(j.status)) return backgroundPreviewDone({error: "Background preview was not started. Please retry."});
       } else if (S.operation === "preview") {
@@ -982,6 +1000,7 @@ function procFailed(msg, replaceFile = false, reference = null) {
   show($("procReference"), !!reference);
   $("procReference").textContent = reference ? `Reference: ${reference}` : "";
   if (S.operation === "silence") return silenceDone({error: msg});
+  if (S.operation === "composition") return compositionPreviewDone({error: msg});
   if (S.operation === "background") return backgroundPreviewDone({error: msg});
   if (S.operation === "preview") return noisePreviewDone({error: msg});
   setBusy(null);
@@ -1049,6 +1068,7 @@ function resetFile() {
   resetProject();
   resetNoisePreview();
   resetBackground();
+  resetVideos();
   clearTimeout(S.pollTimer);
   const id = S.job?.id;
   stopReviewLoop();
@@ -1113,7 +1133,7 @@ $("cancelProcessingBtn").onclick = async () => {
 
 $("processBtn").onclick = () => {
   const warnings = [];
-  if ($("exportPreset").value === "audio_only" && (S.edits.some(e => e.type !== "cut") || getBackgroundSettings())) warnings.push("Audio-only export excludes background effects, text, and hidden areas. Audio and cuts are included.");
+  if ($("exportPreset").value === "audio_only" && (S.edits.some(e => e.type !== "cut") || getBackgroundSettings() || getPresenterSettings())) warnings.push("Audio-only export excludes video layers, background effects, text, and hidden areas. Audio and cuts are included.");
   if ($("exportPreset").value === "small" && S.edits.some(e => e.type === "text")) warnings.push("Small file compression can make text less readable. Review the exported result before sharing.");
   if (warnings.length) showProjectMessage("Check before exporting", warnings.join(" "), () => { $("projectDialog").close(); startExport(); }, "Export file");
   else startExport();

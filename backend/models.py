@@ -93,8 +93,34 @@ class BackgroundSettings(BaseModel):
             raise HTTPException(422, "Camera area extends beyond the video.")
 
 
+class PresenterSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    box: CameraRegion
+    offset: float = Field(default=0, ge=0)
+    trim_start: float = Field(default=0, ge=0)
+    trim_end: float = Field(gt=0)
+    effect: Literal["original", "blur", "remove"] = "original"
+    sound: Literal["main", "presenter", "both", "muted"] = "main"
+    main_volume: float = Field(default=1, ge=0, le=2)
+    presenter_volume: float = Field(default=1, ge=0, le=2)
+
+    def validate_media(self, media, other):
+        if not media["has_video"] or not other["has_video"]:
+            raise HTTPException(422, "Both recordings must contain video.")
+        if self.offset >= media["duration"] or self.trim_start >= self.trim_end or self.trim_end > other["duration"] + .05:
+            raise HTTPException(422, "Keep presenter timing inside the recordings.")
+        self.trim_end = min(self.trim_end, other["duration"])
+        if self.box.x + self.box.w > media["width"] or self.box.y + self.box.h > media["height"]:
+            raise HTTPException(422, "Presenter inset extends beyond the main video.")
+        if self.sound in ("main", "both") and not media["has_audio"]:
+            raise HTTPException(422, "The main video has no sound. Choose Presenter or Muted.")
+        if self.sound in ("presenter", "both") and not other["has_audio"]:
+            raise HTTPException(422, "The presenter video has no sound. Choose Main or Muted.")
+
+
 class ProcessRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    presenter: PresenterSettings | None = None
     background: BackgroundSettings | None = None
     denoise: bool = True
     atten_lim: int | None = Field(default=None, ge=0, le=100)
@@ -109,7 +135,7 @@ class ProcessRequest(BaseModel):
                 raise HTTPException(422, "Background effects are not included in audio-only exports.")
         if self.edits and not media["has_video"]:
             raise HTTPException(422, "Visual edits require a video.")
-        if self.preset == "audio_only" and not media["has_audio"]:
+        if self.preset == "audio_only" and not media["has_audio"] and not self.presenter:
             raise HTTPException(422, "This recording has no audio to export.")
         for item in [*self.edits, *self.cuts]:
             if item.end > media["duration"] + 0.05:
@@ -159,3 +185,13 @@ class BackgroundPreviewRequest(BaseModel):
         self.background.validate_media(media)
         if self.start >= media["duration"]:
             raise HTTPException(422, "Preview must start inside the recording.")
+
+
+class CompositionPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    presenter: PresenterSettings
+    start: float = Field(default=0, ge=0)
+
+    def validate_media(self, media):
+        if self.start >= media["duration"]:
+            raise HTTPException(422, "Preview must start inside the main video.")
