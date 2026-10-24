@@ -95,6 +95,16 @@ $("captionInput").onchange = async event => {
   }
 };
 
+// One refresh path for every reframe mutation: inspector, timeline,
+// preview, undo/export signature and browser recovery stay in sync.
+function refreshReframeWorkspace() {
+  renderReframeSections();
+  renderList(); // also repopulates the shared Reframe/Edits list
+  renderTimeline();
+  render();
+  refreshExportState();
+}
+
 function renderReframeSections() {
   const list = $("reframeSections");
   if (!list) return;
@@ -113,7 +123,7 @@ function renderReframeSections() {
     remove.onclick = () => {
       checkpoint();
       S.reframe.sections = S.reframe.sections.filter(item=>item!==section);
-      S.selectedZoom=null;renderReframeSections();renderZoomSelectList();renderTimeline(); render(); refreshExportState();
+      S.selectedZoom=null;refreshReframeWorkspace();
     };
     row.append(label,seek,remove);
     list.append(row);
@@ -143,7 +153,7 @@ $("reframeAddSection").onclick = () => {
   sections.push(section);
   sections.sort((a,b)=>a.start-b.start);
   S.selectedZoom = sections.indexOf(section);
-  renderReframeSections(); renderZoomSelectList(); renderTimeline(); refreshExportState();
+  refreshReframeWorkspace();
   // Seek into the middle where the zoom is fully applied, so clicking Add
   // yields immediate, visible feedback even when playback was elsewhere.
   const middle = start + (end - start) / 2;
@@ -235,7 +245,7 @@ function renderZoomSelectList() {
     remove.onclick = () => {
       checkpoint();
       S.reframe = {...reframeDefaults(), sections: zoomSections()};
-      syncReframeControls(); renderZoomSelectList(); renderTimeline(); render(); refreshExportState();
+      syncReframeControls(); refreshReframeWorkspace();
     };
     row.append(button, remove);
     list.append(row);
@@ -295,13 +305,13 @@ for(const [id,key] of Object.entries({selectedZoomStart:"start",selectedZoomEnd:
     if (!sliding || !input.dataset.dragging) checkpoint();
     if (sliding) input.dataset.dragging = "1";
     S.reframe.sections=sorted;S.selectedZoom=sorted.indexOf(updated);
-    renderReframeSections();renderZoomSelectList();renderTimeline();refreshExportState();render();
+    refreshReframeWorkspace();
   });
 }
 $("selectedZoomRemove").onclick=()=>{
   const index=S.selectedZoom;if(index==null)return;
   checkpoint();S.reframe.sections.splice(index,1);S.selectedZoom=null;
-  renderReframeSections();renderZoomSelectList();renderTimeline();refreshExportState();render();
+  refreshReframeWorkspace();
   window.dispatchEvent(new CustomEvent("freeedit:workspace",{detail:"zoom-selection"}));
 };
 
