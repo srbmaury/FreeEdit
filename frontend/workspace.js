@@ -138,11 +138,11 @@
     if (reason === "zoom-selection") activate("edits", "select");
     if (reason === "select-tool") {
       activate("edits", "select");
-      byId("modeHint").textContent = S.selected != null
+      byId("modeHint").textContent = (S.selected != null || S.selectedZoom != null)
         ? "Selection active · Drag the selected edit, or change its properties on the right."
         : S.edits.length
-          ? "Selection active · Click an overlay in the preview, or select an edit on the timeline."
-          : "Selection active · No edits yet. Add Text, Hide area, or Cut using the task rail.";
+          ? "Edits open · Choose any cut, mask, text, caption, or zoom section here or on the timeline."
+          : "No edits yet · Add a cut, mask, caption, text, or zoom section using the task rail.";
     }
     if (reason === "mode") {
       if (S.mode === "background") activate("background");
