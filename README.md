@@ -136,7 +136,7 @@ See [background setup, model information, and limitations](docs/BACKGROUNDS.md).
 | High quality | H.264/AAC MP4, CRF 18, source resolution within the server cap |
 | Audio only | 48 kHz, 16-bit PCM WAV with cuts and optional noise reduction |
 
-All video presets re-encode to compatible MP4, preserve the frame without cropping, and use even dimensions. The export panel shows the intended dimensions and warns about significant downscaling. Compressed file size depends on content, so it is not predicted. Audio inputs always export as WAV. Audio-only export excludes background effects, text, and masks, but retains cuts and noise reduction.
+All video presets re-encode to compatible MP4 with even dimensions. Reframe can crop or zoom, while other edits preserve the source frame. The export panel shows the intended dimensions and warns about significant downscaling. Compressed file size depends on content, so it is not predicted. Audio inputs always export as WAV. Audio-only export excludes background effects, text, and masks, but retains cuts and noise reduction.
 
 ## Notes
 
@@ -203,7 +203,7 @@ Server application events are JSON lines: request failures, uploads, queue admis
 
 Use **⋯ → Save project…** to download a `.freeedit.json` file containing cuts, masks, text, noise-reduction settings, background effects and camera area, and the export preset. Background images are embedded in the project; the source recording and rendered export are not. This is an editable project, separate from an exported video/audio file. **The recording is not included:** keep the original with your project file.
 
-Use **⋯ → Open project…**, then select the original recording. FreeEdit compares its size and a fingerprint of every byte before restoring edits. Renaming the recording is fine; changing or re-encoding its contents is not. Project format version 1 uses `sha256-chunks-4m-v1`: SHA-256 of the concatenated SHA-256 digests of consecutive 4 MiB chunks. Hashing uses bounded memory. Project files are validated and limited to 2 MB.
+Use **⋯ → Open project…**, then select the original recording. FreeEdit compares its size and a fingerprint of every byte before restoring edits. Renaming the recording is fine; changing or re-encoding its contents is not. Project format version 2 uses `sha256-chunks-4m-v1`: SHA-256 of the concatenated SHA-256 digests of consecutive 4 MiB chunks. Hashing uses bounded memory. Project files are validated and limited to 2 MB.
 
 FreeEdit also saves one recovery copy automatically in browser storage. On return, choose **Resume editing**. If the server still holds the temporary recording, it can be reused. After expiry or a server restart, choose the original recording again. Recovery keeps edits/settings, not the video/audio itself; closing the browser does not keep the server's temporary media forever.
 
@@ -231,7 +231,17 @@ backend/df_worker.py  DeepFilterNet3 denoiser (chunked, runs as a subprocess)
 backend/background.py Person-mask preparation and background composition filters
 backend/background_worker.py Streaming MediaPipe segmentation worker
 backend/preflight.py  Startup checks and optional noise-model preparation
-frontend/             Static UI (no build step), including workspace and presenter controls
+frontend/app.js                 Upload, playback, transport, and shared store bootstrap
+frontend/editor-model.js        Pure typed timeline edit selectors, validation, export projection and store
+frontend/editor-render.js       Canvas rendering, media hit testing and drawing gestures
+frontend/editor-edits.js        Edit inspector, selection, keyboard shortcuts and edit commands
+frontend/editor-history.js      Undo/redo, export signature and review state
+frontend/editor-export.js       Typed FFmpeg payload adapter, rendering and progress polling
+frontend/editor-session.js      Session reset and processing controls
+frontend/reframe-captions.js    Reframe controls and editable SRT caption import
+frontend/projects.js           Version-2 project persistence and source verification
+frontend/videos.js             Presenter media and inset composition
+frontend/                      Additional feature modules, CSS and static assets (no build step)
 tests/test_composition.py Synthetic FFmpeg integration tests for two-video composition
 setup-background.sh   Optional isolated background-engine setup
 scripts/              Manual performance measurement and release inventory
@@ -245,6 +255,22 @@ Temporary uploads and rendered files are scoped to a signed, HttpOnly, SameSite=
 ## Reproducible releases
 
 Torch/torchaudio/DeepFilterNet are version-pinned; several web dependencies remain version ranges. The production dependency set is **not yet reproducibly locked**. For a release, generate a pinned, hashed lockfile on Python 3.12 using a compatible resolver and test the exact Docker image. Do not upgrade the paired audio/model dependencies independently. Before distributing container images, resolve the [model and third-party licensing questions](docs/LICENSE_AUDIT.md).
+
+## Frontend architecture
+
+All timeline edits (cuts, masks, text/captions and timed Reframe) now share a single
+edit collection with stable runtime IDs and original-source start/end times.
+`EditorModel` provides deterministic selectors and validates Reframe geometry
+and overlaps. `editorStore.dispatch(reason, mutation)` is the mutation boundary
+for timeline-document edits, notifying inspector, preview, timeline, export and
+project recovery. Whole-video Reframe, background and presenter settings remain
+project-level configuration and project snapshots capture them for undo/redo.
+The browser exports a projection of this document to the existing FFmpeg API.
+
+New `.freeedit.json` projects use **format version 2** with timed Reframe
+represented alongside the other edits. Legacy format v1 is intentionally not
+supported; existing pre-release project files must be recreated. See
+[architecture and invariants](docs/ARCHITECTURE.md).
 
 ## Checks before release
 
