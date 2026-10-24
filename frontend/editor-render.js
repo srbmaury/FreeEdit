@@ -81,7 +81,7 @@ function render() {
   drawPresenter(ctx);
 
   for (const e of S.edits) {
-    if (e.type === "cut") continue;
+    if (e.type !== "hide" && e.type !== "text") continue;
     if (!isActive(e)) {
       if (e.type === "text") { const m = textMetrics(e); e.w = m.w; e.h = m.h; }
       continue;
@@ -91,7 +91,7 @@ function render() {
   }
 
   const sel = getEdit(S.selected);
-  if (sel && sel.type !== "cut") {
+  if (sel && (sel.type === "hide" || sel.type === "text")) {
     ctx.save();
     ctx.lineWidth = 2 * lw;
     ctx.setLineDash([6 * lw, 4 * lw]);
@@ -165,10 +165,10 @@ function hitTest(p) {
     }
   }
   const inside = (e) => p.x >= e.x && p.x <= e.x + e.w && p.y >= e.y && p.y <= e.y + e.h;
-  if (sel && sel.type !== "cut" && inside(sel)) return { edit: sel, part: "move" };
+  if (sel && (sel.type === "hide" || sel.type === "text") && inside(sel)) return { edit: sel, part: "move" };
   for (let i = S.edits.length - 1; i >= 0; i--) {
     const e = S.edits[i];
-    if (e.type !== "cut" && isActive(e) && inside(e)) return { edit: e, part: "move" };
+    if ((e.type === "hide" || e.type === "text") && isActive(e) && inside(e)) return { edit: e, part: "move" };
   }
   return null;
 }
