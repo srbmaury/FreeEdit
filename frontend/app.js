@@ -271,11 +271,11 @@ function layoutStage() {
 }
 window.addEventListener("resize", layoutStage);
 
-video.addEventListener("loadeddata", render);
+video.addEventListener("loadeddata", () => render());
 $("audio").addEventListener("timeupdate", updateTransport);
 $("audio").addEventListener("play", () => { $("playBtn").textContent = "❚❚"; tick(); });
 $("audio").addEventListener("pause", () => { S.auditionUntil = null; $("playBtn").textContent = "▶"; });
-video.addEventListener("seeked", render);
+video.addEventListener("seeked", () => render());
 video.addEventListener("timeupdate", () => { updateTransport(); if (video.paused) render(); });
 video.addEventListener("play", () => { $("playBtn").textContent = "❚❚"; tick(); });
 video.addEventListener("pause", () => { S.auditionUntil = null; $("playBtn").textContent = "▶"; render(); });
