@@ -168,7 +168,9 @@ combinedPlayer.addEventListener("play",()=>{video.pause();$("audio").pause();pre
 // Inset placement uses the same source-pixel coordinates as other visual edits.
 let insetDrag = null;
 canvas.addEventListener("pointerdown", event => {
-  if(!presenter?.ready || S.mode!=="select" || $("workspace-videos").hidden)return;
+  // The Select preview tool can open the edits inspector; presenter dragging
+  // must still work from there. A hit on the presenter reopens Videos settings.
+  if(!presenter?.ready || S.mode!=="select")return;
   const p=toSource(event), b=presenter.settings.box, local=video.currentTime-presenter.settings.offset;
   if(local<0 || local>=presenter.settings.trim_end-presenter.settings.trim_start || p.x<b.x || p.x>b.x+b.w || p.y<b.y || p.y>b.y+b.h)return;
   const handle=18*S.job.width/canvas.getBoundingClientRect().width;
