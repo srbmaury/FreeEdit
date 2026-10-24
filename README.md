@@ -18,10 +18,10 @@ A small web app for cleaning up screen recordings and other audio or video files
 
 1. **Upload** a screen recording, webcam video, or audio file.
 2. Use **Videos**, **Audio**, **Pauses**, **Background**, **Cut**, **Text**, or **Hide area** in the task rail. Add a presenter inset in **Videos** when needed.
-3. Use **Select (V)** in the **preview toolbar** to select, move, and resize existing edits. The inspector shows **Your edits** by default and **Edit properties** when an edit is selected. You can keep the **Videos** inspector open while positioning the presenter.
+3. Use **Edits (V)** in the **preview toolbar** to select, move, and resize existing edits. The inspector shows **Your edits** by default and **Edit properties** when an edit is selected. You can keep the **Videos** inspector open while positioning the presenter.
 4. Review the original timeline, listen to processed audio/video samples, and **Export**. Download the output or save a `.freeedit.json` project to continue editing later.
 
-The task rail contains **Videos · Audio · Pauses · Background · Cut · Text · Hide area · Export**. Select is a preview interaction tool, not another editing feature. See the [focused workspace implementation notes](docs/FOCUSED_WORKSPACE.md) and [standalone design reference](docs/design/FreeEdit-Design.html); the reference is a mockup, not a running editor.
+The task rail contains **Videos · Audio · Pauses · Background · Cut · Text · Hide area · Export**. Edits opens a unified inspector for text, captions, masks, cuts, and timed zoom sections. See the [focused workspace implementation notes](docs/FOCUSED_WORKSPACE.md) and [standalone design reference](docs/design/FreeEdit-Design.html); the reference is a mockup, not a running editor.
 
 **Live app:** https://freeedit.srbmaury.com. The live deployment can differ from this `design/focused-workspace` branch; features present here are not necessarily deployed. Run this branch locally to review its current UI and presenter composition. Uploaded files are processed on the FreeEdit server and stored in `./jobs/` until cleanup. Inactive files expire after 24 hours locally or 1 hour when hosted; active uploads and queued/processing exports are protected.
 
@@ -83,7 +83,7 @@ This uses MediaPipe without changing DeepFilterNet's environment. You can set `B
 4. **Hide area** (`H`): drag over the part to hide. Solid cover is the default. Choose Blur or Pixelate only for non-sensitive details.
 5. **Add text** (`T`): click on the video, then type in the sidebar.
 6. Each edit has a **From/To** time on the original timeline. The **Use playhead** buttons set it to the playhead. New text and hide edits start at the current playhead and run to the end of the video.
-7. Use **Select (V)** beside the preview to select and move an edit. For hide boxes, drag the corner handle to resize. `Delete` removes the selected edit. The right inspector shows the selected edit's properties.
+7. Use **Edits (V)** beside the preview to select and move an edit. For hide boxes, drag the corner handle to resize. `Delete` removes the selected edit. The right inspector shows the selected edit's properties.
 8. Click **Export**. The rendered result opens in the main player. Switch between **Original** and the cleaned version, return with **Back to editing**, or **Download**. Comparison follows corresponding positions after cuts.
 
 Undo/redo buttons restore edit changes; use `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z` outside text fields. If edits change after export, the result is marked as outdated until you export again. Temporary connection interruptions retry status checks automatically.
@@ -213,7 +213,7 @@ Leaving a project with changes not yet downloaded prompts the browser's standard
 
 ## Editor layout
 
-The workspace uses a left task rail (Videos, Audio, Pauses, Background, Cut, Text, Hide area, Export), a central preview, and one settings inspector on the right. **Select (V)** is in the preview toolbar rather than the rail; it lets you move existing edits without adding new ones. Selecting an edit reveals **Edit properties** in the inspector; otherwise it shows **Your edits**. Keeping **Videos** open while using Select allows presenter-inset repositioning. Undo/Redo and Export are in the header; the original-timing timeline spans the workspace below the preview, and the footer provides Save project and retention information. After export, the **Original / Exported** switch compares corresponding positions above the preview. **Back to editing** returns to the timeline. The **⋯** menu contains Appearance (System, Light, or Dark), keyboard shortcuts, storage information, About, and repository links. Appearance defaults to System and is remembered in this browser. Narrow screens stack the workspace and settings vertically.
+The workspace uses a left task rail (Videos, Audio, Pauses, Background, Cut, Text, Hide area, Export), a central preview, and one settings inspector on the right. **Edits (V)** is in the preview toolbar rather than the rail; it lets you move existing edits without adding new ones. Selecting an edit reveals **Edit properties** in the inspector; otherwise it shows **Your edits**. Keeping **Videos** open while using Select allows presenter-inset repositioning. Undo/Redo and Export are in the header; the original-timing timeline spans the workspace below the preview, and the footer provides Save project and retention information. After export, the **Original / Exported** switch compares corresponding positions above the preview. **Back to editing** returns to the timeline. The **⋯** menu contains Appearance (System, Light, or Dark), keyboard shortcuts, storage information, About, and repository links. Appearance defaults to System and is remembered in this browser. Narrow screens stack the workspace and settings vertically.
 
 ## Keyboard and small-screen editing
 
