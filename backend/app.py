@@ -30,7 +30,7 @@ from .execution import Cancelled, JobControl, cancellation_scope
 from .models import ProcessRequest, SilenceRequest, PreviewRequest, BackgroundPreviewRequest, CompositionPreviewRequest, ResultPreviewRequest
 from .observability import event, install_error_handling, public_processing_error
 from .sessions import COOKIE, create_session, verify_session
-from .rate_limit import RequestLimiter, category_for, limits, env_int
+from .rate_limit import RequestLimiter, category_for, limits as admission_limits, env_int
 
 ROOT = Path(__file__).resolve().parent.parent
 JOBS_DIR = Path(os.environ.get("FREEEDIT_JOBS_DIR", ROOT / "jobs"))
@@ -120,7 +120,7 @@ async def protect_session_jobs(request: Request, call_next):
         # No trust in request-supplied X-Forwarded-For. Use an edge limiter
         # for per-public-IP enforcement behind a reverse proxy.
         peer = request.client.host if request.client else "unknown"
-        session_limit, peer_limit = limits(category)
+        session_limit, peer_limit = admission_limits(category)
         retry = request_limiter.check(category, owner, peer,
                                       session_limit=session_limit, peer_limit=peer_limit)
         if retry:
