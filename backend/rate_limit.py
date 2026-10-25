@@ -39,10 +39,11 @@ class RequestLimiter:
                         timestamps.popleft()
                     if not timestamps:
                         self._events.pop(key, None)
-                if len(self._events) >= self.max_keys:
-                    oldest = min(self._events, key=lambda k: self._events[k][-1])
-                    self._events.pop(oldest)
                 self._last_sweep = now
+            # Never evict active rate-limit history: a flood of distinct
+            # sessions must not reset another session's active budget.
+            if len(self._events) + sum(key not in self._events for key in keys) > self.max_keys:
+                return seconds
             for key in keys:
                 timestamps = self._events.setdefault(key, deque())
                 while timestamps and now - timestamps[0] >= seconds:
