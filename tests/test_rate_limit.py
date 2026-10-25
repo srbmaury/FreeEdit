@@ -50,6 +50,28 @@ class RateLimitTests(unittest.TestCase):
             with TestClient(api.app) as client:
                 self.assertEqual(client.post(f"/api/jobs/{job_id}/process",json={}).status_code,404)
 
+    def test_force_secure_cookie_behind_https_proxy(self):
+        with patch.dict("os.environ", {"FREEEDIT_SECURE_COOKIES":"true"}):
+            with TestClient(api.app) as client:
+                response = client.get("/healthz")
+                cookie = response.headers["set-cookie"].lower()
+                self.assertIn("secure", cookie)
+                self.assertIn("httponly", cookie)
+                self.assertIn("samesite=strict", cookie)
+
+    def test_limiter_is_fail_closed_at_client_capacity(self):
+        clock = Clock()
+        limiter = RequestLimiter(clock=clock,max_keys=2)
+        self.assertEqual(limiter.check("upload","a","first",
+                                       session_limit=10,peer_limit=10),0)
+        self.assertEqual(limiter.check("upload","b","second",
+                                       session_limit=10,peer_limit=10),600)
+        self.assertEqual(limiter.check("upload","a","first",
+                                       session_limit=10,peer_limit=10),0)
+        clock.now=601
+        self.assertEqual(limiter.check("upload","b","second",
+                                       session_limit=10,peer_limit=10),0)
+
     def test_integration_429_has_retry_after(self):
         limiter = RequestLimiter()
         owner, token = create_session()
