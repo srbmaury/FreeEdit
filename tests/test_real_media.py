@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from backend import pipeline, rendering
 
@@ -74,6 +75,29 @@ class RealMediaTests(unittest.TestCase):
         self.assertFalse(info.has_video)
         self.assertTrue(info.has_audio)
         self.assertAlmostEqual(info.duration,3.6,delta=.2)
+
+
+    def test_background_compositing_works_with_synthetic_person_mask(self):
+        """Exercises real background FFmpeg filters, without loading ML weights."""
+        work = self.root / "background"
+        work.mkdir()
+        mask = work / "person-mask.mkv"
+        subprocess.run([
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "color=c=white:s=160x90:r=18:d=4",
+            "-vf", "format=gray", "-c:v", "ffv1", "-threads", "1",
+            str(mask),
+        ], check=True, capture_output=True)
+        with patch("backend.background.create_mask", return_value=mask):
+            out = pipeline.process(
+                self.source, work, denoise_audio=False, atten_lim=None,
+                edits=[], cuts=[], progress=lambda *_:None,
+                background={"mode":"color","color":"#112233","blur":16},
+                preset="small")
+        media = pipeline.probe(out)
+        self.assertTrue(media.has_video)
+        self.assertTrue(media.has_audio)
+        self.assertAlmostEqual(media.duration,4,delta=.25)
 
 
 if __name__=="__main__":
