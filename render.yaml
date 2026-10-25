@@ -15,3 +15,9 @@ services:
         value: "10"
       - key: JOB_TTL_HOURS
         value: "1"
+      - key: FREEEDIT_MAX_ACTIVE_UPLOADS
+        value: "2"
+      - key: FREEEDIT_UPLOADS_PER_SESSION_10M
+        value: "8"
+      - key: FREEEDIT_OPERATIONS_PER_SESSION_10M
+        value: "20"
