@@ -305,7 +305,7 @@ In **Audio → Speech volume and fades**, enable restrained speech compression w
 
 ### Public hosting admission controls
 
-The app applies 10-minute in-memory admission limits to expensive endpoints:
+The app applies 10-minute in-memory admission limits to expensive endpoints. Set `FREEEDIT_SECURE_COOKIES=true` when the HTTPS terminator talks HTTP to the app (already set in `render.yaml`):
 
 | Environment setting | Default |
 | --- | ---: |
