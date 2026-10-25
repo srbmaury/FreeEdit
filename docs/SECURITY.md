@@ -24,9 +24,16 @@ claim a security audit or guarantee that hosted processing is private.
   on restart. Multi-worker or replicated deployments require shared session
   keys, job metadata, ownership checks and job storage.
 - Unsafe requests carrying a cross-site Origin header are rejected.
-- Use HTTPS, appropriate host/edge upload rate limits, and separate worker
-  capacity limits in publicly accessible deployments. Signed sessions do not
-  replace user login or public-network abuse controls.
+- The API enforces configurable session and peer request quotas for upload,
+  processing and diagnostics, plus a hard concurrent-upload cap and a
+  processing queue limit. Quotas return 429 with `Retry-After`.
+- The peer is taken from the ASGI connection, never untrusted forwarding
+  headers. Behind Render or another reverse proxy, multiple end users may
+  appear as the *same peer*: configure a **real-client-IP edge limiter** and
+  treat this application's limiter as defense in depth.
+- Use HTTPS, appropriate edge-side request throttling, payload body limits
+  and worker capacity controls. Signed sessions do not replace user login
+  or public-network abuse controls.
 
 ## Operational review checklist
 
@@ -44,6 +51,8 @@ claim a security audit or guarantee that hosted processing is private.
 
 There is no account-based authorization, malware scanner, content scanning,
 persistent per-user media library, or distributed rate-limiting service.
+The in-memory quotas reset at restart and cannot protect a multi-worker
+deployment or identify visitors independently behind a shared proxy.
 The application still relies on one worker process and local disk. Privacy
 and operational guarantees must be reevaluated before horizontally scaling
 or serving regulated/sensitive recordings.
