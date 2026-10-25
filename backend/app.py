@@ -98,7 +98,8 @@ async def protect_session_jobs(request: Request, call_next):
         if new_cookie:
             response.set_cookie(
                 COOKIE, token, httponly=True, samesite="strict",
-                secure=request.url.scheme == "https", path="/",
+                secure=(request.url.scheme == "https" or
+                        os.environ.get("FREEEDIT_SECURE_COOKIES", "").lower() in ("1", "true", "yes")), path="/",
                 max_age=7 * 24 * 3600,
             )
         return response
