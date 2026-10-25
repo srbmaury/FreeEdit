@@ -77,6 +77,31 @@ class RealMediaTests(unittest.TestCase):
         self.assertAlmostEqual(info.duration,3.6,delta=.2)
 
 
+    def test_irregular_frame_timing_with_cut_and_reframe(self):
+        """Synthetic VFR-like clip simulates dropped screen-recording frames."""
+        source = self.root / "irregular.mp4"
+        subprocess.run([
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=30:duration=4",
+            "-f", "lavfi", "-i", "sine=frequency=360:sample_rate=48000:duration=4",
+            "-vf", "select='not(mod(n,3))+eq(mod(n,7),0)',setpts=PTS-STARTPTS",
+            "-fps_mode", "vfr", "-c:v", "libx264", "-preset", "ultrafast",
+            "-threads", "1", "-c:a", "aac", "-t", "4", str(source),
+        ], check=True, capture_output=True)
+        work = self.root / "irregular-render"
+        work.mkdir()
+        output = pipeline.process(source, work, denoise_audio=False, atten_lim=None,
+            edits=[], cuts=[{"start":1,"end":1.25}], progress=lambda *_:None,
+            reframe={"aspect":"original","zoom":1,"focus_x":.5,"focus_y":.5,
+                "sections":[{"start":.5,"end":2.6,"zoom":1.5,
+                             "focus_x":.55,"focus_y":.45,"transition":.3}]},
+            audio={"level_speech":False,"fade_in":.1,"fade_out":.1})
+        result = pipeline.probe(output)
+        self.assertTrue(result.has_video)
+        self.assertTrue(result.has_audio)
+        self.assertGreater(result.duration,3.3)
+        self.assertLess(result.duration,4.1)
+
     def test_background_compositing_works_with_synthetic_person_mask(self):
         """Exercises real background FFmpeg filters, without loading ML weights."""
         work = self.root / "background"
