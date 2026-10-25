@@ -18,6 +18,8 @@ claim a security audit or guarantee that hosted processing is private.
 - The cookie is *not a login*, and anyone sharing the same browser session
   can access its temporary files. Do not upload media requiring confidential
   server-side handling to an untrusted public deployment.
+- Set `FREEEDIT_SECURE_COOKIES=true` when HTTPS terminates at a proxy
+  and the application receives internal HTTP; the Render config sets it.
 - Set `FREEEDIT_SESSION_SECRET` to a randomly generated, high-entropy value
   on a persistent deployment. Without it, the process generates a fresh key
   on startup; old cookies become invalid. In-memory job metadata is also lost
