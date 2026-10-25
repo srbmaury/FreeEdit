@@ -1,6 +1,6 @@
 # Current limits and long recordings
 
-FreeEdit currently targets focused recording cleanup. Upload streaming and HTTP byte-range playback do not imply unrestricted project size or full movie-editor support. This document describes the implementation as of 24 October 2026; runtime configuration may impose lower limits.
+FreeEdit currently targets focused recording cleanup. Upload streaming and HTTP byte-range playback do not imply unrestricted project size or full movie-editor support. This document describes the implementation as of 25 October 2026; runtime configuration may impose lower limits.
 
 ## Project and analysis limits
 
@@ -26,7 +26,7 @@ Pause pagination changes how many results are displayed, not detection criteria.
 - The playback range input uses a normalized 0–1,000 scale with 0.001 increments. Numeric edit times, timeline seeking and stepping controls offer other ways to position edits.
 - For a 2h 17m 38s recording, waveform bins span about 2.02 seconds, and each configured playback-slider increment spans about 0.0083 seconds (pointer positioning is still limited by screen pixels).
 - File identification hashes the complete file in 4 MiB chunks. This bounds each read, but large files still take time to identify before upload.
-- Waveform generation scans audio before the editor opens and uses temporary decoded audio on disk. There is no background waveform indexing or editing proxy yet.
+- Waveform generation scans audio before the editor opens, reducing a PCM stream in fixed 64 KiB reads without storing the decoded track. There is no background waveform indexing or editing proxy yet.
 
 ## Speed changes
 
@@ -56,10 +56,10 @@ Additional constraints:
 
 - Original, decoded audio, cleaned audio, person masks, composition intermediates and exports consume disk. Two stereo PCM16 WAVs at 48 kHz for a 2h 17m 38s recording alone require about 2.95 GiB.
 - Noise removal processes short chunks (default five seconds), and person segmentation handles one small frame at a time. Total runtime still increases with recording length.
-- Analysis captures FFmpeg logs in memory; export diagnostics have a disk-backed log but currently read it in full on failure. These should use bounded incremental parsing/tail reads for large jobs.
+- Analysis logs are disk-backed and parsed incrementally; export failures read only a bounded diagnostic tail. See the analysis details below.
 - Media probing has a 30-second timeout. Waveform timeout is 30 seconds plus media duration; pause analysis is 60 seconds plus twice media duration. Export FFmpeg stages default to 300 seconds plus ten times media duration, unless overridden. Denoise has a separate 300 seconds plus five times duration timeout.
 - Export re-encodes video; there is no general stream-copy edit mode. Multiple effects may require full-length intermediate passes.
-- Only the first video/audio streams are selected. There is no audio-language/track selector; embedded subtitle/chapter preservation is not offered.
+- Only the first video/audio streams are selected. There is no audio-language/track selector; embedded subtitles are not exported. FFmpeg can copy source chapters/container metadata, but chapter times are not rebased after cuts, so do not rely on them in edited movies.
 - MKV and other container playback depends on the browser. FFmpeg accepting a file does not guarantee that its source plays in the browser; no automatic browser-compatible proxy is provided.
 - Pause detection identifies quiet audio, not semantic pauses. Music, dramatic silence and quiet dialogue need human review.
 
@@ -72,3 +72,13 @@ Keep admission controls and resource checks configurable. Replace arbitrary resu
 Pause analysis writes FFmpeg diagnostics to a temporary file and parses it line by line. It writes all qualifying suggestions to a temporary JSONL file and retains the first 25 in the job status. Additional pages are read from disk; neither the API nor UI loads the complete result set into memory. FFmpeg export errors read only the final 4,000 bytes of their temporary log. These changes bound log-related memory, not total renderer or model memory.
 
 Result-preview admission reserves space for the selected lossless window, audio, and output headroom instead of using the size of the entire recording. High-resolution previews can still require substantial temporary disk space; shorten the selection when needed. This estimate does not replace long-file profiling.
+
+## Reproducible real-media profiling
+
+Run the opt-in profile against a local recording and a new output directory:
+
+```sh
+.venv/bin/python -m scripts.profile_media /path/to/recording.mkv /tmp/freeedit-profile-new --full-export
+```
+
+It records waveform scanning, full pause detection, a late-file processed preview, cancellation, and optionally a complete export with cuts, leveling and fades. Output files and JSONL measurements remain in the new directory. RSS samples include the Python process and descendants on macOS/Linux at 0.5-second intervals; they exclude browser/GPU memory and can miss brief peaks. Full export uses two FFmpeg threads and disables noise reduction/background effects so results describe that path only. For measured results and remaining gaps, see [large-file validation](LARGE_FILE_VALIDATION.md).

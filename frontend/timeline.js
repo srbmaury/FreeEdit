@@ -106,6 +106,7 @@ function renderTimelineRuler() {
     tick.style.left = `${t / duration() * 100}%`;
     tick.textContent = fmt(t);
     tick.setAttribute("aria-label", `Seek to ${fmt(t)}`);
+    tick.dataset.time = String(time);
     tick.onclick = () => { sourcePlayer().currentTime = time; };
     ruler.append(tick);
   }

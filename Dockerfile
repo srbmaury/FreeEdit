@@ -22,8 +22,8 @@ WORKDIR /app
 RUN pip install --no-cache-dir torch==2.5.1 torchaudio==2.5.1 \
       --index-url https://download.pytorch.org/whl/cpu
 COPY --from=builder /wheels /wheels
-COPY requirements.txt requirements-background.txt ./
-RUN pip install --no-cache-dir --find-links /wheels -r requirements.txt && rm -rf /wheels
+COPY requirements.txt requirements-background.txt requirements-web.lock ./
+RUN pip install --no-cache-dir --find-links /wheels -c requirements-web.lock -r requirements.txt && rm -rf /wheels
 
 # Optional person segmentation is isolated from the noise-removal environment.
 ARG INSTALL_BACKGROUND=false

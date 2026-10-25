@@ -20,36 +20,6 @@ function getBackgroundSettings() {
     image: bg.mode === "image" ? bg.image : null, region: bg.region ? {...bg.region} : null};
 }
 
-function validateBackground(value, source) {
-  if (value == null) return null;
-  const fail = () => { throw new Error("The project's background settings are invalid."); };
-  if (!source.has_video || !["blur", "color", "image"].includes(value.mode) ||
-      !Number.isInteger(value.blur) || value.blur < 4 || value.blur > 40 || !/^#[a-f\d]{6}$/i.test(value.color)) fail();
-  let region = null;
-  if (value.region != null) {
-    const r = value.region;
-    if (![r.x, r.y, r.w, r.h].every(Number.isInteger) || r.x < 0 || r.y < 0 || r.w < 8 || r.h < 8 ||
-        r.x + r.w > source.width || r.y + r.h > source.height) fail();
-    region = {x: r.x, y: r.y, w: r.w, h: r.h};
-  }
-  let image = null;
-  if (value.mode === "image") {
-    if (typeof value.image !== "string" || value.image.length > 900000 || !value.image.startsWith("data:image/png;base64,")) fail();
-    try {
-      const binary = atob(value.image.slice(22));
-      const bytes = Uint8Array.from(binary.slice(0, 24), c => c.charCodeAt(0));
-      const header = new DataView(bytes.buffer);
-      const width = header.getUint32(16), height = header.getUint32(20);
-      if (binary.slice(0, 8) !== "\x89PNG\r\n\x1a\n" || binary.slice(12, 16) !== "IHDR" ||
-          !width || !height || width > 8192 || height > 8192 || width * height > 8000000) fail();
-    } catch { fail(); }
-    image = value.image;
-  }
-  const preset = value.preset ?? "custom";
-  if (!["studio", "twilight", "forest", "custom"].includes(preset)) fail();
-  return {mode: value.mode, preset, blur: value.blur, color: value.color, image, region};
-}
-
 function syncBackgroundControls() {
   const bg = S.background;
   if (!bg) return;

@@ -85,20 +85,19 @@ const getEdit = (id) => S.edits.find((e) => e.id === id);
 const isActive = (e, t = video.currentTime) => t >= e.start && t <= e.end;
 const show = (el, on = true) => el.classList.toggle("hidden", !on);
 
+const apiClient = import("./api-client.mjs");
 async function api(path, opts = {}) {
-  const res = await fetch(path, { ...opts, signal: AbortSignal.timeout(15000) });
-  let body = null;
-  try { body = await res.json(); } catch { /* empty */ }
-  if (!res.ok) {
-    const detail = Array.isArray(body?.detail) ? body.detail.map((e) => `${e.loc.slice(1).join(".")}: ${e.msg}`).join("; ") : body?.detail;
-    const error = new Error(detail || `Request failed (${res.status})`);
-    error.status = res.status;
-    error.code = body?.error?.code;
-    error.requestId = body?.error?.request_id;
-    throw error;
-  }
-  return body;
+  const {requestJson} = await apiClient;
+  return requestJson(path, opts);
 }
+
+// User input may arrive while later classic-script adapters are still loading.
+// Wait for their registration before touching editor services.
+const adaptersReady = document.readyState === "loading"
+  ? new Promise(resolve => document.addEventListener("DOMContentLoaded", resolve, {once: true}))
+  : Promise.resolve();
+let sceneRules;
+const editorReady = Promise.all([adaptersReady, import("./scene-schema.mjs").then(rules => { sceneRules = rules; })]);
 
 // ---------- upload ----------
 const dropZone = $("dropZone");
@@ -125,6 +124,8 @@ api("/api/limits").then((l) => {
 
 async function upload(file, knownIdentity = null) {
   S.pendingUpload = file;
+  try { await editorReady; }
+  catch { return uploadFailed("Could not load the editor. Refresh the page and try again.", true); }
   if (LIMITS.max_upload_mb && file.size > LIMITS.max_upload_mb * 1024 * 1024) {
     return uploadFailed(`File is larger than ${LIMITS.max_upload_mb} MB.`);
   }

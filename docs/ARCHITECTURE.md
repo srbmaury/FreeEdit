@@ -116,9 +116,21 @@ Never add another parallel `selected<X>` or `<feature>.sections` collection
 for a timed edit. Add a new edit type to `EditorModel.TIMELINE_TYPES`, its
 inspector and renderer, project validation, and its backend payload projection.
 
-## Remaining modernization opportunities
+## Frontend module boundaries
 
-This release deliberately avoids a framework migration: it keeps the lightweight
-static application and its no-build deployment, rather than adding a bundler as
-an end in itself. Future work may convert classic scripts to ES modules with
-explicit imports, after integration coverage exists for every feature.
+The app remains a lightweight static application with no bundler or framework dependency. Native browser modules are introduced at independent boundaries:
+
+- `api-client.mjs` owns JSON transport, timeout defaults, caller cancellation signals, API error formatting and request references. The classic `api()` adapter delegates to it, preserving feature call sites while removing transport implementation from editor state.
+- `scene-schema.mjs` owns background and presenter project rules, independent of the DOM. Project validation imports these directly. Live presenter validation uses the same rules, initialized before uploads can open an editor.
+- `source-identity.mjs` owns full-file chunk hashing without editor or storage dependencies; both main and presenter uploads use it.
+- `project-schema.mjs` validates and normalizes plain project data. It imports pure scene-validation rules and receives its editor-model dependency explicitly. It reads no DOM, browser storage or live editor state. `projects.js` owns file selection, recovery and downloads, and awaits schema validation before using imported data.
+
+Uploads wait for editor adapter registration (`DOMContentLoaded`) before accessing later feature scripts. Recovery also awaits the schema module and checks that a new upload/project has not started in the meantime. Save project captures a data snapshot and source name before asynchronous validation; completion updates the UI only if the same recording remains open.
+
+Module assets use a JavaScript MIME type and revalidation headers, including `.mjs` files. CI syntax checks cover both classic scripts and native modules.
+
+This is an incremental migration. Feature adapters still share classic-script state and callbacks; the editor model is still explicitly injected into project validation during this transition. Scene rules now have direct module dependencies. Further slices should move these pure rules into modules, then separate shared state ownership and feature initialization. A single full-framework rewrite is not required.
+
+## Media analysis boundary
+
+`backend/waveform.py` reduces a PCM stream to a bounded envelope with fixed 64 KiB reads. It has no FFmpeg, process or disk dependencies. `pipeline.audio_waveform` owns decoder lifecycle, timeout, cancellation and error translation. Decoded waveform audio is no longer spooled to disk. Focused tests cover fragmented sample boundaries, partial bins, source-time padding and read-size bounds.

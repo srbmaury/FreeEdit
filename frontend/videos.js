@@ -22,22 +22,6 @@ function resetVideos() {
 function getPresenterSettings() { return presenter ? structuredClone(presenter.settings) : null; }
 function presenterProject() { return presenter ? {source: {...presenter.source}, settings: getPresenterSettings()} : null; }
 
-function validatePresenterProject(value, main) {
-  if (value == null) return null;
-  const fail = () => { throw new Error("Invalid presenter recording or placement in this project."); };
-  const source = value.source, s = value.settings, b = s?.box;
-  if (!source || !main.has_video || !source.has_video || typeof source.has_audio !== "boolean" ||
-      typeof source.name !== "string" || source.name.length > 1024 || !Number.isSafeInteger(source.size) || source.size <= 0 ||
-      source.algorithm !== "sha256-chunks-4m-v1" || !/^[a-f0-9]{64}$/.test(source.fingerprint) ||
-      ![source.duration, source.width, source.height].every(n => Number.isFinite(n) && n > 0 && n < 1e8) || !s || !b) fail();
-  if (![b.x, b.y, b.w, b.h].every(Number.isInteger) || b.x < 0 || b.y < 0 || b.w < 8 || b.h < 8 || b.x + b.w > main.width || b.y + b.h > main.height) fail();
-  if (![s.offset,s.trim_start,s.trim_end,s.main_volume,s.presenter_volume].every(Number.isFinite) ||
-      s.offset < 0 || s.offset >= main.duration || s.trim_start < 0 || s.trim_end <= s.trim_start || s.trim_end > source.duration + .05 ||
-      s.main_volume < 0 || s.main_volume > 2 || s.presenter_volume < 0 || s.presenter_volume > 2 ||
-      !["main","presenter","both","muted"].includes(s.sound) || !["original","blur","remove"].includes(s.effect)) fail();
-  return {source: {...source}, settings: {box: {...b}, offset:s.offset, trim_start:s.trim_start, trim_end:s.trim_end,
-    main_volume:s.main_volume, presenter_volume:s.presenter_volume, sound:s.sound, effect:s.effect}};
-}
 function restorePresenter(saved, reuse = false) {
   if (!saved) { resetVideos(); return; }
   const ready = reuse && presenterFiles.get(S.job.id) === saved.source.fingerprint;
@@ -123,7 +107,7 @@ function validateVideos() {
   if(!presenter)return true;
   try {
     if(!presenter.ready)throw new Error("Locate the presenter recording in Videos before exporting.");
-    validatePresenterProject(presenterProject(),S.job);
+    sceneRules.validatePresenterProject(presenterProject(),S.job);
     if($("exportPreset").value === "audio_only" && presenter.settings.sound === "muted") throw new Error("Choose a sound source for an audio-only export.");
     return true;
   } catch(error) {

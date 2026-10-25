@@ -12,5 +12,18 @@ if ! "$PYTHON" -c 'import sys; sys.exit(0 if sys.version_info[:2] == (3,12) else
 fi
 "$PYTHON" -m venv .venv-background
 .venv-background/bin/python -m pip install -r requirements-background.txt
-.venv-background/bin/python -c 'from backend.background import ensure_model; print("Background model ready:", ensure_model())'
+.venv-background/bin/python - <<'PYTHON'
+import mediapipe as mp
+from backend.background import ensure_model
+
+model = ensure_model()
+options = mp.tasks.vision.ImageSegmenterOptions(
+    base_options=mp.tasks.BaseOptions(model_asset_path=str(model)),
+    running_mode=mp.tasks.vision.RunningMode.VIDEO,
+    output_confidence_masks=True,
+    output_category_mask=False,
+)
+with mp.tasks.vision.ImageSegmenter.create_from_options(options):
+    print("Background runtime and verified model ready:", model)
+PYTHON
 echo "Background effects are ready. Restart FreeEdit if it was running."

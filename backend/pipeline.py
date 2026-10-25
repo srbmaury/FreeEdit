@@ -8,7 +8,6 @@ Flow for a video:
 from __future__ import annotations
 
 import base64
-import array
 from fractions import Fraction
 import json
 import math
@@ -25,6 +24,7 @@ from pathlib import Path
 from typing import Callable
 
 from .execution import check_cancelled, run_process, start_process, kill_process
+from .waveform import pcm_peaks
 
 ProgressFn = Callable[[str, float | None], None]
 
@@ -396,6 +396,16 @@ def kept_ranges(cuts: list[dict], duration: float) -> list[tuple[float, float]] 
     return keep
 
 
+def _sum_expression(terms: list[str]) -> str:
+    """Keep FFmpeg expression parser depth logarithmic for dense timelines."""
+    if not terms:
+        return "0"
+    if len(terms) == 1:
+        return terms[0]
+    middle = len(terms) // 2
+    return f"({_sum_expression(terms[:middle])}+{_sum_expression(terms[middle:])})"
+
+
 def build_cuts(
     vlabel: str, alabel: str | None, keep: list[tuple[float, float]]
 ) -> tuple[list[str], str, str | None]:
@@ -408,13 +418,13 @@ def build_cuts(
     Audio is small, so plain atrim + concat is fine there.
     """
     parts: list[str] = []
-    keep_expr = "+".join(f"between(t,{a:.3f},{b:.3f})" for a, b in keep)
+    keep_expr = _sum_expression([f"between(t,{a:.3f},{b:.3f})" for a, b in keep])
     # STARTPTS drops any leading removed range; each later gap is subtracted
     # once a frame is past it
-    shift = "+".join(
+    shift = _sum_expression([
         f"gte(T,{keep[i + 1][0]:.3f})*{keep[i + 1][0] - keep[i][1]:.3f}"
         for i in range(len(keep) - 1)
-    ) or "0"
+    ])
     parts.append(f"{vlabel}select='{keep_expr}',setpts='PTS-STARTPTS-({shift})/TB'[vcut]")
 
     if not alabel:
@@ -438,28 +448,32 @@ def build_audio_cuts(alabel: str, keep: list[tuple[float, float]]) -> tuple[list
 def audio_waveform(source: Path, duration: float) -> list[float]:
     """Read a compact amplitude envelope without holding decoded audio in RAM."""
     rate = 8000
-    samples_per_bin = max(1, math.ceil(duration * rate / 4096))
     cmd = [FFMPEG(), "-hide_banner", "-loglevel", "error", "-nostdin", "-i", str(source),
            "-map", "0:a:0", "-vn", "-ac", "1",
            "-af", f"aresample={rate}:async=1:first_pts=0", "-t", str(duration), "-f", "s16le", "pipe:1"]
-    with tempfile.TemporaryFile() as audio:
+    expired = threading.Event()
+    with tempfile.TemporaryFile() as errors:
+        proc = start_process(cmd, stdout=subprocess.PIPE, stderr=errors, stdin=subprocess.DEVNULL)
+        def terminate():
+            expired.set()
+            kill_process(proc)
+        timer = threading.Timer(30 + duration, terminate)
+        timer.start()
         try:
-            result = run_process(cmd, stdout=audio, stderr=subprocess.PIPE, timeout=30 + duration)
-        except subprocess.TimeoutExpired as exc:
-            raise PipelineError("Waveform generation timed out.") from exc
-        if result.returncode:
+            peaks = pcm_peaks(proc.stdout, duration, rate)
+            code = proc.wait()
+        finally:
+            timer.cancel()
+            if proc.poll() is None:
+                kill_process(proc)
+            proc.wait()
+            proc.stdout.close()
+        check_cancelled()
+        if expired.is_set():
+            raise PipelineError("Waveform generation timed out.")
+        if code:
             raise PipelineError("Waveform is unavailable for this file.")
-        audio.seek(0)
-        peaks = []
-        for _ in range(math.ceil(duration * rate / samples_per_bin)):
-            chunk = audio.read(samples_per_bin * 2)
-            samples = array.array("h")
-            samples.frombytes(chunk)
-            if sys.byteorder != "little":
-                samples.byteswap()
-            peaks.append(max((abs(value) for value in samples), default=0))
-    maximum = max(peaks, default=0) or 1
-    return [round(peak / maximum, 4) for peak in peaks]
+    return peaks
 
 
 def detect_silence(source: Path, duration: float, threshold_db: float, min_duration: float,

@@ -70,7 +70,9 @@ function paintHide(e) {
 }
 
 function render() {
-  refreshExportState();
+  // Called on every animation frame during playback. Export signatures,
+  // project autosaves and inspector labels are invalidated by actual
+  // document/settings mutations, never by a frame paint.
   $("toolbar").dataset.mode = S.mode;
   $("toolbar").classList.toggle("has-edits", S.edits.length > 0 || !!EditorModel.sections(S.edits).length || S.reframe?.zoom > 1 || S.reframe?.aspect && S.reframe.aspect !== "original");
   if (!S.job?.has_video) return;

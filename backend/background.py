@@ -59,6 +59,7 @@ def create_mask(source, work, info, settings, progress, start=0, length=None):
     config_path = work / "background-worker.json"
     config_path.write_text(json.dumps(config))
     progress("Separating person from background", None)
+    complete = False
     try:
         result = run_process([worker_python(), str(Path(__file__).with_name("background_worker.py")), str(config_path)],
                              capture_output=True, text=True, timeout=300 + length * 10,
@@ -68,11 +69,14 @@ def create_mask(source, work, info, settings, progress, start=0, length=None):
         report = json.loads(result.stdout)
         if not report["person_detected"]:
             raise PipelineError("No person was found in the selected area. Choose the camera area or try a different part of the recording.")
+        complete = True
         return work / "person-mask.mkv"
     except subprocess.TimeoutExpired as exc:
         raise PipelineError("Background processing timed out. Try a shorter recording.") from exc
     finally:
         config_path.unlink(missing_ok=True)
+        if not complete:
+            (work / "person-mask.mkv").unlink(missing_ok=True)
 
 
 def filters(current, info, scale, settings, mask_input, image_input):

@@ -19,7 +19,7 @@ A small web app for cleaning up screen recordings and other audio or video files
 
 ## Current limitations
 
-Long recordings can exceed project limits even when uploads fit. Pause detection pages through **all detected suggestions**, projects allow **100 cuts**, and imported subtitles allow **100 cues**. Playback/export speed changes are not implemented. See [current limits, configuration, and long-recording caveats](docs/LIMITATIONS.md) before editing movie-length files.
+Long recordings can exceed project limits even when uploads fit. Pause detection pages through **all detected suggestions**, projects allow **100 cuts**, and imported subtitles allow **100 cues**. Playback/export speed changes are not implemented. See [current limits, configuration, and long-recording caveats](docs/LIMITATIONS.md) before editing movie-length files. See [real-file validation and reproducible profiling](docs/LARGE_FILE_VALIDATION.md) for measured behavior and remaining gaps.
 
 ## A typical editing session
 
@@ -257,11 +257,11 @@ scripts/              Manual performance measurement and release inventory
 
 ## Privacy and session isolation
 
-Temporary uploads and rendered files are scoped to a signed, HttpOnly, SameSite=Strict anonymous browser cookie. This is isolation for a single-process public editor, **not** user authentication or permanent private storage. URLs from other sessions return 404, and storage cleanup is restricted to the current browser session. Losing cookies or the server's signing secret means old jobs cannot be reopened, though they still expire normally. Set a strong `FREEEDIT_SESSION_SECRET` for deployments that retain jobs across process restarts; avoid multiple server processes sharing the same jobs directory without a shared, trusted session/authentication store. HTTPS is required for secure cookies. Prevent excessive public uploads with edge/IP-level rate limits in the hosting layer as well as application-level upload and queue caps.
+Temporary uploads and rendered files are scoped to a signed, HttpOnly, SameSite=Strict anonymous browser cookie. This is isolation for a single-process public editor, **not** user authentication or permanent private storage. URLs from other sessions return 404, and storage cleanup is restricted to the current browser session. Losing cookies or the server's signing secret means old jobs cannot be reopened, though they still expire normally. Set a strong `FREEEDIT_SESSION_SECRET` for deployments that retain jobs across process restarts; avoid multiple server processes sharing the same jobs directory without a shared, trusted session/authentication store. HTTPS is required for secure cookies. Expensive requests now have a bounded in-process session-and-connecting-peer rate limiter, with configurable admission limits and concurrent-upload caps. **Public reverse proxies still need an edge-level real-client-IP limiter**: the application intentionally never trusts user-supplied forwarding headers.
 
 ## Reproducible releases
 
-Torch/torchaudio/DeepFilterNet are version-pinned; several web dependencies remain version ranges. The production dependency set is **not yet reproducibly locked**. For a release, generate a pinned, hashed lockfile on Python 3.12 using a compatible resolver and test the exact Docker image. Do not upgrade the paired audio/model dependencies independently. Before distributing container images, resolve the [model and third-party licensing questions](docs/LICENSE_AUDIT.md).
+Torch/torchaudio/DeepFilterNet are version-pinned. The Python 3.12 web dependency graph is pinned in `requirements-web.lock`, and CI and the Docker build apply those pins. The **complete audio, background-model and OS/container dependency graph is not yet hashed or reproducibly locked**. For release, capture a full platform-specific `pip freeze`, a hash-locked resolution, Docker base image digest, and model hashes; verify the actual image. Do not upgrade paired audio/model dependencies independently. Before distributing container images, resolve the [model and third-party licensing questions](docs/LICENSE_AUDIT.md).
 
 ## Frontend architecture
 
@@ -302,3 +302,20 @@ These tests exercise presenter timing, seeked previews, mixed/presenter-only aud
 In **Export**, choose **Preview result**. It renders up to 15 seconds from a timeline selection, or from the playhead when no range is selected, using the export settings and renderer. Original/Result comparison uses retained source intervals to account for cuts. Entirely removed ranges show an explanation. Cancel preserves edits and any previous full export. Preview media is private to the browser session, cached for an identical request, and replaced by the next changed preview. Replacing a presenter invalidates the cache. Downloads remain full exports.
 
 In **Audio → Speech volume and fades**, enable restrained speech compression with up to 6 dB gain, or set output fade durations from 0 to 5 seconds. A limiter reduces clipping risk; this is not target-LUFS normalization. Fades occur at the final output's ends, after source mixing, noise removal and cuts, and each is limited to half the output length. The standalone noise-removal sample excludes these finishing settings; use Preview result to hear them together. Denoising/compression and frame seeking can differ slightly at sample boundaries. Preview creates a temporary lossless source window on disk; it does not hold the whole recording in memory.
+
+### Public hosting admission controls
+
+The app applies 10-minute in-memory admission limits to expensive endpoints. Set `FREEEDIT_SECURE_COOKIES=true` when the HTTPS terminator talks HTTP to the app (already set in `render.yaml`):
+
+| Environment setting | Default |
+| --- | ---: |
+| `FREEEDIT_UPLOADS_PER_SESSION_10M` | 8 |
+| `FREEEDIT_UPLOADS_PER_PEER_10M` | 32 |
+| `FREEEDIT_OPERATIONS_PER_SESSION_10M` | 40 |
+| `FREEEDIT_OPERATIONS_PER_PEER_10M` | 160 |
+| `FREEEDIT_MAX_ACTIVE_UPLOADS` | 2 |
+
+429 responses include `Retry-After`. Limits are per Python process, and connecting-peer limits will group visitors behind the same reverse proxy. Configure a trusted edge-side limiter using the verified real client IP; **do not** use unverified `X-Forwarded-For` headers to determine identity.
+
+
+Fresh-environment installation results and unresolved packaging caveats are recorded in [installation validation](docs/INSTALLATION_VALIDATION.md). Full-movie effects, synthetic 4K/60fps and dense-edit measurements are in [large-file validation](docs/LARGE_FILE_VALIDATION.md).

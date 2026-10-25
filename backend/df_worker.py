@@ -9,7 +9,8 @@ Notes:
   os._exit once the file is written so shutdown can't block.
 - `enhance()` holds the whole clip plus autograd buffers in memory (~13 MB per
   second of audio). We run it under inference_mode on short chunks so memory
-  stays flat (~300 MB) regardless of length, which fits small hosts. Each chunk
+  stays bounded as duration grows. Total runtime/model memory depends on the
+  platform and libraries; see docs/PERFORMANCE.md for measured workloads. Each chunk
   gets PREROLL seconds of preceding audio so the model has settled by the time
   its output is kept, and neighbouring chunks are crossfaded over FADE seconds.
 """

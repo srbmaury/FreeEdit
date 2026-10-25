@@ -30,6 +30,7 @@ from .execution import Cancelled, JobControl, cancellation_scope
 from .models import ProcessRequest, SilenceRequest, PreviewRequest, BackgroundPreviewRequest, CompositionPreviewRequest, ResultPreviewRequest
 from .observability import event, install_error_handling, public_processing_error
 from .sessions import COOKIE, create_session, verify_session
+from .rate_limit import RequestLimiter, category_for, limits as admission_limits, env_int
 
 ROOT = Path(__file__).resolve().parent.parent
 JOBS_DIR = Path(os.environ.get("FREEEDIT_JOBS_DIR", ROOT / "jobs"))
@@ -75,6 +76,8 @@ job_controls = {}
 job_futures = {}
 active_uploads: set[str] = set()
 MAX_PENDING_JOBS = max(1, int(os.environ.get("MAX_PENDING_JOBS", 4)))
+MAX_ACTIVE_UPLOADS = env_int("FREEEDIT_MAX_ACTIVE_UPLOADS", 2)
+request_limiter = RequestLimiter()
 
 # Job tokens are not authentication: every job additionally belongs to a
 # signed browser session. Check this before all job routes (including GET media).
@@ -95,7 +98,8 @@ async def protect_session_jobs(request: Request, call_next):
         if new_cookie:
             response.set_cookie(
                 COOKIE, token, httponly=True, samesite="strict",
-                secure=request.url.scheme == "https", path="/",
+                secure=(request.url.scheme == "https" or
+                        os.environ.get("FREEEDIT_SECURE_COOKIES", "").lower() in ("1", "true", "yes")), path="/",
                 max_age=7 * 24 * 3600,
             )
         return response
@@ -120,6 +124,20 @@ async def protect_session_jobs(request: Request, call_next):
         if not permitted:
             # Do not expose whether someone else's job exists.
             return finish(JSONResponse(status_code=404, content={"detail": "Job not found."}))
+
+    category = category_for(request.method, request.url.path)
+    if category:
+        # No trust in request-supplied X-Forwarded-For. Use an edge limiter
+        # for per-public-IP enforcement behind a reverse proxy.
+        peer = request.client.host if request.client else "unknown"
+        session_limit, peer_limit = admission_limits(category)
+        retry = request_limiter.check(category, owner, peer,
+                                      session_limit=session_limit, peer_limit=peer_limit)
+        if retry:
+            return finish(JSONResponse(status_code=429,
+                content={"detail": "Too many requests. Try again shortly."},
+                headers={"Retry-After": str(retry)}))
+
 
     response = await call_next(request)
     return finish(response)
@@ -169,6 +187,10 @@ def _drop_cache(f) -> None:
 
 @app.post("/api/upload")
 async def upload(request: Request, filename: str):
+    return await _receive_upload(request, filename)
+
+
+async def _receive_upload(request: Request, filename: str, protected_job: str | None = None):
     """Raw request body = the file. Streamed straight to disk (no multipart
     temp file, so large uploads aren't written twice)."""
     ext = Path(filename).suffix.lower()
@@ -178,6 +200,9 @@ async def upload(request: Request, filename: str):
     job_id = uuid.uuid4().hex[:12]
     work = JOBS_DIR / job_id
     with jobs_lock:
+        if len(active_uploads - ({protected_job} if protected_job else set())) >= MAX_ACTIVE_UPLOADS:
+            raise HTTPException(429, "Too many uploads are in progress. Try again shortly.",
+                                headers={"Retry-After": "10"})
         active_uploads.add(job_id)
         work.mkdir()
     try:
@@ -529,7 +554,7 @@ async def upload_presenter(job_id: str, request: Request, filename: str):
         active_uploads.add(job_id)
     temporary_id = None
     try:
-        uploaded = await upload(request, filename)
+        uploaded = await _receive_upload(request, filename, protected_job=job_id)
         temporary_id = uploaded["id"]
         if not uploaded["has_video"]:
             raise HTTPException(422, "Choose a presenter recording with video.")
@@ -709,7 +734,7 @@ def index():
 class FrontendFiles(StaticFiles):
     async def get_response(self, path, scope):
         response = await super().get_response(path, scope)
-        if Path(path).suffix in {".js", ".css", ".html"}:
+        if Path(path).suffix in {".js", ".mjs", ".css", ".html"}:
             response.headers["Cache-Control"] = "no-cache"
         return response
 

@@ -56,7 +56,8 @@ document.getElementById("diagnosticsBtn").onclick = async () => {
   results.textContent = "Checking media tools, noise reduction, and temporary storage…";
   dialog.showModal();
   try {
-    const info = await api("/api/diagnostics");
+    // Setup checks can include several bounded subprocess probes.
+    const info = await api("/api/diagnostics", {signal: AbortSignal.timeout(60000)});
     results.replaceChildren();
     for (const check of info.checks) {
       const item = document.createElement("p");

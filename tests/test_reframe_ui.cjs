@@ -10,6 +10,7 @@ const reframe=fs.readFileSync("frontend/reframe-captions.js","utf8");
 const drawing=fs.readFileSync("frontend/editor-render.js","utf8");
 const exporter=fs.readFileSync("frontend/editor-export.js","utf8");
 const projects=fs.readFileSync("frontend/projects.js","utf8");
+const projectSchema=fs.readFileSync("frontend/project-schema.mjs","utf8");
 const timeline=fs.readFileSync("frontend/timeline.js","utf8");
 const ctx=vm.createContext({});
 vm.runInContext(fs.readFileSync("frontend/editor-model.js","utf8"),ctx);
@@ -67,7 +68,8 @@ test("unified inspector, timeline and persistence are wired",()=>{
  assert.match(app,/const editorStore = createEditorStore\(S\)/);
  assert.match(drawing+exporter,/EditorModel\.exportReframe\(S\.reframe, S\.edits\)/);
  assert.match(projects,/version: 2/);
- assert.match(projects,/EditorModel\.TIMELINE_TYPES/);
+ assert.match(projectSchema,/EditorModel\.TIMELINE_TYPES/);
+ assert.match(projects,/validateProjectDocument/);
  assert.match(reframe,/const zoomSections = \(\) => EditorModel\./);
  assert.match(reframe,/selectedReframe\(\)/);
  assert.match(timeline,/renderZoomTimeline\(\)/);

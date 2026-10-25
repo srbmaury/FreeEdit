@@ -54,6 +54,7 @@ rangeSurface.addEventListener("pointerdown", event => {
   if (!event.target.closest("#waveformTrack, #timelineRuler")) return;
   const bounds = rangeSurface.getBoundingClientRect();
   const timeAt = x => clamp((x - bounds.left) / bounds.width * duration(), 0, duration());
+  const tick = event.target.closest("#timelineRuler button[data-time]");
   const origin = event.clientX, start = timeAt(origin), before = rangeSelection.range;
   let dragged = false;
   rangeSurface.setPointerCapture(event.pointerId);
@@ -76,7 +77,9 @@ rangeSurface.addEventListener("pointerdown", event => {
       rangeSelection.suppressClick = true;
       setTimeout(() => { rangeSelection.suppressClick = false; }, 0);
       displayRangeSelection();
-    } else if (next.type !== "pointercancel") sourcePlayer().currentTime = start;
+    } else if (next.type !== "pointercancel") {
+      sourcePlayer().currentTime = tick ? Number(tick.dataset.time) : start;
+    }
   };
   rangeSurface.addEventListener("pointermove", move);
   rangeSurface.addEventListener("pointerup", finish);
