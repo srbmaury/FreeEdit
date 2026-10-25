@@ -19,6 +19,7 @@ import re
 import shutil
 import subprocess
 import sys
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -136,7 +137,7 @@ def _run_ffmpeg(args: list[str], duration: float, label: str, progress: Progress
     timeout = max(30, float(os.environ.get("FFMPEG_TIMEOUT_SECONDS", 300 + duration * 10)))
     expired = threading.Event()
     # stderr must drain independently of progress or FFmpeg can deadlock.
-    with tempfile.TemporaryFile(mode="w+t") as errors:
+    with tempfile.TemporaryFile() as errors:
         proc = start_process(cmd, stdout=subprocess.PIPE, stderr=errors, text=True, stdin=subprocess.DEVNULL)
         def terminate():
             expired.set()
@@ -164,8 +165,9 @@ def _run_ffmpeg(args: list[str], duration: float, label: str, progress: Progress
         if expired.is_set():
             raise PipelineError(f"Export timed out during '{label}'. Try a shorter recording.")
         if code != 0:
-            errors.seek(0)
-            tail = "\n".join(errors.read()[-4000:].strip().splitlines()[-8:])
+            errors.seek(0, os.SEEK_END)
+            errors.seek(max(0, errors.tell() - 4000))
+            tail = "\n".join(errors.read().decode("utf-8", errors="replace").strip().splitlines()[-8:])
             raise PipelineError(f"ffmpeg failed during '{label}':\n{tail}")
 
 
@@ -460,30 +462,69 @@ def audio_waveform(source: Path, duration: float) -> list[float]:
     return [round(peak / maximum, 4) for peak in peaks]
 
 
-def detect_silence(source: Path, duration: float, threshold_db: float, min_duration: float, padding: float) -> dict:
-    """Return conservative suggestions; the user chooses which become cuts."""
-    cmd = [FFMPEG(), "-hide_banner", "-nostdin", "-i", str(source), "-map", "0:a:0",
-           "-af", f"silencedetect=noise={threshold_db}dB:d={min_duration}", "-f", "null", "-"]
-    try:
-        result = run_process(cmd, capture_output=True, text=True, timeout=60 + duration * 2)
-    except subprocess.TimeoutExpired as exc:
-        raise PipelineError("Silence detection timed out. Try a shorter recording.") from exc
-    if result.returncode:
-        raise PipelineError("Could not analyze the audio in this recording.")
-    intervals = []
-    start = None
-    for kind, value in re.findall(r"silence_(start|end):\s*(-?[\d.]+)", result.stderr):
-        t = min(duration, max(0, float(value)))
-        if kind == "start":
-            start = t
-        elif start is not None:
-            intervals.append((start, t))
-            start = None
-    if start is not None:
-        intervals.append((start, duration))
-    suggestions = [{"start": round(a + padding, 3), "end": round(b - padding, 3)}
-                   for a, b in intervals if b - a - padding * 2 >= 0.1]
-    return {"segments": suggestions[:100], "truncated": len(suggestions) > 100}
+def detect_silence(source: Path, duration: float, threshold_db: float, min_duration: float,
+                   padding: float, start: float = 0, end: float | None = None,
+                   results_path: Path | None = None) -> dict:
+    """Stream logs/results to disk; retain only a bounded first page in memory."""
+    end = min(duration, end if end is not None else duration)
+    length = end - start
+    if start < 0 or length <= 0:
+        raise PipelineError("Choose a pause-analysis range inside the recording.")
+    cmd = [FFMPEG(), "-hide_banner", "-nostats", "-nostdin", "-ss", str(start), "-i", str(source),
+           "-t", str(length), "-map", "0:a:0", "-af", f"silencedetect=noise={threshold_db}dB:d={min_duration}",
+           "-f", "null", "-"]
+    suggestions = []
+    total = 0
+
+    def add_interval(a, b):
+        nonlocal total
+        if b - a - padding * 2 >= .1:
+            segment = {"index": total, "start": round(start + a + padding, 3), "end": round(start + b - padding, 3)}
+            total += 1
+            if results is not None:
+                results.write(json.dumps(segment) + "\n")
+            if len(suggestions) < 25:
+                suggestions.append(segment)
+
+    with tempfile.TemporaryFile(mode="w+t") as log, (results_path.open("w") if results_path else nullcontext(None)) as results:
+        try:
+            result = run_process(cmd, stdout=subprocess.DEVNULL, stderr=log, timeout=60 + length * 2)
+        except subprocess.TimeoutExpired as exc:
+            raise PipelineError("Silence detection timed out. Analyze a shorter range.") from exc
+        if result.returncode:
+            raise PipelineError("Could not analyze the audio in this recording.")
+        log.seek(0)
+        quiet_start = None
+        for line in log:
+            check_cancelled()
+            for kind, value in re.findall(r"silence_(start|end):\s*(-?[\d.]+)", line):
+                t = min(length, max(0, float(value)))
+                if kind == "start":
+                    quiet_start = t
+                elif quiet_start is not None:
+                    add_interval(quiet_start, t)
+                    quiet_start = None
+        if quiet_start is not None:
+            add_interval(quiet_start, length)
+    return {"segments": suggestions, "truncated": total > len(suggestions), "total": total,
+            "range": {"start": start, "end": end}}
+
+
+def audio_finish(settings: dict | None, duration: float, offset: float = 0) -> str:
+    """Apply restrained dynamic leveling, then fades on the retained output clock."""
+    settings = settings or {}
+    filters = []
+    if settings.get("level_speech"):
+        # Bound gain to 2x; silence cannot drive unbounded automatic gain.
+        filters += ["acompressor=threshold=0.125:ratio=3:attack=20:release=250:makeup=2",
+                    "alimiter=limit=0.891:level=0:latency=1"]
+    fade_in = min(settings.get("fade_in", 0), duration / 2)
+    fade_out = min(settings.get("fade_out", 0), duration / 2)
+    if fade_in:
+        filters.append(f"volume='min(1,max(0,(t+{offset:.6f})/{fade_in:.6f}))':eval=frame")
+    if fade_out:
+        filters.append(f"volume='min(1,max(0,({duration:.6f}-t-{offset:.6f})/{fade_out:.6f}))':eval=frame")
+    return ",".join(filters) or "anull"
 
 
 def process(
@@ -499,6 +540,9 @@ def process(
     background: dict | None = None,
     preserve_resolution: bool = False,
     reframe: dict | None = None,
+    audio: dict | None = None,
+    audio_offset: float = 0,
+    audio_duration: float | None = None,
 ) -> Path:
     progress("Reading file", None)
     info = probe(source)
@@ -513,14 +557,17 @@ def process(
         clean_wav = denoise(raw, work / "denoised", atten_lim, info.duration)
 
     keep = kept_ranges(cuts, info.duration)
+    retained_duration = sum(b - a for a, b in keep) if keep else info.duration
+    finish_audio = audio_finish(audio, audio_duration or retained_duration, audio_offset)
     if not info.has_video or preset == "audio_only":
         out = work / "output.wav"
         args = ["-i", str(clean_wav or source), "-vn"]
         if keep:
             audio_parts, alabel = build_audio_cuts("[0:a:0]", keep)
-            args += ["-filter_complex", ";".join(audio_parts), "-map", alabel]
+            audio_parts.append(f"{alabel}{finish_audio}[finishedaudio]")
+            args += ["-filter_complex", ";".join(audio_parts), "-map", "[finishedaudio]"]
         else:
-            args += ["-map", "0:a:0"]
+            args += ["-map", "0:a:0", "-af", finish_audio]
         args += ["-ar", "48000", "-c:a", "pcm_s16le", str(out)]
         _run_ffmpeg(args, sum(b - a for a, b in keep) if keep else info.duration, "Exporting audio", progress)
         return out
@@ -574,6 +621,9 @@ def process(
         out_duration = sum(b - a for a, b in keep)
     # Every video preset produces compatible H.264 MP4 with even dimensions.
     parts.append(f"{vlabel}scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p[vout]")
+    if audio_in:
+        parts.append(f"{alabel or audio_in}{finish_audio}[finishedaudio]")
+        alabel = "[finishedaudio]"
     graph = ";".join(parts)
     for idx in range(len(images)):
         graph = graph.replace(f"[IMG{idx}]", f"[{img_offset + idx}:v]")

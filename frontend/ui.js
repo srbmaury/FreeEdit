@@ -1,6 +1,37 @@
 "use strict";
 
 const appMenu = document.getElementById("appMenu");
+// Inline icons remain available offline and follow the selected theme.
+const menuIconPaths = [
+  '<path d="M5 3h12l4 4v14H3V3Z"/><path d="M7 3v6h10V3M7 21v-8h10v8"/>',
+  '<path d="M3 8V4h6l2 3h10v4M3 8h18l-3 12H3Z"/>',
+  '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h1m3 0h1m3 0h1m3 0h1M6 13h1m3 0h1m3 0h1m3 0h1M7 16h10"/>',
+  '<path d="M4 8h16l2 11H2ZM4 8l3-5h10l3 5"/><path d="M6 15h2m8 0h2"/>',
+  '<path d="m4 13 5 5L20 6"/>',
+  '<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/>',
+  '<path d="m8 5-7 7 7 7m8-14 7 7-7 7m-2-16-4 20"/>',
+  '<path d="M21 11a9 9 0 0 1-9 9H3l2-5a9 9 0 1 1 16-4Z"/><path d="M8 10h8m-8 4h5"/>'
+];
+appMenu.querySelectorAll("nav button, nav a").forEach((item, index) => {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "1.6");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  svg.innerHTML = menuIconPaths[index];
+  item.prepend(svg);
+});
+appMenu.querySelector("nav").addEventListener("keydown", event => {
+  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) || event.target.tagName === "SELECT") return;
+  const items = [...appMenu.querySelectorAll("nav button:not(:disabled), nav a, nav select")];
+  const index = items.indexOf(document.activeElement);
+  const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1
+    : (index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+  event.preventDefault(); items[next].focus();
+});
 appMenu.querySelectorAll("[data-dialog]").forEach(button => {
   button.onclick = () => {
     appMenu.open = false;

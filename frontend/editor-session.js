@@ -17,6 +17,8 @@ $("newFileDialog").addEventListener("close", () => {
 function resetFile() {
   resetProject();
   resetNoisePreview();
+  resetResultPreview();
+  restoreAudioSettings();
   resetBackground();
   resetVideos();
   clearTimeout(S.pollTimer);

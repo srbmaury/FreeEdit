@@ -37,7 +37,7 @@ function projectDocument() {
     format: "FreeEdit", version: 2,
     source: {...projects.source, duration: S.job.duration, width: S.job.width, height: S.job.height, has_video: S.job.has_video, has_audio: S.job.has_audio},
     view: {playhead: sourcePlayer().currentTime || 0, zoom: timeline.zoom},
-    edits, settings: {presenter: presenterProject(), background: getBackgroundSettings(), reframe: S.reframe, denoise: $("denoise").checked, strength: $("strength").value, preset: $("exportPreset").value},
+    edits, settings: {audio: getAudioSettings(), presenter: presenterProject(), background: getBackgroundSettings(), reframe: S.job.has_video ? S.reframe : null, denoise: $("denoise").checked, strength: $("strength").value, preset: $("exportPreset").value},
   };
 }
 
@@ -58,6 +58,8 @@ function validateProject(value) {
       ![reframe.zoom, reframe.focus_x, reframe.focus_y].every(Number.isFinite) ||
       reframe.zoom < 1 || reframe.zoom > 3 || reframe.focus_x < 0 || reframe.focus_x > 1 ||
       reframe.focus_y < 0 || reframe.focus_y > 1 || "sections" in reframe)) fail();
+  const audio = settings?.audio || {level_speech:false, fade_in:0, fade_out:0};
+  if (typeof audio.level_speech !== "boolean" || !finite(audio.fade_in, 0, 5) || !finite(audio.fade_out, 0, 5)) fail();
   if (!settings || typeof settings.denoise !== "boolean" || !["", "10", "18", "30"].includes(settings.strength) || !projectPresets.includes(settings.preset)) fail();
   if ((settings.preset === "audio_only" && !source.has_audio && !presenter?.source.has_audio) || (source.has_video && (!source.width || !source.height))) fail();
   if (!Array.isArray(value.edits) || value.edits.length > 200) fail();
@@ -96,7 +98,7 @@ function validateProject(value) {
       duration: source.duration, width: source.width, height: source.height, has_video: source.has_video, has_audio: source.has_audio},
     view: {playhead: finite(value.view?.playhead, 0, source.duration) ? value.view.playhead : 0,
       zoom: [1, 2, 4, 8, 16].includes(value.view?.zoom) ? value.view.zoom : 1},
-    edits, settings: {presenter, background, reframe, denoise: settings.denoise, strength: settings.strength, preset: settings.preset}};
+    edits, settings: {audio, presenter, background, reframe, denoise: settings.denoise, strength: settings.strength, preset: settings.preset}};
 }
 
 function projectEditSignature(project) {
@@ -153,6 +155,7 @@ function applyProject(project) {
   syncReframeControls();
   syncBackgroundControls(); invalidateBackgroundPreview();
   $("backgroundPanel").open = !!project.settings.background;
+  restoreAudioSettings(project.settings.audio);
   $("denoise").checked = project.settings.denoise && (S.job.has_audio || !!project.settings.presenter?.source.has_audio);
   $("strength").value = project.settings.strength;
   $("exportPreset").value = S.job.has_video ? project.settings.preset : "audio_only";
@@ -315,16 +318,20 @@ function resetProject() {
   show($("resumePanel"), false);
 }
 
-try {
-  const raw = localStorage.getItem(projects.key);
-  if (raw) {
-    const recovery = JSON.parse(raw);
-    projects.recovery = {...recovery, project: validateProject(recovery.project),
-      waveform: Array.isArray(recovery.waveform) && recovery.waveform.length <= 4096 && recovery.waveform.every(n => typeof n === "number" && n >= 0 && n <= 1) ? recovery.waveform : null};
-    $("resumeDetails").textContent = `${recovery.project.source.name} · ${recovery.project.edits.length} edits${Number.isFinite(Date.parse(recovery.savedAt)) ? " · saved " + new Date(recovery.savedAt).toLocaleString() : ""}. You may need to select the original again.`;
-    show($("resumePanel"));
-  }
-} catch { /* Ignore incompatible or malformed browser recovery data. */ }
+// Project validation depends on the background/presenter helpers loaded later.
+// Restore only after all editor scripts have initialized.
+document.addEventListener("DOMContentLoaded", () => {
+  try {
+    const raw = localStorage.getItem(projects.key);
+    if (raw) {
+      const recovery = JSON.parse(raw);
+      projects.recovery = {...recovery, project: validateProject(recovery.project),
+        waveform: Array.isArray(recovery.waveform) && recovery.waveform.length <= 4096 && recovery.waveform.every(n => typeof n === "number" && n >= 0 && n <= 1) ? recovery.waveform : null};
+      $("resumeDetails").textContent = `${recovery.project.source.name} · ${recovery.project.edits.length} edits${Number.isFinite(Date.parse(recovery.savedAt)) ? " · saved " + new Date(recovery.savedAt).toLocaleString() : ""}. You may need to select the original again.`;
+      show($("resumePanel"));
+    }
+  } catch { /* Ignore incompatible or malformed browser recovery data. */ }
+}, {once: true});
 $("resumeProjectBtn").onclick = () => {
   if (projects.recovery) requestProjectOpen(projects.recovery.project, projects.recovery);
 };

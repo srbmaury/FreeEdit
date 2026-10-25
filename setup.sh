@@ -25,6 +25,6 @@ fi
 .venv/bin/python -m pip install --upgrade pip
 .venv/bin/python -m pip install -r requirements.txt
 
-.venv/bin/python -m backend.preflight "$@"
+.venv/bin/python -m backend.preflight --verify-render "$@"
 echo
 echo "Setup complete. Start the app with: ./run.sh"

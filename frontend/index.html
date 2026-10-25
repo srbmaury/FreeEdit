@@ -41,9 +41,11 @@
     <button id="newFileBtn" class="ghost hidden">Open another file</button>
     <details id="appMenu" class="app-menu">
       <summary aria-label="FreeEdit menu">⋯</summary>
-      <nav aria-label="Help and information">
+      <nav aria-label="Project, preferences, and help">
+        <span class="menu-section-label">Project</span>
         <button id="saveProjectBtn" disabled>Save project…</button>
         <button id="openProjectBtn">Open project…</button>
+        <span class="menu-section-label menu-divider">Preferences</span>
         <label class="appearance-picker" for="appearanceSelect">Appearance
           <select id="appearanceSelect">
             <option value="system">System</option>
@@ -51,11 +53,13 @@
             <option value="dark">Dark</option>
           </select>
         </label>
+        <span class="menu-section-label menu-divider">Tools and help</span>
         <button data-dialog="shortcutsDialog">Keyboard shortcuts</button>
         <button data-dialog="storageDialog">Storage and cleanup</button>
         <button id="diagnosticsBtn">Check setup</button>
         <button data-dialog="aboutDialog">About FreeEdit</button>
-        <a href="https://github.com/srbmaury/FreeEdit" target="_blank" rel="noopener noreferrer">View on GitHub ↗</a>
+        <span class="menu-section-label menu-divider">Community</span>
+        <a href="https://github.com/srbmaury/FreeEdit" target="_blank" rel="noopener noreferrer">Source code ↗</a>
         <a href="https://github.com/srbmaury/FreeEdit/issues" target="_blank" rel="noopener noreferrer">Report an issue ↗</a>
       </nav>
     </details>
@@ -148,7 +152,7 @@
                 <div id="timelineRuler" class="timeline-ruler" aria-label="Seek to time"></div>
                 <div class="timeline-seek">
                   <div id="rangeTrack" class="range-track"></div>
-                  <input id="scrubber" aria-label="Playback position" type="range" min="0" max="1000" value="0" step="1" />
+                  <input id="scrubber" aria-label="Playback position" type="range" min="0" max="1000" value="0" step="0.001" />
                 </div>
                 <div id="waveformTrack" class="timeline-track waveform-track">
                   <canvas id="waveformCanvas" role="img" aria-label="Original audio waveform. Use the playback position control to seek."></canvas>
@@ -162,7 +166,7 @@
               </div>
             </div>
           </div>
-          <p class="timeline-help">The waveform shows original audio; shaded sections are cuts. Click it to seek. Drag a block to move it, or its edges to adjust when it starts and ends.</p>
+          <p class="timeline-help">Drag across the waveform or ruler to select a range. Click to seek; drag an edit or its edges to adjust timing.</p>
         </div>
         <div id="fileMeta" class="meta"></div>
       </div>
@@ -313,6 +317,14 @@
               </select>
             </label>
             <p class="small">Start with Natural sound. Preview up to 10 seconds from the playhead before exporting. The sample ignores cuts and visual edits.</p>
+            <details id="audioFinishControls">
+              <summary>Speech volume and fades</summary>
+              <label class="check"><input id="levelSpeech" type="checkbox" /> Level speech volume</label>
+              <p class="small">Gently compress loud speech and add up to 6 dB of gain. This is not a loudness target or a fix for every quiet phrase.</p>
+              <label class="field"><span>Fade in (seconds)</span><input id="audioFadeIn" type="number" min="0" max="5" step="0.1" value="0" /></label>
+              <label class="field"><span>Fade out (seconds)</span><input id="audioFadeOut" type="number" min="0" max="5" step="0.1" value="0" /></label>
+              <p class="small">Fades apply at the beginning and end of the final output. Each is limited to half its length. Use Preview result to hear all audio settings together.</p>
+            </details>
             <button id="noisePreviewBtn" type="button">Preview noise removal</button>
             <div id="noiseSample" class="hidden">
               <p id="noiseSampleStatus" class="small" role="status"></p>
@@ -333,7 +345,11 @@
             <select id="pausePreset"><option value="conservative">Conservative · fewer cuts</option><option value="balanced">Balanced</option><option value="more">More pauses</option><option value="custom">Custom</option></select>
           </label>
           <details>
-            <summary>Advanced detection settings</summary>
+            <summary>Analysis range and advanced settings</summary>
+            <label class="field"><span>Analyze from (seconds)</span><input id="silenceFrom" type="number" value="0" min="0" step="0.001" /></label>
+            <label class="field"><span>Analyze to (seconds)</span><input id="silenceTo" type="number" min="0.001" step="0.001" /></label>
+            <div class="row"><button id="silenceSelectedRangeBtn" type="button" class="ghost">Use selected range</button><button id="silenceWholeRangeBtn" type="button" class="ghost">Entire recording</button></div>
+            <p id="silenceRangeHint" class="small">Analyze the whole recording, or choose a smaller range for long files.</p>
             <label class="field"><span>Pause sensitivity (dB)</span><input id="silenceThreshold" type="number" value="-40" min="-70" max="-15" step="1" /></label>
             <label class="field"><span>Minimum pause (seconds)</span><input id="silenceDuration" type="number" value="0.8" min="0.3" max="10" step="0.1" /></label>
             <label class="field"><span>Keep before and after each pause (seconds)</span><input id="silencePadding" type="number" value="0.2" min="0.05" max="1" step="0.05" /></label>
@@ -342,7 +358,12 @@
           <button id="retryPausesBtn" class="ghost hidden">Try a higher threshold</button>
           <p id="silenceStatus" class="small" role="status" aria-live="polite"></p>
           <div id="silenceReview" class="hidden">
-            <div class="row"><button id="selectPausesBtn" class="ghost">Select all</button><button id="clearPausesBtn" class="ghost">Clear</button></div>
+            <div class="row"><button id="selectPausesBtn" class="ghost">Select page</button><button id="clearPausesBtn" class="ghost">Clear selected</button></div>
+            <div class="pause-pagination" role="group" aria-label="Pause result pages">
+              <button id="previousPausesBtn" class="mini" aria-label="Previous pause page">Previous</button>
+              <span id="silencePageStatus" class="small" role="status" aria-live="polite"></span>
+              <button id="nextPausesBtn" class="mini" aria-label="Next pause page">Next</button>
+            </div>
             <div id="silenceList" class="silence-list"></div>
             <p id="silenceSaved" class="small"></p>
             <button id="applyPausesBtn">Remove selected pauses</button>
@@ -362,6 +383,8 @@
           </label>
           <p id="presetInfo" class="small"></p>
           <p id="exportSummary" class="small"></p>
+          <button id="resultPreviewBtn" type="button">Preview result</button>
+          <p id="resultPreviewStatus" class="small" role="status">Renders up to 15 seconds from your selection or playhead, using the export settings.</p>
           <button id="processBtn" class="primary">Export file</button>
           <div id="procProgress" class="progress hidden">
             <div class="progress-label"><span id="procStage" role="status">Starting…</span> <span id="procPct"></span></div>
@@ -498,6 +521,19 @@
   <dialog id="diagnosticsDialog" class="info-dialog" aria-labelledby="diagnosticsTitle">
     <form method="dialog"><h2 id="diagnosticsTitle">Check setup</h2><div id="diagnosticsResults" role="status" aria-live="polite"></div><button class="primary">Done</button></form>
   </dialog>
+  <dialog id="resultPreviewDialog" class="info-dialog" aria-labelledby="resultPreviewTitle">
+    <h2 id="resultPreviewTitle">Preview result</h2>
+    <p id="resultPreviewDescription" class="small" role="status"></p>
+    <p id="rangePreviewError" class="error hidden" role="alert"></p>
+    <div class="segmented" role="group" aria-label="Compare result preview">
+      <button id="rangeOriginalBtn" type="button" aria-pressed="false">Original</button>
+      <button id="rangeResultBtn" type="button" aria-pressed="true">Result</button>
+    </div>
+    <video id="rangePreviewVideo" controls playsinline aria-label="Result preview"></video>
+    <audio id="rangePreviewAudio" controls class="hidden" aria-label="Result audio preview"></audio>
+    <details class="small"><summary>About this preview</summary><p>Uses the export settings. Cuts close gaps in Result. Speech leveling and noise reduction can vary slightly at sample boundaries.</p></details>
+    <form method="dialog"><button class="primary">Back to editing</button></form>
+  </dialog>
   <script src="ui.js"></script>
   <script src="media-utils.js"></script>
   <script src="editor-model.js"></script>
@@ -515,5 +551,7 @@
   <script src="videos.js"></script>
   <script src="workspace.js"></script>
   <script src="reframe-captions.js"></script>
+  <script src="range-selection.js"></script>
+  <script src="result-preview.js"></script>
 </body>
 </html>

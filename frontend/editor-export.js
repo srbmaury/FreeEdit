@@ -19,6 +19,7 @@ function buildPayload() {
   });
   const strength = $("strength").value;
   return {
+    audio: getAudioSettings(),
     presenter: getPresenterSettings(),
     reframe: S.job.has_video && $("exportPreset").value !== "audio_only" ? EditorModel.exportReframe(S.reframe, S.edits) : null,
     background: $("exportPreset").value !== "audio_only" ? getBackgroundSettings() : null,
@@ -89,6 +90,7 @@ function poll(delay = 800) {
       if (S.job?.id !== id || S.operation !== operation || revision !== pollRevision) return;
       if (j.queued_at) S.busySince = j.queued_at * 1000;
       if (j.status === "cancelled") {
+        if (S.operation === "result-preview") return resultPreviewDone({error: "Preview stopped. Your edits are unchanged."});
         const wasSilence = S.operation === "silence";
         const wasPreview = S.operation === "preview";
         const wasComposition = S.operation === "composition";
@@ -97,12 +99,15 @@ function poll(delay = 800) {
         if (wasComposition) return compositionPreviewDone({error: "Combined preview stopped."});
         if (wasBackground) return backgroundPreviewDone({error: "Background preview stopped."});
         if (wasPreview) return noisePreviewDone({error: "Sample processing stopped."});
-        if (wasSilence) $("silenceStatus").textContent = "Detection stopped. Your edits are unchanged.";
+        if (wasSilence) return silenceDone({error: "Detection stopped. Your edits are unchanged."});
         else { $("procError").textContent = "Export stopped. Your recording and edits are ready to try again."; show($("procError")); }
         return;
       }
       if (j.status === "cancelling") { setProgress("Stopping…", null); poll(); return; }
-      if (S.operation === "composition") {
+      if (S.operation === "result-preview") {
+        if (j.result_preview) return resultPreviewDone(j.result_preview);
+        if (!["queued", "processing", "cancelling"].includes(j.status)) return resultPreviewDone({error: "Preview was not started. Please retry."});
+      } else if (S.operation === "composition") {
         if (j.composition_preview) return compositionPreviewDone(j.composition_preview);
         if (!["queued", "processing", "cancelling"].includes(j.status)) return compositionPreviewDone({error: "Combined preview was not started. Please retry."});
       } else if (S.operation === "background") {
@@ -133,6 +138,7 @@ function procFailed(msg, replaceFile = false, reference = null) {
   show($("recoverFileBtn"), replaceFile);
   show($("procReference"), !!reference);
   $("procReference").textContent = reference ? `Reference: ${reference}` : "";
+  if (S.operation === "result-preview") return resultPreviewDone({error: msg});
   if (S.operation === "silence") return silenceDone({error: msg});
   if (S.operation === "composition") return compositionPreviewDone({error: msg});
   if (S.operation === "background") return backgroundPreviewDone({error: msg});

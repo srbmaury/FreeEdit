@@ -6,7 +6,7 @@ On macOS, install Homebrew from https://brew.sh, then run `./setup.sh` and `./ru
 
 To download and load the noise model during setup, use `./setup.sh --warm-model`. This needs internet on first use. Without this flag the first noise-removal operation may download the model. Basic editing does not need the model.
 
-Startup checks FFmpeg, FFprobe, temporary disk space, and the noise environment. Missing media tools or critically low disk space stop startup; missing noise dependencies are reported but other editing remains available. Open **⋯ → Check setup** to check again without restarting. Module availability checks are lightweight; `--warm-model` additionally imports and initializes the actual noise engine.
+Startup checks FFmpeg, FFprobe, required rendering encoders/filters, writable temporary storage, disk space, and the noise environment. Missing media tools or critically low disk space stop startup; missing noise dependencies are reported but other editing remains available. Open **⋯ → Check setup** to check again without restarting. Setup also renders a one-second generated sample to verify video/audio encoding and the main editing filters. Repeat it with `--verify-render`; it uses no personal media and downloads no models. Module availability checks are lightweight; `--warm-model` additionally imports and initializes the actual noise engine.
 
 If DeepFilterNet is in another environment:
 
@@ -18,6 +18,7 @@ Recheck independently with:
 
 ```sh
 .venv/bin/python -m backend.preflight
+.venv/bin/python -m backend.preflight --verify-render
 .venv/bin/python -m backend.preflight --warm-model
 ```
 
@@ -31,6 +32,7 @@ Background effects use an optional separate environment: run `./setup-background
 |---|---|
 | `brew` missing | Install Homebrew, reopen the terminal, and rerun setup. |
 | `ffmpeg` / `ffprobe` missing | Install FFmpeg or set `FFMPEG_BIN` / `FFPROBE_BIN` to absolute executable paths. |
+| Rendering support missing | Install a full FFmpeg build with libx264, AAC, PCM, FFV1 and the editing filters. Check configured FFMPEG_BIN; startup now reports missing components. |
 | Noise dependencies missing | Run setup with Python 3.12, or configure `DEEPFILTER_PYTHON`. Keep torch and torchaudio at the versions in requirements.txt. |
 | Model initialization fails | Check internet availability and rerun preflight with `--warm-model`; inspect terminal output. |
 | Storage is full | Open **⋯ → Storage and cleanup**. It shows server disk usage and can remove other inactive recordings/exports. Download needed files first. |

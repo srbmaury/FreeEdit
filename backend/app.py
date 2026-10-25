@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import re
 import os
 from urllib.parse import urlsplit
@@ -19,14 +20,14 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import pipeline
-from .diagnostics import inspect_setup, require_export_space
+from .diagnostics import inspect_setup, require_export_space, require_preview_space
 from .execution import Cancelled, JobControl, cancellation_scope
-from .models import ProcessRequest, SilenceRequest, PreviewRequest, BackgroundPreviewRequest, CompositionPreviewRequest
+from .models import ProcessRequest, SilenceRequest, PreviewRequest, BackgroundPreviewRequest, CompositionPreviewRequest, ResultPreviewRequest
 from .observability import event, install_error_handling, public_processing_error
 from .sessions import COOKIE, create_session, verify_session
 
@@ -86,13 +87,30 @@ async def protect_session_jobs(request: Request, call_next):
         owner, token = create_session()
     request.state.owner = owner
 
+    def finish(response):
+        # Session data and media must never be reused by browser/shared caches.
+        if request.url.path.startswith("/api/") or new_cookie:
+            response.headers["Cache-Control"] = "private, no-store"
+            response.headers.add_vary_header("Cookie")
+        if new_cookie:
+            response.set_cookie(
+                COOKIE, token, httponly=True, samesite="strict",
+                secure=request.url.scheme == "https", path="/",
+                max_age=7 * 24 * 3600,
+            )
+        return response
+
     # Browsers send Origin on cross-origin unsafe requests; block those
     # requests before creating uploads or processing jobs.
     origin = request.headers.get("origin")
     if request.method not in ("GET", "HEAD", "OPTIONS") and origin:
-        parsed = urlsplit(origin)
-        if parsed.scheme not in ("http", "https") or parsed.netloc.lower() != request.headers.get("host", "").lower():
-            return JSONResponse(status_code=403, content={"detail": "Cross-origin modification denied."})
+        try:
+            parsed = urlsplit(origin)
+            same_origin = parsed.scheme in ("http", "https") and parsed.netloc.lower() == request.headers.get("host", "").lower()
+        except ValueError:
+            same_origin = False
+        if not same_origin:
+            return finish(JSONResponse(status_code=403, content={"detail": "Cross-origin modification denied."}))
 
     match = re.match(r"^/api/jobs/([^/]+)(?:/|$)", request.url.path)
     if match:
@@ -101,16 +119,10 @@ async def protect_session_jobs(request: Request, call_next):
             permitted = bool(job and job.get("owner") == owner)
         if not permitted:
             # Do not expose whether someone else's job exists.
-            return JSONResponse(status_code=404, content={"detail": "Job not found."})
+            return finish(JSONResponse(status_code=404, content={"detail": "Job not found."}))
 
     response = await call_next(request)
-    if new_cookie:
-        response.set_cookie(
-            COOKIE, token, httponly=True, samesite="strict",
-            secure=request.url.scheme == "https", path="/",
-            max_age=7 * 24 * 3600,
-        )
-    return response
+    return finish(response)
 
 
 def _update(job_id: str, **fields) -> None:
@@ -249,27 +261,9 @@ def _run(job_id: str, req: ProcessRequest, previous: dict) -> None:
             stale.unlink(missing_ok=True)
         shutil.rmtree(work / "denoised", ignore_errors=True)
 
-        if req.presenter:
-            other_source = next(work.glob("presenter.*"))
-            free = shutil.disk_usage(work).free
-            required = source.stat().st_size * 4 + other_source.stat().st_size * 2 + int(previous["media"]["duration"] * 1024**2)
-            if free < required:
-                raise pipeline.PipelineError("Not enough temporary disk space to combine these recordings.")
-            from .composition import compose
-            composition_work = work / "composition"
-            shutil.rmtree(composition_work, ignore_errors=True)
-            composition_work.mkdir()
-            if req.background:
-                source = pipeline.process(source, composition_work, denoise_audio=False, atten_lim=None,
-                    edits=[], cuts=[], preset="high", background=req.background.model_dump(), progress=progress, preserve_resolution=True)
-            source = compose(source, next(work.glob("presenter.*")), composition_work, req.presenter.model_dump(), progress)
-        out = pipeline.process(
-            source, work,
-            denoise_audio=req.denoise, atten_lim=req.atten_lim, preset=req.preset,
-            edits=[e.model_dump() for e in req.edits], cuts=[c.model_dump() for c in req.cuts], progress=progress,
-            background=req.background.model_dump() if req.background and not req.presenter else None,
-            reframe=req.reframe.model_dump() if req.reframe else None,
-        )
+        from .rendering import render
+        out = render(source, work, req.model_dump(), progress,
+                     next(work.glob("presenter.*")) if req.presenter else None)
         _update(job_id, status="done", stage="Done", progress=1.0, output=out.name)
         event("export_ready", job_id=job_id, duration_ms=round((time.monotonic() - started) * 1000), bytes=out.stat().st_size)
     except Cancelled:
@@ -286,6 +280,8 @@ def _execute(worker, job_id, req, previous, control):
             worker(job_id, req, previous)
     except Cancelled:
         work = JOBS_DIR / job_id
+        if worker is _preview_result:
+            shutil.rmtree(work / "result-preview", ignore_errors=True)
         if worker is _preview_noise:
             shutil.rmtree(work / "preview", ignore_errors=True)
         if worker is _preview_background:
@@ -354,11 +350,13 @@ def _submit(job_id, req, worker):
         previous["queued_at"] = time.time()
         control = JobControl()
         job_controls[job_id] = control
-        operation = { _analyze_silence: "silence", _preview_noise: "preview", _preview_background: "background", _preview_composition: "composition" }.get(worker, "export")
+        operation = { _analyze_silence: "silence", _preview_noise: "preview", _preview_background: "background", _preview_composition: "composition", _preview_result: "result-preview" }.get(worker, "export")
         event("job_queued", job_id=job_id, operation=operation)
         job.update(status="queued", stage="Waiting in queue", progress=None, error=None, updated_at=time.time(),
                    operation=operation,
                    queued_at=time.time(), started_at=None, cancel_requested=False)
+        if worker is _preview_result:
+            job["result_preview"] = None
         if worker is _analyze_silence:
             job["silence"] = None
         if worker is _preview_noise:
@@ -381,15 +379,24 @@ def _analyze_silence(job_id: str, req: SilenceRequest, previous: dict) -> None:
     _update(job_id, started_at=time.time())
     event("silence_started", job_id=job_id, queue_ms=round((time.time() - previous["queued_at"]) * 1000))
     _update(job_id, status="processing", stage="Detecting pauses", silence=None)
+    work = JOBS_DIR / job_id
+    analysis_id = uuid.uuid4().hex
+    results_path = work / f"silence-{analysis_id}.jsonl"
     try:
-        source = next((JOBS_DIR / job_id).glob("source.*"))
-        result = pipeline.detect_silence(source, previous["media"]["duration"], **req.model_dump())
+        source = next(work.glob("source.*"))
+        result = pipeline.detect_silence(source, previous["media"]["duration"], results_path=results_path, **req.model_dump())
+        result.update(analysis_id=analysis_id, offset=0, limit=25)
+        for stale in work.glob("silence-*.jsonl"):
+            if stale != results_path:
+                stale.unlink(missing_ok=True)
         result["error"] = None
         result["settings"] = req.model_dump()
         event("silence_ready", job_id=job_id, segments=len(result["segments"]), duration_ms=round((time.monotonic() - started) * 1000))
     except Cancelled:
+        results_path.unlink(missing_ok=True)
         raise
     except Exception as exc:
+        results_path.unlink(missing_ok=True)
         code, message = public_processing_error(exc)
         event("silence_failed", job_id=job_id, code=code, exception=type(exc).__name__, detail=str(exc))
         result = {"segments": [], "error": message, "error_code": code}
@@ -400,6 +407,31 @@ def _analyze_silence(job_id: str, req: SilenceRequest, previous: dict) -> None:
 @app.post("/api/jobs/{job_id}/silence")
 def analyze_silence(job_id: str, req: SilenceRequest):
     return _submit(job_id, req, _analyze_silence)
+
+
+@app.get("/api/jobs/{job_id}/silence-results")
+def silence_results(job_id: str,
+                    analysis_id: str = Query(pattern=r"^[a-f0-9]{32}$"),
+                    offset: int = Query(default=0, ge=0),
+                    limit: int = Query(default=25, ge=1, le=100)):
+    result = _job(job_id).get("silence") or {}
+    if result.get("analysis_id") != analysis_id or result.get("error"):
+        raise HTTPException(409, "Pause analysis changed. Run detection again before reviewing more results.")
+    if result["total"] and offset >= result["total"]:
+        raise HTTPException(422, "Pause page is outside the analysis results.")
+    path = JOBS_DIR / job_id / f"silence-{analysis_id}.jsonl"
+    segments = []
+    try:
+        with path.open() as file:
+            for index, line in enumerate(file):
+                if index >= offset + limit:
+                    break
+                if index >= offset:
+                    segments.append(json.loads(line))
+    except FileNotFoundError:
+        raise HTTPException(409, "Pause results expired. Run detection again.")
+    return {"segments": segments, "total": result["total"], "offset": offset, "limit": limit,
+            "analysis_id": analysis_id}
 
 
 def _preview_noise(job_id: str, req: PreviewRequest, previous: dict) -> None:
@@ -508,7 +540,7 @@ async def upload_presenter(job_id: str, request: Request, filename: str):
             source = next((JOBS_DIR / temporary_id).glob("source.*"))
             source.replace(work / ("presenter" + source.suffix))
             metadata = {"filename": filename, "media": jobs[temporary_id]["media"]}
-            jobs[job_id].update(presenter=metadata, updated_at=time.time(), composition_preview=None)
+            jobs[job_id].update(presenter=metadata, updated_at=time.time(), composition_preview=None, result_preview=None)
         return metadata
     finally:
         with jobs_lock:
@@ -680,6 +712,52 @@ class FrontendFiles(StaticFiles):
         if Path(path).suffix in {".js", ".css", ".html"}:
             response.headers["Cache-Control"] = "no-cache"
         return response
+
+
+def _preview_result(job_id, req, previous):
+    from .rendering import preview
+    work = JOBS_DIR / job_id
+    target = work / "result-preview"
+    _update(job_id, status="processing", started_at=time.time(), stage="Preparing result preview")
+    try:
+        settings = req.model_dump(exclude={"start", "end"})
+        fingerprint = hashlib.sha256(req.model_dump_json().encode()).hexdigest()
+        cached = previous.get("result_preview") or {}
+        if cached.get("signature") == fingerprint and (target / cached.get("file", "missing")).is_file():
+            result = cached
+        else:
+            shutil.rmtree(target, ignore_errors=True)
+            target.mkdir()
+            require_preview_space(work, req.end - req.start, previous["media"])
+            out, ranges = preview(next(work.glob("source.*")), next(work.glob("presenter.*")) if req.presenter else None,
+                target, settings, req.start, req.end, previous["media"]["duration"],
+                lambda stage, pct: _update(job_id, stage=stage, progress=pct))
+            result = {"start": req.start, "end": req.end, "ranges": ranges,
+                      "file": out.name, "signature": fingerprint, "error": None}
+    except Cancelled:
+        raise
+    except Exception as exc:
+        code, message = public_processing_error(exc)
+        event("result_preview_failed", job_id=job_id, code=code, detail=str(exc))
+        shutil.rmtree(target, ignore_errors=True)
+        result = {"error": message}
+    _update(job_id, status="done" if previous.get("output") else "uploaded", stage=None, progress=None, result_preview=result)
+
+
+@app.post("/api/jobs/{job_id}/result-preview")
+def preview_result(job_id: str, req: ResultPreviewRequest):
+    return _submit(job_id, req, _preview_result)
+
+
+@app.api_route("/api/jobs/{job_id}/result-preview", methods=["GET", "HEAD"])
+def result_preview_media(job_id: str):
+    result = _job(job_id).get("result_preview") or {}
+    if result.get("error") or result.get("file") not in ("output.mp4", "output.wav"):
+        raise HTTPException(404, "Result preview is not ready.")
+    path = JOBS_DIR / job_id / "result-preview" / result["file"]
+    if not path.is_file():
+        raise HTTPException(404, "Result preview is not ready.")
+    return FileResponse(path, media_type="audio/wav" if path.suffix == ".wav" else "video/mp4")
 
 
 app.mount("/", FrontendFiles(directory=FRONTEND_DIR, html=True), name="frontend")

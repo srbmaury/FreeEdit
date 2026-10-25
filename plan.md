@@ -1,16 +1,18 @@
 # FreeEdit feature roadmap
 
-Status: proposed, 24 October 2026. This plan covers new editing capabilities; it does not authorize implementing every item at once. Keep the tool focused on cleaning up and presenting screen recordings. No backward-compatibility work is needed while there are no users.
+Status: in progress, 25 October 2026. Primary audience: screen-recording cleanup and polished demos. Keep the tool focused on cleaning up and presenting screen recordings. No backward-compatibility work is needed while there are no users.
 
 ## Current implementation
 
 - Cuts, timed text, privacy masks, SRT import, waveform and pause detection exist.
 - Timed Reframe portions have zoom, focus, timing, smooth transitions, dashed draft guides, project persistence, and export support. They are sections with fixed target settings, not arbitrary editable keyframes.
-- Cuts/text/masks support timeline dragging and edge resizing. Reframe blocks currently select a section; moving/resizing them on the timeline is missing.
+- Cuts/text/masks and Reframe portions support timeline dragging and edge resizing.
+- Waveform/ruler range dragging transfers to Cut or Reframe drafts, with source-range playback and Clear/Escape.
+- Point-pick Smart Focus positions draft and saved portions using the existing crop geometry.
 - Two-video composition supports a main recording plus presenter inset, presenter background effects, and main/presenter/both/muted audio. Sequential clip assembly is missing.
 - Whole-video aspect ratios and quality presets exist. Platform-specific framing/encoding presets are missing.
-- Source playback, individual processed samples, and a rendered export comparison exist. A combined rendered preview before final export is missing.
-- Noise removal exists; audio leveling and fades do not.
+- Source playback, individual processed samples, and rendered export comparison exist. A bounded combined result preview is implemented and browser-validated.
+- Noise removal, restrained speech compression/leveling, and output-end fades are implemented. Target-LUFS normalization and per-cut ramps remain separate future work.
 
 ## Recommended order
 
@@ -110,3 +112,29 @@ Deliver range dragging → Cut/Reframe actions → drag/resize Reframe timeline 
 ## Reference status
 
 The supplied competitor descriptions are inspiration, not verified feature/specification claims. No external sites or image-proxy links are required to implement this roadmap. Verify official product information only if a future comparison or parity target depends on it.
+
+## Quality milestone — delivered and remaining
+
+Delivered: grouped app menu with offline icons/keyboard navigation; visible limits documentation; draft timeline range selection and Cut/Reframe reuse; source-range playback; direct Reframe movement/resizing and undo; point-pick focus; finer scrubber increments.
+
+Browser verification uses the supplied short screen recording: select a waveform range, transfer it to Reframe, add it, pick focus, move the section, resize it and undo, transfer the same range to Cut. Export is checked with both edits active. The film audit remains evidence of the existing 100-result cap, not evidence of unrestricted movie editing.
+
+Still needed before a 9/10 claim: Presentation Mode, representative compatibility/long-file profiling, first-use feedback from target users, and release documentation that matches the deployed app. Rectangle-draw focus and fully editable point keyframes remain future extensions. Do not equate completing this first milestone with achieving the target score.
+
+## Stage 2 implementation — 25 October 2026
+
+Implemented: shared preview/export rendering contract; selected-range/playhead result preview capped at 15 seconds; retained-time Original/Result comparison; cancellation; identical-request caching and presenter replacement invalidation; stale-preview indication; audio-only samples; collapsed speech compression/leveling and output-end fades; project save/restore of audio settings.
+
+Focused real-media request checks passed for a preview combining a privacy mask, timed Reframe, cut, leveling and fades; cached-media reuse; full export duration; cut-only-range rejection; audio-only preview; and presenter mixing. Browser checks with the supplied recording passed for processed playback, Original/Result switching, selected-range preview across a cut, cancellation, stale-preview notices, file-based project reopening, browser recovery with audio settings restored, audio-only preview, and full export. Preview layout was checked in dark and light themes; the player leaves room for the close/editing controls on short windows. A sparse-frame seeking bug found during browser QA was fixed: keyframe preroll supplies the held frame at the selected start, preserving the expected four-second result for a five-second selection with a one-second cut. Startup recovery now waits for the background/presenter validation helpers. Python compilation, JavaScript syntax and whitespace checks pass. Presentation Mode and sequential clips have not started.
+
+## Reliability and large-file follow-up — 25 October 2026
+
+Delivered changes: pause-analysis source ranges with selected-range reuse and total-match counts; disk-backed line-by-line analysis logs; bounded FFmpeg error tails; lossless preview-window disk estimates independent of full source size; startup/on-demand checks for required rendering encoders/filters and writable storage. Cut and suggestion review caps remain explicit. This is not a claim of unrestricted movie editing or validated clean-machine installation.
+
+Earlier range-analysis validation (superseded by pagination below): the supplied 2h17m film produced 454 qualifying pauses in a full scan (100 retained), and ranged scans at 30–32 minutes and near the end return original-time suggestions. Browser checks passed for reversed-range errors, whole-recording reset, selected-range transfer, and detection. Generated 244-second audio confirmed the “first 100 of 122” warning; analyzing 200–244 seconds returned the remaining 22 and applying a suggestion created a cut at the correct original timestamp. The setup dialog shows rendering/storage checks, and `preflight --verify-render` passes on this machine. Setup now runs the generated-media check after installation. No fresh-machine installation or full-movie export/memory benchmark has been claimed or performed in this slice.
+
+## Paginated pause review and preview failure handling — 25 October 2026
+
+All qualifying pause results are now stored on disk, with 25-row UI pages and bounded API pages. Selected rows are retained across pages under the existing 100-cut budget; already-cut portions cannot be accidentally applied twice. Page requests are tied to the analysis identity and browser owner. Rerunning analysis replaces selections/results. Preview retry/cancel no longer leaves an old sample claiming readiness, and original/result playback failures have a visible recovery message. Review and audio-finishing controls are consistently locked while processing.
+
+Validation: all 122 generated pause results are reachable without duplicates, including the final page; invalid page sizes, stale analysis IDs, out-of-range pages, and other-session access are rejected. Browser checks passed for cross-page selection persistence, the shared 100-cut limit through both list and timeline selection, applying a final-page cut, already-cut guidance, undo, and retaining results while changing analysis scope. The real film produced 454 disk-backed results with only 25 in the first response. Playback failure/recovery and cancellation status were checked with generated media. Audio-only project saving was fixed by excluding video Reframe settings; saving, relinking and reopening restored the correct cut. Pagination was reviewed in dark and light themes. Focused syntax/compilation/whitespace checks pass.

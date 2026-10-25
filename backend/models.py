@@ -142,11 +142,19 @@ class ReframeSettings(BaseModel):
         return self
 
 
+class AudioSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    level_speech: bool = False
+    fade_in: float = Field(default=0, ge=0, le=5)
+    fade_out: float = Field(default=0, ge=0, le=5)
+
+
 class ProcessRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     presenter: PresenterSettings | None = None
     background: BackgroundSettings | None = None
     reframe: ReframeSettings | None = None
+    audio: AudioSettings = Field(default_factory=AudioSettings)
     denoise: bool = True
     atten_lim: int | None = Field(default=None, ge=0, le=100)
     preset: Literal["balanced", "small", "high", "audio_only"] = "balanced"
@@ -186,6 +194,8 @@ class ProcessRequest(BaseModel):
 
 
 class SilenceRequest(BaseModel):
+    start: float = Field(default=0, ge=0)
+    end: float | None = Field(default=None, gt=0)
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     threshold_db: float = Field(default=-40, ge=-70, le=-15)
     min_duration: float = Field(default=0.8, ge=0.3, le=10)
@@ -194,6 +204,11 @@ class SilenceRequest(BaseModel):
     def validate_media(self, media):
         if not media["has_audio"]:
             raise HTTPException(422, "Silence detection requires an audio track.")
+        if self.end is None:
+            self.end = media["duration"]
+        if not self.start < self.end <= media["duration"] + .05:
+            raise HTTPException(422, "Choose a pause-analysis range inside the recording.")
+        self.end = min(self.end, media["duration"])
 
 
 class PreviewRequest(BaseModel):
@@ -227,3 +242,17 @@ class CompositionPreviewRequest(BaseModel):
     def validate_media(self, media):
         if self.start >= media["duration"]:
             raise HTTPException(422, "Preview must start inside the main video.")
+
+
+class ResultPreviewRequest(ProcessRequest):
+    start: float = Field(ge=0)
+    end: float = Field(gt=0)
+
+    def validate_media(self, media):
+        super().validate_media(media)
+        if not self.start < self.end <= media["duration"] + .05 or self.end - self.start > 15.001:
+            raise HTTPException(422, "Choose up to 15 seconds inside the recording.")
+        self.end = min(self.end, media["duration"])
+        keep = pipeline.kept_ranges([c.model_dump() for c in self.cuts], media["duration"]) or [(0, media["duration"])]
+        if not any(min(b, self.end) - max(a, self.start) > .05 for a, b in keep):
+            raise HTTPException(422, "This range is entirely cut out. Choose a range with retained footage.")

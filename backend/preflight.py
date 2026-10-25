@@ -1,4 +1,4 @@
-"""Run from the project root: python -m backend.preflight [--warm-model]."""
+"""Run from the project root: python -m backend.preflight [--verify-render] [--warm-model]."""
 import argparse
 import os
 import subprocess
@@ -6,12 +6,14 @@ import sys
 import tempfile
 from pathlib import Path
 
-from .diagnostics import inspect_setup
+from .diagnostics import inspect_setup, verify_render
+from .pipeline import PipelineError
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--warm-model", action="store_true", help="Download/load the noise model now (requires internet on first use).")
+    parser.add_argument("--verify-render", action="store_true", help="Check a one-second generated video/audio export; no personal media or models needed.")
     args = parser.parse_args()
     work = Path(os.environ.get("FREEEDIT_JOBS_DIR", "jobs"))
     try:
@@ -24,6 +26,13 @@ def main():
     checks = inspect_setup(work)["checks"]
     for check in checks:
         print(f"{'OK' if check['ready'] else 'CHECK'} {check['name']}: {check['message']}")
+    if args.verify_render:
+        try:
+            verify_render(work)
+        except (OSError, PipelineError, subprocess.TimeoutExpired) as error:
+            print(f"Setup render failed: {error}", file=sys.stderr)
+            return 1
+        print("OK Setup render: generated video, audio, cut, mask, Reframe, leveling and fades")
     if args.warm_model:
         if not next(c["ready"] for c in checks if c["name"] == "Noise reduction"):
             print("Install noise dependencies with ./setup.sh before downloading the model.")
@@ -37,7 +46,7 @@ def main():
             print(f"Model initialization failed: {error}", file=sys.stderr)
             return 1
         print("Noise model loaded successfully.")
-    return 0 if all(c["ready"] for c in checks if c["name"] in ("ffmpeg", "ffprobe", "Temporary disk")) else 1
+    return 0 if all(c["ready"] for c in checks if c["name"] in ("ffmpeg", "ffprobe", "Rendering support", "Temporary storage", "Temporary disk")) else 1
 
 
 if __name__ == "__main__":

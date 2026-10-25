@@ -4,6 +4,8 @@ A small web app for cleaning up screen recordings and other audio or video files
 
 - **Remove background noise** with [DeepFilterNet3](https://github.com/Rikorose/DeepFilterNet)
 - **Shorten pauses**: detect quiet sections, listen to suggestions, and choose which become cuts
+- **Select ranges directly**: drag across the waveform or ruler, then use the range for Cut or Reframe; play the selected source range before applying edits
+- **Smart Focus**: pick a point in the video to position a portion’s zoom; move or resize Reframe portions directly on the timeline
 - **Reframe** videos: crop to 16:9, 9:16, square or original aspect ratio, with zoom/focus and smoothly animated time-range sections
 - **Import editable captions**: load SRT subtitles as timed text overlays you can adjust on the timeline
 - **Combine two videos**: add a presenter inset, blur/remove its background, and choose Main, Presenter, Both, or Muted sound ([workflow](docs/COMBINING_VIDEOS.md))
@@ -12,7 +14,12 @@ A small web app for cleaning up screen recordings and other audio or video files
 - **Remove parts of the video**: mark one or more ranges on the timeline and they're cut out
 - **Write text on the video**: click to place it, set the font, size, color and background, and choose when it appears
 - **Hide part of the video**: drag a box, then blur it, pixelate it or cover it with black, for a time range you choose
-- Preview a 10-second noise-removal sample before exporting; compare original and exported recordings afterward
+- Preview a 10-second noise-removal sample, or use **Export → Preview result** for up to 15 seconds with visual edits and audio together
+- Optional speech leveling and output fades, saved with your project
+
+## Current limitations
+
+Long recordings can exceed project limits even when uploads fit. Pause detection pages through **all detected suggestions**, projects allow **100 cuts**, and imported subtitles allow **100 cues**. Playback/export speed changes are not implemented. See [current limits, configuration, and long-recording caveats](docs/LIMITATIONS.md) before editing movie-length files.
 
 ## A typical editing session
 
@@ -45,7 +52,7 @@ You need [Homebrew](https://brew.sh/). Then run:
 ./run.sh       # starts the server at http://localhost:8000
 ```
 
-Startup checks the media tools, noise environment, and temporary disk space. Use `./setup.sh --warm-model` to download and load the noise model during setup instead of first use. See [local setup and troubleshooting](docs/TROUBLESHOOTING.md).
+Startup checks media tools, rendering support, the noise environment, and writable temporary storage. Setup additionally verifies a one-second generated export; rerun it with `.venv/bin/python -m backend.preflight --verify-render`. Use `./setup.sh --warm-model` to download and load the noise model during setup instead of first use. See [local setup and troubleshooting](docs/TROUBLESHOOTING.md).
 
 Why it's set up this way (from the DeepFilterNet macOS guide):
 
@@ -96,9 +103,9 @@ The timeline includes a waveform of the original audio and separate rows for sug
 
 ### Silence removal
 
-Open **Pauses → Detect pauses**. Suggestions start unselected and appear above the cut timeline. Use **Listen** to hear each pause with surrounding audio, select the ones to remove, then **Remove selected pauses**. Added cuts can be resized, edited, deleted, or undone. Audio-only files support the same cut controls.
+Open **Pauses → Detect pauses**. For a long recording, expand **Analysis range and advanced settings** to enter source start/end times or use the selected timeline range. **Entire recording** resets the range. Suggestions start unselected and appear above the cut timeline. Use **Listen** to hear each pause with surrounding audio, select the ones to remove, then **Remove selected pauses**. Added cuts can be resized, edited, deleted, or undone. Audio-only files support the same cut controls.
 
-Detection defaults to −40 dB, a minimum 0.8-second pause, and 0.2 seconds kept on each side. Raise the threshold to detect more quiet sections, with a greater risk of including quiet speech. Up to 100 suggestions are returned per pass. Detection and export share the bounded processing queue.
+Detection defaults to −40 dB, a minimum 0.8-second pause, and 0.2 seconds kept on each side. Raise the threshold to detect more quiet sections, with a greater risk of including quiet speech. All qualifying suggestions are stored temporarily on disk and reviewed 25 at a time. Previous/Next loads a page, Select page selects within the remaining cut budget, and Clear selected clears selections across pages. Selections stay selected between pages. Pauses fully covered by existing cuts are marked Already cut. Review selections are temporary; apply cuts and Save project to keep the edits. Detection and export share the bounded processing queue.
 
 ### Combine videos
 
@@ -280,7 +287,7 @@ From the repository root, after installing the dependencies, run the synthetic t
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-These tests exercise presenter timing, seeked previews, mixed/presenter-only audio, no-overlap handling and muted exports. They use generated video/audio clips, not personal recordings. They **do not** replace browser QA, segmentation tests on varied real people, or long-video memory and performance tests. The focused workspace is merged into `main`. GitHub Actions runs Python, Node, and synthetic FFmpeg checks through `.github/workflows/checks.yml` on this hardening branch; full browser interaction, real-person segmentation, and long-media testing still need manual QA before deploying. Verify desktop, 768px and phone widths in both themes.
+These tests exercise presenter timing, seeked previews, mixed/presenter-only audio, no-overlap handling and muted exports. They use generated video/audio clips, not personal recordings. They **do not** replace browser QA, segmentation tests on varied real people, or long-video memory and performance tests. The focused workspace is merged into `main`. GitHub Actions runs Python, Node, and synthetic FFmpeg checks through `.github/workflows/checks.yml` on `main` and pull requests; full browser interaction, real-person segmentation, and long-media testing still need manual QA before deploying. Verify desktop, 768px and phone widths in both themes.
 
 ## Local operation and releases
 
@@ -289,3 +296,9 @@ These tests exercise presenter timing, seeked previews, mixed/presenter-only aud
 - **Long recordings:** no local duration cap is configured by default; the upload limit is 1,024 MB. See [performance measurements and limits](docs/PERFORMANCE.md) before planning long exports.
 - **Accessibility:** native dialogs, keyboard editing controls, a skip link, visible focus, readable seek values, and reduced-motion support. This is not a claim of full accessibility conformance.
 - **License:** FreeEdit source is [MIT licensed](LICENSE). See [release preparation](docs/RELEASING.md) and the [dependency/model audit](docs/LICENSE_AUDIT.md) for separately distributed components.
+
+### Combined result preview and audio finishing
+
+In **Export**, choose **Preview result**. It renders up to 15 seconds from a timeline selection, or from the playhead when no range is selected, using the export settings and renderer. Original/Result comparison uses retained source intervals to account for cuts. Entirely removed ranges show an explanation. Cancel preserves edits and any previous full export. Preview media is private to the browser session, cached for an identical request, and replaced by the next changed preview. Replacing a presenter invalidates the cache. Downloads remain full exports.
+
+In **Audio → Speech volume and fades**, enable restrained speech compression with up to 6 dB gain, or set output fade durations from 0 to 5 seconds. A limiter reduces clipping risk; this is not target-LUFS normalization. Fades occur at the final output's ends, after source mixing, noise removal and cuts, and each is limited to half the output length. The standalone noise-removal sample excludes these finishing settings; use Preview result to hear them together. Denoising/compression and frame seeking can differ slightly at sample boundaries. Preview creates a temporary lossless source window on disk; it does not hold the whole recording in memory.

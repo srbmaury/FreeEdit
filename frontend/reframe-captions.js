@@ -223,9 +223,54 @@ function renderZoomTimeline(){
     block.dataset.editId=String(edit.id);
     block.textContent="Reframe "+edit.zoom.toFixed(2)+"×";
     block.setAttribute("aria-label","Select Reframe "+fmt(edit.start)+" to "+fmt(edit.end));
+    for (const side of ["l", "r"]) {
+      const handle = document.createElement("span"); handle.className = "edge " + side;
+      handle.setAttribute("aria-hidden", "true"); block.append(handle);
+    }
+    block.title = "Drag to move; drag edges to resize. Select to edit zoom and focus.";
+    block.onpointerdown = event => dragReframeSection(event, edit.id);
     block.onclick=()=>selectZoom(edit.id);
     track.append(block);
   }
+}
+
+function dragReframeSection(event, id) {
+  if (event.button !== 0) return;
+  event.preventDefault(); event.stopPropagation();
+  const section = getEdit(id), ordered = zoomSections(), index = ordered.indexOf(section);
+  const edge = event.target.closest(".edge");
+  const part = edge?.classList.contains("l") ? "start" : edge ? "end" : "move";
+  const initial = {...section}, origin = event.clientX, width = $("timelineContent").clientWidth;
+  selectZoom(id); timeline.dragging = "reframe";
+  const target = $("zoomTrack").querySelector(`[data-edit-id="${id}"]`);
+  target.setPointerCapture(event.pointerId);
+  const left = ordered[index-1]?.end || 0, right = ordered[index+1]?.start ?? duration();
+  let moved = false;
+  const move = next => {
+    if (next.pointerId !== event.pointerId || (!moved && Math.abs(next.clientX-origin) < 3)) return;
+    if (!moved) { checkpoint(); moved = true; }
+    const dt = (next.clientX-origin)/width*duration(), minLength = Math.min(.1, initial.end-initial.start);
+    const updated = {...initial};
+    if (part === "start") updated.start = clamp(initial.start+dt, left, initial.end-minLength);
+    else if (part === "end") updated.end = clamp(initial.end+dt, initial.start+minLength, right);
+    else {
+      const delta = clamp(dt, left-initial.start, right-initial.end);
+      updated.start = initial.start+delta; updated.end = initial.end+delta;
+    }
+    updated.start = +updated.start.toFixed(3); updated.end = +updated.end.toFixed(3);
+    if (EditorModel.validateReframe(updated, duration(), S.edits, id)) return;
+    editorStore.dispatch("edit:drag", state => Object.assign(state.edits.find(edit=>edit.id===id), updated));
+    positionTimelineBlock(target, updated); syncZoomSelection();
+    sourcePlayer().currentTime = (updated.start+updated.end)/2;
+  };
+  const finish = next => {
+    if (next.pointerId !== event.pointerId) return;
+    target.removeEventListener("pointermove", move); target.removeEventListener("pointerup", finish); target.removeEventListener("pointercancel", finish);
+    if (next.type === "pointercancel") editorStore.dispatch("edit:drag", state => Object.assign(state.edits.find(edit=>edit.id===id), initial));
+    timeline.dragging = null;
+    renderReframeSections(); renderZoomSelectList(); renderTimeline(); render();
+  };
+  target.addEventListener("pointermove", move); target.addEventListener("pointerup", finish); target.addEventListener("pointercancel", finish);
 }
 
 for(const [id,key]of Object.entries({

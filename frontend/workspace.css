@@ -216,3 +216,33 @@ button.primary, a.button.primary { background: var(--accent); color: var(--accen
 .workspace-project-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .workspace-project-actions > span { margin: 0; color: var(--muted); font-size: 11px; }
 @media(max-width:600px) { .preview-heading #toolbar { flex-wrap: wrap; } #toolbar[data-mode="select"] #modeHint { display: none; } }
+
+/* Project menu: grouped native controls, with keyboard navigation. */
+.app-menu nav { width: 272px; padding: 8px; max-height: calc(100dvh - 90px); overflow-y: auto; }
+.app-menu nav > .menu-section-label { display: block; padding: 7px 10px 5px; color: var(--muted); font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; border-radius: 0; }
+.app-menu nav > .menu-divider { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 12px; }
+.app-menu nav > button, .app-menu nav > a { min-height: 36px; padding: 8px 10px; gap: 10px; align-items: center; background: transparent; font-size: 12px; }
+.app-menu nav svg { flex: 0 0 17px; width: 17px; height: 17px; color: var(--muted); }
+.app-menu nav > button:hover:not(:disabled), .app-menu nav > a:hover { background: var(--surface-2); }
+.app-menu nav > button:disabled { color: var(--muted); background: transparent; }
+.app-menu nav > button:focus-visible, .app-menu nav > a:focus-visible, .app-menu nav select:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.app-menu nav .appearance-picker { padding: 8px 10px; border: 0; margin: 0; font-size: 12px; }
+.app-menu nav .appearance-picker select { width: 116px; padding: 6px 8px; }
+@media(max-width:360px) { .app-menu nav { width: min(272px, calc(100vw - 24px)); } }
+
+.range-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 0 12px; font-size: 12px; }
+.range-actions > span { margin-right: auto; color: var(--muted); }
+.range-selection { position: absolute; top: 0; bottom: 0; pointer-events: none; z-index: 2; border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+#waveformTrack, #timelineRuler { touch-action: none; }
+.timeline-block.zoom .edge { cursor: ew-resize; }
+
+/* One compact, temporary review surface for rendered range previews. */
+#resultPreviewDialog { width: min(960px, 92vw); max-width: 92vw; }
+#rangePreviewVideo { display: block; width: 100%; max-height: min(60vh, calc(100dvh - 300px)); background: #111; margin: 12px 0; }
+#rangePreviewAudio { width: 100%; margin: 12px 0; }
+#resultPreviewDialog .hidden { display: none; }
+#audioFinishControls { margin: 12px 0; }
+
+.pause-pagination { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 10px 0; }
+.pause-pagination .small { margin: 0; text-align: center; }
+.pause-row .pause-covered { color: var(--muted); font-size: 11px; white-space: nowrap; }

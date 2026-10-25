@@ -32,7 +32,7 @@ function renderTimeline() {
     marker.title = `Suggested pause ${fmt(suggestion.start)}–${fmt(suggestion.end)}`;
     marker.setAttribute("aria-label", marker.title);
     marker.setAttribute("aria-pressed", String(suggestion.selected));
-    marker.onclick = () => { suggestion.selected = !suggestion.selected; renderSilenceReview(); };
+    marker.onclick = () => { setPauseSelection(suggestion, !suggestion.selected); renderSilenceReview(); };
     $("pauseTrack").append(marker);
   }
   for (const row of timelineRows) {

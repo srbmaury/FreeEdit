@@ -24,7 +24,9 @@ def verify_session(token: str | None) -> str | None:
         return None
     try:
         owner, signature = token.split(".", 1)
-        if any(c not in "0123456789abcdef" for c in owner):
+        if len(owner) != 48 or len(signature) != 64 or any(
+            c not in "0123456789abcdef" for c in owner + signature
+        ):
             return None
         expected = hmac.new(_SECRET, owner.encode(), hashlib.sha256).hexdigest()
         return owner if hmac.compare_digest(signature, expected) else None

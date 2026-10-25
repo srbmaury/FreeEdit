@@ -49,6 +49,7 @@
     side.classList.toggle("is-edit-inspector", pane === "edits");
     side.setAttribute("aria-label", `${pane === "edits" ? "Edit" : pane.charAt(0).toUpperCase() + pane.slice(1)} settings`);
     if (pane === "background") byId("backgroundPanel").open = true;
+    if (pane === "pauses" && S.job) renderSilenceReview();
     for (const [name, node] of Object.entries(panes)) node.hidden = name !== pane;
     for (const button of rail.querySelectorAll("button")) {
       const active = button.dataset.pane === pane && (pane !== "edits" || button.dataset.mode === (mode || "select"));

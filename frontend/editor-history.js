@@ -24,16 +24,18 @@ function restoreHistory(redo = false) {
   });
   syncReframeControls();
   syncBackgroundControls(); invalidateBackgroundPreview();
+  renderSilenceReview();
 }
 $("undoBtn").onclick = () => restoreHistory();
 $("redoBtn").onclick = () => restoreHistory(true);
 function editSignature() {
-  return JSON.stringify({ edits: S.edits.map(EditorModel.editableProperties), presenter: presenterProject(), background: getBackgroundSettings(), reframe: EditorModel.exportReframe(S.reframe, S.edits), denoise: $("denoise").checked, strength: $("strength").value, preset: $("exportPreset").value });
+  return JSON.stringify({ audio: getAudioSettings(), edits: S.edits.map(EditorModel.editableProperties), presenter: presenterProject(), background: getBackgroundSettings(), reframe: EditorModel.exportReframe(S.reframe, S.edits), denoise: $("denoise").checked, strength: $("strength").value, preset: $("exportPreset").value });
 }
 function refreshExportState() {
   if (!S.job) return;
   if (typeof scheduleProjectSave === "function") scheduleProjectSave();
   updatePresetInfo();
+  if (typeof refreshResultPreview === "function") refreshResultPreview();
   $("undoBtn").disabled = !S.undo.length;
   $("redoBtn").disabled = !S.redo.length;
   const removed = cutRanges().reduce((sum, [a, b]) => sum + b - a, 0);
@@ -91,6 +93,7 @@ function setBusy(operation) {
   const wasBusy = !!S.operation;
   S.operation = operation;
   $("processBtn").disabled = !!operation;
+  $("resultPreviewBtn").disabled = !!operation;
   $("detectSilenceBtn").disabled = !!operation;
   $("retryPausesBtn").disabled = !!operation;
   $("noisePreviewBtn").disabled = !!operation || !!getPresenterSettings();
@@ -98,6 +101,8 @@ function setBusy(operation) {
   $("backgroundControls").inert = !!operation;
   $("backgroundMode").disabled = !!operation;
   $("videosPanel").inert = !!operation;
+  $("silenceReview").inert = !!operation;
+  $("audioFinishControls").inert = !!operation || getPresenterSettings()?.sound === "muted";
   $("compositionPreviewPlayer").pause();
   if (operation) $("backgroundPreviewPlayer").pause();
   $("cancelProcessingBtn").disabled = false;
@@ -115,7 +120,7 @@ function setBusy(operation) {
 function updatePresetInfo() {
   const preset = $("exportPreset").value;
   if (!S.job.has_video || preset === "audio_only") {
-    $("presetInfo").textContent = "WAV · 48 kHz · uncompressed audio. Video, text, and masks are excluded; cuts and noise reduction are included.";
+    $("presetInfo").textContent = "WAV · 48 kHz · uncompressed audio. Video, text, and masks are excluded; cuts, noise reduction, leveling and fades are included.";
     return;
   }
   const limits = [LIMITS.max_output_side, LIMITS.presets?.[preset]?.max_side || (preset === "small" ? 1280 : 0)].filter(v => v > 0);

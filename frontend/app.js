@@ -196,6 +196,8 @@ function openEditor(job) {
   S.edits = [];
   S.undo = []; S.redo = [];
   resetNoisePreview();
+  resetResultPreview();
+  restoreAudioSettings();
   resetBackground();
   resetVideos();
   S.exportSignature = null; S.reviewing = false;
@@ -203,6 +205,7 @@ function openEditor(job) {
   if (typeof syncReframeControls === "function") syncReframeControls();
   S.operation = null; S.suggestions = [];
   resetTimeline();
+  resetSilenceRange();
   show($("silenceReview"), false);
   $("silenceStatus").textContent = "";
   show($("retryPausesBtn"), false);
