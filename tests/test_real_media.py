@@ -1,0 +1,80 @@
+"""Real FFmpeg tests of audio, cuts, timed Reframe, short output previews.
+
+All assets are synthetic and generated on the runner, never user recordings.
+"""
+import shutil
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+from backend import pipeline, rendering
+
+
+@unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"),
+                     "FFmpeg and FFprobe required")
+class RealMediaTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.source = self.root / "input.mp4"
+        subprocess.run([
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=18:duration=4",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=4:sample_rate=48000",
+            "-c:v", "libx264", "-preset", "ultrafast", "-threads", "1",
+            "-c:a", "aac", "-shortest", str(self.source),
+        ], check=True, capture_output=True)
+
+    @staticmethod
+    def settings():
+        return {
+            "denoise": False, "atten_lim": None, "preset": "balanced",
+            "edits": [{"type":"hide","style":"black","x":8,"y":8,"w":20,"h":20,"start":.5,"end":3}],
+            "cuts": [{"start":1.5,"end":1.8}],
+            "audio": {"level_speech":True,"fade_in":.3,"fade_out":.3},
+            "background": None, "presenter": None,
+            "reframe": {
+                "aspect":"original","zoom":1,"focus_x":.5,"focus_y":.5,
+                "sections":[{"start":1.2,"end":2.5,"zoom":1.7,
+                             "focus_x":.6,"focus_y":.4,"transition":.2}],
+            },
+        }
+
+    def test_full_export_keeps_audio_and_correct_cut_duration(self):
+        work = self.root / "full"
+        work.mkdir()
+        out = rendering.render(self.source,work,self.settings(),lambda *_:None)
+        info = pipeline.probe(out)
+        self.assertTrue(info.has_video)
+        self.assertTrue(info.has_audio)
+        self.assertEqual((info.width,info.height),(160,90))
+        self.assertAlmostEqual(info.duration,3.7,delta=.2)
+
+    def test_selected_preview_matches_retained_range_and_audio(self):
+        work = self.root / "preview"
+        work.mkdir()
+        output,ranges = rendering.preview(
+            self.source,None,work,self.settings(),1,3,4,lambda *_:None)
+        media = pipeline.probe(output)
+        self.assertTrue(media.has_video)
+        self.assertTrue(media.has_audio)
+        self.assertEqual(ranges,[(1,1.5),(1.8,3)])
+        self.assertAlmostEqual(media.duration,1.7,delta=.25)
+
+    def test_audio_only_leveling_and_fades(self):
+        work=self.root/"audio"
+        work.mkdir()
+        out=pipeline.process(self.source,work,denoise_audio=False,atten_lim=None,
+            edits=[],cuts=[{"start":1,"end":1.4}],progress=lambda *_:None,
+            preset="audio_only",
+            audio={"level_speech":True,"fade_in":.3,"fade_out":.3})
+        info=pipeline.probe(out)
+        self.assertFalse(info.has_video)
+        self.assertTrue(info.has_audio)
+        self.assertAlmostEqual(info.duration,3.6,delta=.2)
+
+
+if __name__=="__main__":
+    unittest.main()
