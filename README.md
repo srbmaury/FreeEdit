@@ -91,7 +91,7 @@ After installing the dependencies:
 ```sh
 .venv/bin/python -m backend.preflight --verify-render
 .venv/bin/python -m unittest discover -s tests -v
-node --test tests/*.cjs tests/*.mjs
+node --test tests/*.cjs tests/test_*.mjs
 ```
 
 GitHub Actions also runs a Chromium end-to-end upload/edit/export check. Synthetic tests do not replace manual verification with actual recordings and optional segmentation. More details: [development](docs/DEVELOPMENT.md).
