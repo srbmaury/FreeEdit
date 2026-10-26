@@ -40,7 +40,7 @@ jobs:
         run: |
           for file in frontend/*.js frontend/*.mjs; do node --check "$file"; done
       - name: Run frontend regression tests
-        run: node --test tests/*.cjs
+        run: node --test tests/*.cjs tests/test_*.mjs
 
   browser-smoke:
     runs-on: ubuntu-latest
@@ -62,7 +62,7 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Generate synthetic sample and start editor
         run: |
-          ffmpeg -hide_banner -loglevel error -y -f lavfi -i "testsrc2=size=320x180:rate=24:duration=4" -c:v libx264 -preset ultrafast -threads 1 /tmp/freeedit-ci-sample.mp4
+          ffmpeg -hide_banner -loglevel error -y -f lavfi -i "testsrc2=size=320x180:rate=24:duration=4" -f lavfi -i "sine=frequency=440:duration=4" -c:v libx264 -preset ultrafast -threads 1 -c:a aac -shortest /tmp/freeedit-ci-sample.mp4
           uvicorn backend.app:app --host 127.0.0.1 --port 8765 > /tmp/freeedit-browser-server.log 2>&1 &
           for i in {1..40}; do
             if curl --fail --silent http://127.0.0.1:8765/healthz; then exit 0; fi

@@ -2,9 +2,24 @@
 
 // Undo/redo, export signatures and review state.
 // ---------- history and export review ----------
-function snapshot() { return JSON.stringify({edits: S.edits, background: S.background, presenter: presenterProject(), reframe: S.reframe}); }
-function checkpoint() {
-  const current = snapshot();
+let audioHistoryState = null;
+function audioHistorySnapshot() {
+  return {audio: getAudioSettings(), denoise: $("denoise").checked, strength: $("strength").value};
+}
+function snapshot() {
+  return JSON.stringify({edits: S.edits, background: S.background, presenter: presenterProject(),
+    reframe: S.reframe, ...audioHistorySnapshot()});
+}
+function audioSettingsChanged() {
+  if (S.job && audioHistoryState) {
+    const previous = JSON.stringify({...JSON.parse(snapshot()), ...audioHistoryState});
+    if (previous !== snapshot()) checkpoint(previous);
+  }
+  refreshExportState();
+}
+function checkpoint(current = snapshot()) {
+  // Also used directly as a focus listener; DOM events are not snapshots.
+  if (typeof current !== "string") current = snapshot();
   if (S.undo.at(-1) !== current) S.undo.push(current);
   if (S.undo.length > 100) S.undo.shift();
   S.redo = [];
@@ -16,6 +31,9 @@ function restoreHistory(redo = false) {
   to.push(snapshot());
   const restored = JSON.parse(from.pop());
   restorePresenter(restored.presenter, true);
+  restoreAudioSettings(restored.audio);
+  $("denoise").checked = restored.denoise;
+  $("strength").value = restored.strength;
   editorStore.dispatch("history:restore", state => {
     state.edits = restored.edits;
     state.background = restored.background;
@@ -33,6 +51,7 @@ function editSignature() {
 }
 function refreshExportState() {
   if (!S.job) return;
+  audioHistoryState = audioHistorySnapshot();
   if (typeof scheduleProjectSave === "function") scheduleProjectSave();
   updatePresetInfo();
   if (typeof refreshResultPreview === "function") refreshResultPreview();
@@ -41,13 +60,27 @@ function refreshExportState() {
   const removed = cutRanges().reduce((sum, [a, b]) => sum + b - a, 0);
   $("noisePreviewBtn").disabled = !!S.operation || !!getPresenterSettings();
   $("noisePreviewBtn").title = getPresenterSettings() ? "The noise sample uses the main recording. Export to hear noise reduction on the combined sound." : "";
-  $("exportSummary").textContent = `${fmt(Math.max(0, duration() - removed))} output · ${S.edits.filter(e => e.type === "cut").length} cuts · ${S.edits.filter(e => e.type === "hide").length} masks · Reframe ${EditorModel.sections(S.edits).length ? EditorModel.sections(S.edits).length + (EditorModel.sections(S.edits).length === 1 ? " portion" : " portions") : S.reframe && (S.reframe.aspect !== "original" || S.reframe.zoom > 1.001) ? "whole video" : "off"} · Noise reduction ${$("denoise").checked ? "on" : "off"}${getBackgroundSettings() && $("exportPreset").value !== "audio_only" ? " · Background " + S.background.mode : ""}`;
+  const cuts = S.edits.filter(e => e.type === "cut").length;
+  const masks = S.edits.filter(e => e.type === "hide").length;
+  const portions = EditorModel.sections(S.edits).length;
+  const reframe = portions ? `${portions} ${portions === 1 ? "portion" : "portions"}`
+    : S.reframe && (S.reframe.aspect !== "original" || S.reframe.zoom > 1.001) ? "whole video" : "off";
+  const summary = [
+    `${fmt(Math.max(0, duration() - removed))} output`,
+    `${cuts} ${cuts === 1 ? "cut" : "cuts"}`,
+    `${masks} ${masks === 1 ? "mask" : "masks"}`,
+    `Reframe ${reframe}`,
+    `Noise reduction ${$("denoise").checked ? "on" : "off"}`,
+  ];
+  if (getBackgroundSettings() && $("exportPreset").value !== "audio_only") summary.push(`Background ${S.background.mode}`);
+  $("exportSummary").textContent = summary.join(" · ");
+  $("originalPreviewBtn").disabled = !S.submittedRanges.length;
   const stale = S.exportSignature !== null && S.exportSignature !== editSignature();
   $("resultNote").textContent = stale ? "Edits changed. Export again to include them; this download is the previous result." : "Rendered export ready to review.";
   $("previewLabel").textContent = S.reviewing ? `${S.compareOriginal ? "Original recording" : "Rendered export"}${stale ? " · edits changed since export" : ""}` : "Editing preview";
 }
-$("denoise").addEventListener("change", refreshExportState);
-$("strength").addEventListener("change", refreshExportState);
+$("denoise").addEventListener("change", audioSettingsChanged);
+$("strength").addEventListener("change", audioSettingsChanged);
 function setReview(reviewing) {
   stopReviewLoop();
   S.reviewing = reviewing;
@@ -70,21 +103,10 @@ $("backToEditBtn").onclick = () => setReview(false);
 $("reviewBtn").onclick = () => setReview(true);
 // Mirror the renderer's retained intervals, including its tiny-fragment rules.
 function keptRangesForExport() {
-  const ranges = cutRanges().filter(([a, b]) => b - a > 0.01);
-  if (!ranges.length) return [[0, duration()]];
-  const keep = []; let t = 0;
-  for (const [a, b] of ranges) { if (a - t > 0.05) keep.push([t, a]); t = Math.max(t, b); }
-  if (duration() - t > 0.05) keep.push([t, duration()]);
-  return keep;
+  return exportRules.retainedRanges(duration(), cutRanges());
 }
 function mapComparisonTime(t, fromOriginal) {
-  let elapsed = 0;
-  for (const [a, b] of S.submittedRanges) {
-    if (fromOriginal && t < b) return elapsed + Math.max(0, t - a);
-    if (!fromOriginal && t < elapsed + b - a) return a + t - elapsed;
-    elapsed += b - a;
-  }
-  return fromOriginal ? elapsed : (S.submittedRanges.at(-1)?.[1] || 0);
+  return exportRules.comparisonTime(S.submittedRanges, t, fromOriginal);
 }
 
 function setBusy(operation) {
@@ -131,4 +153,4 @@ function updatePresetInfo() {
   const w = crop.w, h = crop.h;
   $("presetInfo").textContent = `MP4 · H.264 / AAC · ${w}×${h}. Size depends on the recording.${scale < 0.8 ? " Resolution will be reduced; check small text in the export." : ""}`;
 }
-$("exportPreset").addEventListener("change", refreshExportState);
+$("exportPreset").addEventListener("change", audioSettingsChanged);

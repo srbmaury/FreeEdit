@@ -78,3 +78,25 @@ class SessionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class IndependentInstanceTests(unittest.TestCase):
+    def test_independent_servers_keep_their_own_cookie_and_recording(self):
+        from backend import sessions
+        secret_a, secret_b = b'instance-a', b'instance-b'
+        name_a, name_b = sessions.cookie_name(secret_a), sessions.cookie_name(secret_b)
+        self.assertNotEqual(name_a, name_b)
+        self.assertEqual(name_a, sessions.cookie_name(secret_a))
+        client = TestClient(api.app)
+        job_id = 'abcdef123456'
+        try:
+            with patch.object(sessions, '_SECRET', secret_a), patch.object(api, 'COOKIE', name_a):
+                owner, token = create_session()
+                client.cookies.set(name_a, token)
+                with patch.dict(api.jobs, {job_id: {'id':job_id, 'owner':owner, 'status':'uploaded'}}, clear=True):
+                    self.assertEqual(client.get(f'/api/jobs/{job_id}').status_code, 200)
+                    with patch.object(sessions, '_SECRET', secret_b), patch.object(api, 'COOKIE', name_b):
+                        self.assertEqual(client.get('/api/limits').status_code, 200)
+                        self.assertEqual(client.get(f'/api/jobs/{job_id}').status_code, 404)
+                    self.assertEqual(client.get(f'/api/jobs/{job_id}').status_code, 200)
+        finally:
+            client.close()

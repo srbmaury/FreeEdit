@@ -198,7 +198,7 @@
   byId("addCutRangeBtn").onclick = () => {
     if (!updateCutDraft()) return;
     const edit = addEdit({type: "cut", start: byId("cutFrom").valueAsNumber, end: Math.min(duration(), byId("cutTo").valueAsNumber)});
-    activate("edits"); select(edit.id);
+    if (edit) { activate("edits"); select(edit.id); }
   };
   activate(current);
 })();

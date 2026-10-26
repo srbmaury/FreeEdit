@@ -25,6 +25,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import pipeline
+from .runtime_info import runtime_info
 from .diagnostics import inspect_setup, require_export_space, require_preview_space
 from .execution import Cancelled, JobControl, cancellation_scope
 from .models import ProcessRequest, SilenceRequest, PreviewRequest, BackgroundPreviewRequest, CompositionPreviewRequest, ResultPreviewRequest
@@ -35,6 +36,7 @@ from .rate_limit import RequestLimiter, category_for, limits as admission_limits
 ROOT = Path(__file__).resolve().parent.parent
 JOBS_DIR = Path(os.environ.get("FREEEDIT_JOBS_DIR", ROOT / "jobs"))
 FRONTEND_DIR = ROOT / "frontend"
+RUNTIME_INFO = runtime_info(ROOT)
 
 # Generous defaults for local use; tighten via env vars when hosting publicly
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", 1024))
@@ -153,6 +155,9 @@ def _job(job_id: str) -> dict:
         job = jobs.get(job_id)
         if not job:
             raise HTTPException(404, "Job not found")
+        now = time.time()
+        if now - job.get("updated_at", 0) >= 30:
+            job["updated_at"] = now
         return dict(job)
 
 
@@ -204,8 +209,8 @@ async def _receive_upload(request: Request, filename: str, protected_job: str | 
             raise HTTPException(429, "Too many uploads are in progress. Try again shortly.",
                                 headers={"Retry-After": "10"})
         active_uploads.add(job_id)
-        work.mkdir()
     try:
+        work.mkdir()
         source = work / f"source{ext}"
         size = since_flush = 0
         limit = MAX_UPLOAD_MB * 1024 * 1024
@@ -380,7 +385,10 @@ def _submit(job_id, req, worker):
         job.update(status="queued", stage="Waiting in queue", progress=None, error=None, updated_at=time.time(),
                    operation=operation,
                    queued_at=time.time(), started_at=None, cancel_requested=False)
+        if worker is _run:
+            job["export_submission_id"] = uuid.uuid4().hex
         if worker is _preview_result:
+            job["result_preview_submission_id"] = uuid.uuid4().hex
             job["result_preview"] = None
         if worker is _analyze_silence:
             job["silence"] = None
@@ -393,10 +401,13 @@ def _submit(job_id, req, worker):
         try:
             job_futures[job_id] = executor.submit(_execute, worker, job_id, req, previous, control)
         except RuntimeError as exc:
+            job.clear()
             job.update(previous)
             job_controls.pop(job_id, None)
             raise HTTPException(503, "Export is temporarily unavailable. Please retry.") from exc
-    return {"ok": True}
+        submission_id = (job.get("export_submission_id") if worker is _run else
+                         job.get("result_preview_submission_id") if worker is _preview_result else None)
+    return {"ok": True, "submission_id": submission_id}
 
 
 def _analyze_silence(job_id: str, req: SilenceRequest, previous: dict) -> None:
@@ -675,6 +686,11 @@ def diagnostics():
     return inspect_setup(JOBS_DIR)
 
 
+@app.get("/api/version")
+def version():
+    return RUNTIME_INFO
+
+
 @app.get("/healthz")
 def healthz():
     return {"ok": True}
@@ -695,7 +711,8 @@ def job_source(job_id: str):
 @app.api_route("/api/jobs/{job_id}/result", methods=["GET", "HEAD"])
 def job_result(job_id: str, request: Request):
     job = _job(job_id)
-    if job["status"] not in ("done", "cancelled") or not job.get("output"):
+    replacing_export = job.get("operation") == "export" and job["status"] in ("queued", "processing", "cancelling")
+    if replacing_export or not job.get("output"):
         raise HTTPException(400, "Result not ready.")
     path = JOBS_DIR / job_id / job["output"]
     stem = Path(job["filename"] or "recording").stem

@@ -54,8 +54,7 @@ export function validateProjectDocument(value, {EditorModel}) {
     }
     return result;
   });
-  if (edits.filter(e => e.type === "cut").length > 100 ||
-      edits.filter(e => e.type === "hide" || e.type === "text").length > 100) fail();
+  if (EditorModel.limitError(edits)) fail();
   return {format: "FreeEdit", version: 2,
     source: {name: source.name, size: source.size, fingerprint: source.fingerprint, algorithm: source.algorithm,
       duration: source.duration, width: source.width, height: source.height, has_video: source.has_video, has_audio: source.has_audio},

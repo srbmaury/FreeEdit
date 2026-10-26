@@ -11,6 +11,15 @@ try {
   await assert.doesNotReject(async()=>page.locator("#chooseFileBtn").waitFor());
   await page.locator("#fileInput").setInputFiles("/tmp/freeedit-ci-sample.mp4");
   await page.locator("#editorView:not(.hidden)").waitFor({timeout:30000});
+  await page.locator('.workspace-rail button').filter({hasText:'Audio'}).click();
+  await page.locator('#denoise').uncheck();
+  await page.locator('#audioFinishControls summary').click();
+  await page.locator('#audioFadeIn').fill('0.5');
+  await page.locator('#audioFadeIn').dispatchEvent('change');
+  await page.locator('#undoBtn').click();
+  assert.equal(await page.locator('#audioFadeIn').inputValue(),'0');
+  await page.locator('#redoBtn').click();
+  assert.equal(await page.locator('#audioFadeIn').inputValue(),'0.5');
   await page.locator(".workspace-rail button").filter({hasText:"Reframe"}).click();
   await page.locator("#reframePortionGroup summary").click();
   await page.locator("#reframeStart").fill("0.5");
@@ -61,7 +70,7 @@ try {
     assert.ok(document.edits.some(edit=>edit.type===type),"Missing "+type);
   }
   assert.ok(!("sections" in (document.settings.reframe||{})));
-  await page.evaluate(doc=>applyProject(validateProject(doc)),document);
+  await page.evaluate(async doc=>applyProject(await validateProject(doc)),document);
   assert.equal(await page.locator("#zoomTrack .timeline-block.zoom").count(),1);
   assert.match(await page.locator("#editsList").innerText(),/Reframe/);
 
@@ -69,6 +78,18 @@ try {
   await page.locator("#processBtn").click();
   await page.locator("#resultPanel:not(.hidden)").waitFor({timeout:120000});
   assert.equal(await page.locator("#downloadBtn").getAttribute("href") !== "#",true);
+  // A finished export must remain available after a new editor context.
+  await page.reload({waitUntil:'domcontentloaded'});
+  await page.locator('#resumeProjectBtn').click();
+  await page.locator('#resultPanel:not(.hidden)').waitFor({timeout:30000});
+  assert.equal(await page.locator('#downloadBtn').isVisible(),true);
+  await page.locator('#resultVideo').evaluate(async player => {
+    if(player.readyState<1) await new Promise((resolve,reject)=>{
+      player.addEventListener('loadedmetadata',resolve,{once:true});
+      player.addEventListener('error',()=>reject(Error('Recovered result failed to load')),{once:true});
+    });
+    if(!Number.isFinite(player.duration)||player.duration<=0)throw Error('Invalid recovered duration');
+  });
   assert.deepEqual(errors,[],"Browser JavaScript errors: "+errors.join("; "));
   console.log("Browser upload → all edit types → v2 project reload → FFmpeg export: PASS");
 } finally {

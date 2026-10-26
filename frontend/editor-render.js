@@ -184,6 +184,7 @@ canvas.addEventListener("pointerdown", (ev) => {
   }
   if (S.mode === "text") {
     const e = addTextAt(p.x, p.y);
+    if (!e) return;
     setMode("select");
     // Stop the canvas click from stealing focus back from the text box
     ev.preventDefault();

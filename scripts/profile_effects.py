@@ -4,9 +4,12 @@ Example: python -m scripts.profile_effects movie.mkv /tmp/noise-new --effect noi
 Noise measures a full-length audio-only export. Background measures full-length
 blur. Presenter measures full-length main video with the selected presenter
 range, background blur, mixed sound, a cut and audio finishing. Optional model
-runtimes must be configured as for the app. This can take a long time.
+runtimes must be configured as for the app. Overlays measures 100 simultaneous
+PNG inputs through the text-overlay path without optional models. This can take a long time.
 """
 import argparse
+import base64
+import subprocess
 import os
 from pathlib import Path
 
@@ -18,7 +21,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('source', type=Path)
     parser.add_argument('output', type=Path)
-    parser.add_argument('--effect', required=True, choices=('noise', 'background', 'presenter'))
+    parser.add_argument('--effect', required=True, choices=('noise', 'background', 'presenter', 'overlays'))
     parser.add_argument('--presenter', type=Path)
     parser.add_argument('--presenter-start', type=float, default=0)
     parser.add_argument('--presenter-end', type=float)
@@ -35,6 +38,16 @@ def main():
     settings = {'denoise': args.effect == 'noise', 'atten_lim': 18, 'edits': [], 'cuts': [],
                 'preset': 'audio_only' if args.effect == 'noise' else 'small'}
     presenter = None
+    if args.effect == 'overlays':
+        # Exercise all 100 PNG inputs without requiring Pillow or optional ML.
+        # The identical synthetic pattern is intentional: this measures rendering resources,
+        # not caption generation, readability, font coverage or visual quality.
+        png = subprocess.check_output([pipeline.FFMPEG(), '-hide_banner', '-loglevel', 'error',
+            '-f', 'lavfi', '-i', 'testsrc=s=240x40:d=1',
+            '-frames:v', '1', '-threads', '1', '-c:v', 'png', '-f', 'image2pipe', 'pipe:1'])
+        image = 'data:image/png;base64,' + base64.b64encode(png).decode()
+        settings['edits'] = [{'type': 'text', 'image': image, 'x': 0, 'y': 0,
+                              'start': 0, 'end': info.duration} for _ in range(100)]
     if args.effect == 'background':
         settings['background'] = {'mode': 'blur', 'blur': 16}
     if args.effect == 'presenter':

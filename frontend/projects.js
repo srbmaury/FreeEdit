@@ -63,7 +63,7 @@ function projectMediaMatches(expected, actual) {
     expected.height === actual.height && expected.has_video === actual.has_video && expected.has_audio === actual.has_audio;
 }
 
-function projectSourceReady(identity) {
+function projectSourceReady(identity, {save = true} = {}) {
   projects.source = identity;
   projects.signature = null;
   projects.savedSignature = null;
@@ -74,7 +74,7 @@ function projectSourceReady(identity) {
   }
   $("saveProjectBtn").disabled = false;
   show($("resumePanel"), false);
-  saveRecovery();
+  if (save) saveRecovery();
 }
 
 function applyProject(project) {
@@ -115,11 +115,13 @@ function scheduleProjectSave() {
 function saveRecovery() {
   const project = projectDocument();
   if (!project) return;
-  const signature = JSON.stringify(project);
+  const exportSubmission = S.exportSubmission?.jobId === S.job.id ? S.exportSubmission : null;
+  const resultPreviewSubmission = previewSubmission?.id === S.job.id ? previewSubmission : null;
+  const signature = JSON.stringify({project, exportSubmission, previewSubmission: resultPreviewSubmission});
   if (!ownsRecovery()) return;
   if (signature === projects.signature) return;
   try {
-    localStorage.setItem(projects.key, JSON.stringify({project, jobId: S.job.id, waveform: S.job.waveform, savedAt: new Date().toISOString()}));
+    localStorage.setItem(projects.key, JSON.stringify({project, exportSubmission, previewSubmission: resultPreviewSubmission, jobId: S.job.id, waveform: S.job.waveform, savedAt: new Date().toISOString()}));
     projects.signature = signature;
     $("projectStatus").textContent = `Saved in this browser · ${new Date().toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})}` ;
   } catch {
@@ -194,26 +196,48 @@ function requestProjectOpen(project, recovery = null) {
 }
 
 async function locateProjectSource(project, recovery) {
+  const initialJob = S.job;
+  const current = () => projects.pending === project && S.job === initialJob && !S.pendingUpload;
+  try { await editorReady; }
+  catch {
+    if (!current()) return;
+    showProjectMessage("Could not load the editor", "Refresh the page and try again.", null, "OK");
+    return;
+  }
+  if (!current()) return;
   if (recovery && /^[a-f0-9]{12}$/.test(recovery.jobId)) {
     try {
       const job = await api(`/api/jobs/${recovery.jobId}`);
+      if (!current()) return;
       // The server's job ID still refers to the same source from this autosave.
       const response = await fetch(`/api/jobs/${recovery.jobId}/source`, {headers: {Range: "bytes=0-0"}, signal: AbortSignal.timeout(10000)});
       if (response.body) await response.body.cancel();
+      if (!current()) return;
       if (response.ok && projectMediaMatches(project.source, job.media)) {
         openEditor({id: job.id, filename: project.source.name, ...job.media, waveform: recovery.waveform});
-        projectSourceReady(project.source);
+        // Apply the document without flushing a half-restored recovery snapshot.
+        projectSourceReady(project.source, {save: false});
+        const submission = exportRules.recoverSubmission(recovery.exportSubmission, job);
+        S.exportSubmission = submission;
+        S.submittedRanges = submission?.ranges || [];
+        S.exportSignature = submission?.signature || "";
+        restoreResultPreviewSubmission(recovery.previewSubmission, job);
         if (["queued", "processing", "cancelling"].includes(job.status)) {
-          S.submittedRanges = keptRangesForExport();
-          S.exportSignature = editSignature();
           setBusy(job.operation);
           show($("procProgress"));
           setProgress("Reconnecting to processing…", null);
           poll();
+        } else {
+          if (job.status === "done" && job.output) processDone(job);
+          if (job.operation === "result-preview" && job.result_preview && recovery.previewSubmission) {
+            resultPreviewDone(job.result_preview);
+          }
         }
+        saveRecovery();
         return;
       }
     } catch { /* Expired sources can be selected again below. */ }
+    if (!current()) return;
   }
   showProjectMessage("Locate the original recording", `Choose “${project.source.name}” (${(project.source.size / 1048576).toFixed(1)} MB). The recording is not included in the project. Its contents will be checked before your edits are restored.`, () => $("projectSourceInput").click(), "Choose recording");
 }
@@ -306,3 +330,12 @@ $("takeRecoveryBtn").onclick = () => {
   }, "Use this tab");
 };
 setInterval(() => { if (S.job && projects.source) { ownsRecovery(); saveRecovery(); } }, 5000);
+
+// Keep a visible editor (or playing source) alive even when media is fully buffered.
+async function touchOpenRecording() {
+  if (!S.job || S.operation || (document.hidden && sourcePlayer().paused)) return;
+  const id = S.job.id;
+  try { await api(`/api/jobs/${id}`); } catch { /* Normal processing/relink flows report connection failures. */ }
+}
+setInterval(touchOpenRecording, 60000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) touchOpenRecording(); });

@@ -28,7 +28,7 @@ function resetFile() {
   S.job = null;
   S.edits = []; S.suggestions = [];
   S.undo = []; S.redo = [];
-  S.selected = null; S.exportSignature = null;
+  S.selected = null; S.exportSignature = null; S.exportSubmission = null;
   S.reframe = null;
   setBusy(null);
   $("strength").value = "18";

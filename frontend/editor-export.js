@@ -44,12 +44,14 @@ async function startExport() {
   const signature = editSignature();
   const ranges = keptRangesForExport();
   try {
-    await api(`/api/jobs/${id}/process`, {
+    const submission = await api(`/api/jobs/${id}/process`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
     });
     if (S.job?.id !== id) return;
     S.exportSignature = signature;
     S.submittedRanges = ranges;
+    S.exportSubmission = {jobId: id, submissionId: submission.submission_id, signature, ranges};
+    saveRecovery();
     S.resultIsAudio = $("exportPreset").value === "audio_only" || !S.job.has_video;
     show($("resultPanel"), false);
     setReview(false);
@@ -60,7 +62,8 @@ async function startExport() {
     if (S.job?.id !== id) return;
     // A lost response may follow a successful submission. Check before retrying.
     if (!err.status || err.status === 409) {
-      S.exportSignature = signature; S.submittedRanges = ranges;
+      S.exportSignature = ""; S.submittedRanges = []; S.exportSubmission = null;
+      saveRecovery();
       show($("procProgress"));
       setProgress("Checking export status…", null);
       poll();

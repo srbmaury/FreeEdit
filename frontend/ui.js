@@ -109,3 +109,13 @@ for (const dialog of document.querySelectorAll("dialog")) {
     returnFocus = null;
   });
 }
+
+// Version details stay in About rather than occupying editor space.
+appMenu.querySelector('[data-dialog="aboutDialog"]').addEventListener("click", async () => {
+  const label = document.getElementById("runtimeVersion");
+  label.textContent = "Checking running version…";
+  try {
+    const info = await api("/api/version", {signal: AbortSignal.timeout(5000)});
+    label.textContent = `${info.revision || "Source archive"} · source ${info.source_id}${info.modified ? " · local changes" : ""} · started ${new Date(info.started_at).toLocaleString()}`;
+  } catch { label.textContent = "Version unavailable. Restart FreeEdit from the checkout you want to use."; }
+});

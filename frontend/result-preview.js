@@ -3,6 +3,7 @@
 // A bounded render is separate from the downloadable full export.
 let resultSample = null;
 let pendingResultSample = null;
+let previewSubmission = null;
 let rangeOriginal = false;
 function getAudioSettings() {
   return {level_speech: $("levelSpeech").checked,
@@ -15,7 +16,7 @@ function restoreAudioSettings(settings = {}) {
   $("audioFadeOut").value = settings.fade_out || 0;
 }
 function resetResultPreview() {
-  resultSample = null; pendingResultSample = null;
+  resultSample = null; pendingResultSample = null; previewSubmission = null;
   $("resultPreviewDialog").close();
   for (const player of [$("rangePreviewVideo"), $("rangePreviewAudio")]) {
     player.pause(); player.removeAttribute("src"); player.load();
@@ -30,7 +31,7 @@ function refreshResultPreview() {
   $("audioFinishControls").inert = !!S.operation || getPresenterSettings()?.sound === "muted";
 }
 for (const id of ["levelSpeech", "audioFadeIn", "audioFadeOut"]) {
-  $(id).addEventListener("change", refreshExportState);
+  $(id).addEventListener("change", audioSettingsChanged);
 }
 $("resultPreviewBtn").onclick = async () => {
   if (!S.job || S.operation || !validateVideos()) return;
@@ -42,22 +43,41 @@ $("resultPreviewBtn").onclick = async () => {
   const end = Math.min(duration(), selected?.end ?? start + 15, start + 15);
   const id = S.job.id;
   resultSample = null;
-  pendingResultSample = {signature: editSignature(), id};
+  pendingResultSample = {signature: editSignature(), id, submissionId: null};
+  previewSubmission = pendingResultSample;
+  saveRecovery();
   window.dispatchEvent(new CustomEvent("freeedit:workspace", {detail:"export"}));
   setBusy("result-preview");
   show($("procError"), false); show($("procProgress"));
   $("resultPreviewStatus").textContent = `Rendering ${fmt(start)}–${fmt(end)}${selected && selected.end > end ? " · first 15 seconds of selection" : ""}…`;
   setProgress("Preparing result preview…", null);
   try {
-    await api(`/api/jobs/${id}/result-preview`, {method:"POST", headers:{"Content-Type":"application/json"},
+    const response = await api(`/api/jobs/${id}/result-preview`, {method:"POST", headers:{"Content-Type":"application/json"},
       body:JSON.stringify({...buildPayload(), start, end})});
-    if (S.job?.id === id) poll();
+    if (S.job?.id === id) {
+      previewSubmission.submissionId = response.submission_id;
+      saveRecovery();
+      poll();
+    }
   } catch (error) {
     if (S.job?.id !== id) return;
-    if (!error.status || error.status === 409) poll();
+    if (!error.status || error.status === 409) {
+      if (pendingResultSample) pendingResultSample.signature = "";
+      saveRecovery();
+      poll();
+    }
     else resultPreviewDone({error:error.message});
   }
 };
+function restoreResultPreviewSubmission(saved, job) {
+  const reconnecting = job.operation === "result-preview" && ["queued", "processing", "cancelling"].includes(job.status);
+  previewSubmission = exportRules.recoverPreviewSubmission(saved, job) ||
+    (reconnecting || saved?.id === job.id ? {id: job.id, signature: "", submissionId: null} : null);
+  if (job.operation === "result-preview") {
+    // Unknown admission identity stays stale, but the returned sample remains reviewable.
+    pendingResultSample = previewSubmission;
+  }
+}
 function resultPreviewDone(sample) {
   setBusy(null); show($("procProgress"), false);
   if (sample.error) { $("resultPreviewStatus").textContent = sample.error; pendingResultSample = null; return; }
@@ -66,7 +86,9 @@ function resultPreviewDone(sample) {
   pendingResultSample = null;
   $("resultPreviewStatus").textContent = `Preview ready · ${fmt(sample.start)}–${fmt(sample.end)} of original timing.`;
   const outputLength = sample.ranges.reduce((total, [a, b]) => total + b - a, 0);
-  $("resultPreviewDescription").textContent = `${fmt(sample.start)}–${fmt(sample.end)} source · ${fmt(outputLength)} result · Export settings`;
+  const settingsNote = resultSample.signature === editSignature() ? "Export settings"
+    : resultSample.signature ? "Edits changed since preview" : "Preview settings could not be verified";
+  $("resultPreviewDescription").textContent = `${fmt(sample.start)}–${fmt(sample.end)} source · ${fmt(outputLength)} result · ${settingsNote}`;
   show($("rangePreviewVideo"), sample.file.endsWith(".mp4"));
   show($("rangePreviewAudio"), sample.file.endsWith(".wav"));
   rangeOriginal = false;

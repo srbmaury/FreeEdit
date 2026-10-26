@@ -66,7 +66,13 @@ function syncCard(e) {
 }
 
 // ---------- edits ----------
+function admitEdits(additions) {
+  const error = EditorModel.limitError([...S.edits, ...additions]);
+  if (error) showProjectMessage("Edit limit reached", error, null, "OK");
+  return !error;
+}
 function addEdit(props) {
+  if (!admitEdits([props])) return null;
   const d = duration();
   const start = sourcePlayer().currentTime >= d - 0.05 ? 0 : +sourcePlayer().currentTime.toFixed(1);
   const e = {id:S.nextId++,start,end:+d.toFixed(2),...props};

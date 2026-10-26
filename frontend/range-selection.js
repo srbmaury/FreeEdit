@@ -88,6 +88,26 @@ rangeSurface.addEventListener("pointerdown", event => {
 rangeSurface.addEventListener("click", event => {
   if (rangeSelection.suppressClick) { event.preventDefault(); event.stopImmediatePropagation(); }
 }, true);
+function markRangeEdge(edge) {
+  const time = clamp(sourcePlayer().currentTime, 0, duration());
+  const previous = rangeSelection.range || {start: 0, end: duration()};
+  const range = edge === "start"
+    ? {start: time, end: previous.end > time ? previous.end : duration()}
+    : {start: previous.start < time ? previous.start : 0, end: time};
+  if (range.end - range.start < .05) return;
+  sourcePlayer().pause(); S.auditionUntil = null;
+  rangeSelection.range = range;
+  displayRangeSelection();
+}
+document.addEventListener("keydown", event => {
+  if (!S.job || S.reviewing || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey ||
+      event.target.closest("input, textarea, select, [contenteditable]") || document.querySelector("dialog[open]")) return;
+  const key = event.key.toLowerCase();
+  if (key === "i" || key === "o") {
+    event.preventDefault();
+    markRangeEdge(key === "i" ? "start" : "end");
+  }
+});
 document.addEventListener("keydown", event => {
   if (event.key === "Escape" && !event.target.closest("input, textarea, select") && !document.querySelector("dialog[open]")) clearRangeSelection();
 });

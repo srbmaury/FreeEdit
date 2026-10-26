@@ -134,3 +134,22 @@ This is an incremental migration. Feature adapters still share classic-script st
 ## Media analysis boundary
 
 `backend/waveform.py` reduces a PCM stream to a bounded envelope with fixed 64 KiB reads. It has no FFmpeg, process or disk dependencies. `pipeline.audio_waveform` owns decoder lifecycle, timeout, cancellation and error translation. Decoded waveform audio is no longer spooled to disk. Focused tests cover fragmented sample boundaries, partial bins, source-time padding and read-size bounds.
+
+
+## Review follow-up invariants
+
+All editor creation paths (manual edits, captions, pause cuts and timed Reframe) check `EditorModel.limitError` before IDs, undo or document state are changed. The same rule validates saved projects: 200 combined objects, 100 cuts, 100 masks/text and 20 Reframe portions.
+
+Export admission returns a server submission identity. Browser recovery stores that identity with the original document signature and retained-time ranges, independently of later edits. Resume uses those values only when the job's identity matches. Missing or mismatched metadata leaves the export stale and disables source/result timing comparison rather than inventing matching settings.
+
+Authorized status/media reads refresh retention at most every 30 seconds. A visible editor (or playing source) sends a status heartbeat every minute, including when paused and fully buffered. Unauthorized reads cannot refresh another session's files.
+
+Audio-only presenter rendering calls a lossless sound mixer with the shared timing, volume and sound-source rules. It does not render the inset or generate segmentation masks; noise reduction, cuts, leveling and fades then run on the mixed audio.
+
+## Export state ownership
+
+`export-state.mjs` owns pure retained-range construction, source/result time mapping and recovered submission validation. It receives plain values, never reads the DOM or current editor document, and returns a copied submission snapshot. `editor-history.js` adapts these rules to comparison controls; `projects.js` owns recovery storage and waits for module initialization; `editor-export.js` owns submission and polling. This is a bounded extraction, not a claim that all feature globals have been removed.
+
+The optional About identity is a server-start snapshot. `runtime_info.py` fingerprints backend/frontend source and records Git metadata when available. The endpoint omits local paths. `launch.py` prints local checkout/runtime paths to the terminal and diagnoses a busy port before running preflight. Runtime code is not hot-reloaded; static-file changes still require a restart to avoid mixing frontend and backend revisions.
+
+Recovery now defers its storage write until document, full-export identity and preview identity are restored together. A completed full export reconnects its result/download controls. Result previews receive an independent server admission ID; their submitted document signature is saved separately from later edits. Reconnected previews can finish or reopen after completion. Unknown identities remain reviewable with explicitly unverified/stale settings instead of being labeled current.
