@@ -57,7 +57,7 @@ Startup checks essential FFmpeg codecs/filters, disk space, writable temporary s
 .venv/bin/python -m backend.preflight --verify-render
 .venv/bin/python -m backend.preflight --warm-model
 .venv/bin/python -m unittest discover -s tests -v
-node --test tests/*.cjs tests/*.mjs
+node --test tests/*.cjs tests/test_*.mjs
 ```
 
 `--verify-render` creates a synthetic one-second sample and does not use private recordings. `--warm-model` imports/initializes DeepFilterNet; it may download files if not cached.
