@@ -1,0 +1,395 @@
+{
+  "schema_version": 1,
+  "note": "Historical local measurements, not automated acceptance thresholds, platform guarantees, or release certifications. Each entry preserves the original captured data; run scripts to reproduce.",
+  "snapshots": {
+    "performance-measurement": {
+      "platform": "macOS-26.5.2-arm64-arm-64bit",
+      "machine": "arm64",
+      "seconds": 600,
+      "synthetic": true,
+      "resolution": "1280x720",
+      "fps": 10,
+      "denoise": true,
+      "preset": "small",
+      "export_seconds": 39.85,
+      "waveform_seconds": 0.35,
+      "waveform_bins": 4096,
+      "output_duration": 598,
+      "source_bytes": 123197105,
+      "output_bytes": 71356588,
+      "largest_child_peak_rss_mb": 422.8,
+      "temporary_bytes_after_export": 309753815,
+      "stages": [
+        {
+          "stage": "Reading file",
+          "elapsed_seconds": 0
+        },
+        {
+          "stage": "Extracting audio",
+          "elapsed_seconds": 0.23
+        },
+        {
+          "stage": "Removing background noise",
+          "elapsed_seconds": 0.23
+        },
+        {
+          "stage": "Rendering video",
+          "elapsed_seconds": 16.81
+        }
+      ],
+      "limits": "Largest child RSS is not total simultaneous app/browser memory. Synthetic footage does not establish real-world duration limits."
+    },
+    "demanding-workloads-measurement": {
+      "date": "2026-10-25",
+      "platform": "macOS Apple M5 arm64",
+      "sampling": "Python process and descendants RSS every 0.5s; excludes browser/GPU memory and OS cache; brief peaks can be missed",
+      "source": {
+        "bytes": 1257725297,
+        "duration": 8257.599,
+        "width": 1280,
+        "height": 546,
+        "fps": 24,
+        "audio_channels": 2
+      },
+      "records": [
+        {
+          "operation": "denoise_30s_threads_4",
+          "seconds": 1.956,
+          "process_tree_peak_rss_mib": 665,
+          "result": {
+            "output_duration": 29.999667
+          }
+        },
+        {
+          "operation": "denoise_30s_threads_1",
+          "seconds": 2.326,
+          "process_tree_peak_rss_mib": 668.9,
+          "result": {
+            "output_duration": 29.999667
+          }
+        },
+        {
+          "operation": "full_movie_noise_removal_audio_export",
+          "seconds": 443.631,
+          "process_tree_peak_rss_mib": 678.8,
+          "result": {
+            "media": {
+              "duration": 8257.6,
+              "has_video": false,
+              "has_audio": true,
+              "width": 0,
+              "height": 0,
+              "audio_channels": 2,
+              "frame_rate": 30
+            },
+            "output_bytes": 1585459278,
+            "temporary_bytes": 4756377822
+          }
+        },
+        {
+          "operation": "full_movie_background_blur_export",
+          "seconds": 2096.726,
+          "process_tree_peak_rss_mib": 249.7,
+          "result": {
+            "media": {
+              "duration": 8257.625,
+              "has_video": true,
+              "has_audio": true,
+              "width": 1280,
+              "height": 546,
+              "audio_channels": 2,
+              "frame_rate": 24
+            },
+            "output_bytes": 383447018,
+            "mask_removed": true
+          }
+        },
+        {
+          "operation": "4k60_cut_mask_reframe_level_fade_export",
+          "seconds": 11.385,
+          "process_tree_peak_rss_mib": 823.5,
+          "result": {
+            "media": {
+              "duration": 14,
+              "has_video": true,
+              "has_audio": true,
+              "width": 3840,
+              "height": 2160,
+              "audio_channels": 1,
+              "frame_rate": 60
+            },
+            "output_bytes": 36298981
+          }
+        },
+        {
+          "operation": "4k60_combined_preview",
+          "seconds": 12.175,
+          "process_tree_peak_rss_mib": 823.6,
+          "result": {
+            "media": {
+              "duration": 9,
+              "has_video": true,
+              "has_audio": true,
+              "width": 3840,
+              "height": 2160,
+              "audio_channels": 1,
+              "frame_rate": 60
+            }
+          }
+        },
+        {
+          "operation": "dense_edit_caps_export",
+          "seconds": 4.313,
+          "process_tree_peak_rss_mib": 150.9,
+          "result": {
+            "media": {
+              "duration": 100,
+              "has_video": true,
+              "has_audio": true,
+              "width": 1280,
+              "height": 720,
+              "audio_channels": 1,
+              "frame_rate": 23.8
+            },
+            "output_bytes": 16245958,
+            "cuts": 100,
+            "masks": 80,
+            "zoom_sections": 20
+          }
+        },
+        {
+          "operation": "120s_presenter_blur_mixed_audio_cut_level_fade_export",
+          "seconds": 15.978,
+          "process_tree_peak_rss_mib": 307.8,
+          "result": {
+            "media": {
+              "duration": 118,
+              "has_video": true,
+              "has_audio": true,
+              "width": 1280,
+              "height": 546,
+              "audio_channels": 2,
+              "frame_rate": 24
+            },
+            "output_bytes": 6307313,
+            "composition_removed": true
+          }
+        },
+        {
+          "operation": "cancel_movie_segmentation",
+          "seconds": 3.01,
+          "process_tree_peak_rss_mib": 216.7,
+          "result": {
+            "cancelled": true,
+            "elapsed_seconds": 3.009932500004652,
+            "attached_processes_stopped": true,
+            "mask_removed": false
+          }
+        },
+        {
+          "operation": "cancel_movie_segmentation_after_cleanup_fix",
+          "seconds": 3.009,
+          "process_tree_peak_rss_mib": 219,
+          "result": {
+            "cancelled": true,
+            "elapsed_seconds": 3.0092095830041217,
+            "attached_processes_stopped": true,
+            "mask_removed": true
+          }
+        }
+      ],
+      "denoise_integrity": {
+        "frames": 396364800,
+        "sample_rate": 48000,
+        "channels": 2,
+        "duration": 8257.6,
+        "nonfinite_samples": 0,
+        "clipped_samples": 0,
+        "total_samples": 792729600,
+        "peak": 0.940277099609375
+      },
+      "notes": [
+        "Noise removal: fresh Python runtime, 4 model threads, 5-second chunks, attenuation 18dB; cached model reused.",
+        "Background blur: fresh optional runtime and newly downloaded verified model, two FFmpeg encoder threads.",
+        "4K60 fixture: 15s synthetic 3840x2160 at 60fps, cut/mask/timed zoom/level/fades; not real camera footage.",
+        "Dense fixture: 120s synthetic 720p; failed before balanced-expression fix and passed after.",
+        "Composition: 120s source excerpt and presenter excerpt from movie, not a full-movie composition.",
+        "Fresh venvs isolated; pre-existing Homebrew/system tools and pip wheel caches reused.",
+        "MediaPipe pip check reports wheel platform-tag mismatch on arm64 although installed bindings contain arm64 and runtime/render checks pass."
+      ]
+    },
+    "png-overlay-measurement": {
+      "operation": "overlays_export",
+      "seconds": 1.092,
+      "process_tree_peak_rss_mib": 459.6,
+      "result": {
+        "media": {
+          "duration": 10.0078,
+          "has_video": true,
+          "has_audio": true,
+          "width": 1280,
+          "height": 720,
+          "audio_channels": 1,
+          "frame_rate": 24
+        },
+        "output_bytes": 1467705,
+        "files_bytes_after_export": 1514105
+      },
+      "scope": {
+        "date": "2026-10-26",
+        "platform": "macOS-26.5.2-arm64-arm-64bit",
+        "ffmpeg": "ffmpeg version 9.0.2 Copyright (c) 2000-2026 the FFmpeg developers",
+        "sample_interval_seconds": 0.5,
+        "includes": "profiling Python process and descendants",
+        "excludes": [
+          "browser/GPU memory",
+          "OS page cache",
+          "brief peaks between samples"
+        ],
+        "workload": "10-second generated 720p24 input, 100 simultaneous 240x40 identical synthetic PNG overlays through text-edit path",
+        "quality_claim": false
+      }
+    },
+    "movie-api-validation-20261026": {
+      "upload": {
+        "seconds": 5.105,
+        "bytes": 1257725297,
+        "duration": 8257.599,
+        "waveform_bins": 4096
+      },
+      "pauses": {
+        "total": 454,
+        "analysis_id": "90e8fbbae93b4fd1b808398783fcfa12",
+        "stored_count": 454,
+        "last": {
+          "index": 453,
+          "start": 8230.918,
+          "end": 8257.399
+        }
+      },
+      "full_audio_export": {
+        "seconds": 5.561,
+        "submission_id_matches": true,
+        "output": "output.wav",
+        "media": {
+          "programs": [],
+          "stream_groups": [],
+          "streams": [
+            {
+              "codec_type": "audio",
+              "sample_rate": "48000",
+              "channels": 2
+            }
+          ],
+          "format": {
+            "duration": "8255.598833",
+            "size": "1585075076"
+          }
+        }
+      },
+      "download_during_preview": [
+        206,
+        1024
+      ],
+      "late_preview": {
+        "start": 7800,
+        "end": 7815,
+        "ranges": [
+          [
+            7800,
+            7805
+          ],
+          [
+            7806,
+            7815
+          ]
+        ],
+        "file": "output.mp4",
+        "signature": "9558f1ebdab54e71cee62e331308995e8b5794719002e49b585dc9b9db7de4db",
+        "error": null,
+        "media": {
+          "programs": [],
+          "stream_groups": [],
+          "streams": [
+            {
+              "codec_type": "video"
+            },
+            {
+              "codec_type": "audio",
+              "sample_rate": "48000",
+              "channels": 2
+            },
+            {
+              "codec_type": "data"
+            }
+          ],
+          "format": {
+            "duration": "14.000000",
+            "size": "1101335"
+          }
+        }
+      },
+      "job_id": "1d65ca3d06ac",
+      "whole_output_decode": "audio export and late video preview passed",
+      "environment": {
+        "date": "2026-10-26",
+        "machine": "Apple M5 macOS; same host as earlier measurements",
+        "transport": "real localhost HTTP, streamed upload in 1 MiB chunks",
+        "max_upload_mb": 2048,
+        "denoise": false,
+        "background_segmentation": false,
+        "full_video_export_repeated": false,
+        "browser_validation": false
+      }
+    },
+    "movie-profile-20261026": [
+      {
+        "operation": "waveform",
+        "seconds": 5.042,
+        "process_tree_peak_rss_mib": 44.1,
+        "result": {
+          "bins": 4096
+        }
+      },
+      {
+        "operation": "pauses",
+        "seconds": 3.641,
+        "process_tree_peak_rss_mib": 43.9,
+        "result": {
+          "segments": "see pauses.jsonl",
+          "truncated": true,
+          "total": 454,
+          "range": {
+            "start": 0,
+            "end": 8257.599
+          }
+        }
+      },
+      {
+        "operation": "late_preview",
+        "seconds": 0.732,
+        "process_tree_peak_rss_mib": 108.9,
+        "result": {
+          "media": {
+            "duration": 14.001,
+            "has_video": true,
+            "has_audio": true,
+            "width": 1280,
+            "height": 546,
+            "audio_channels": 2,
+            "frame_rate": 24
+          }
+        }
+      },
+      {
+        "operation": "cancel_export",
+        "seconds": 5.011,
+        "process_tree_peak_rss_mib": 264.5,
+        "result": {
+          "cancelled": true,
+          "children_stopped": true
+        }
+      }
+    ]
+  }
+}
