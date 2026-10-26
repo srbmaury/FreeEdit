@@ -95,6 +95,13 @@ Use **⋯ → About FreeEdit** to compare the server revision, start time and so
 
 The frontend serves static JavaScript with a known script load order, without a bundler. All timed edit types share source-timeline start/end and a common selected ID. Whole-video settings, background and presenter data remain scene-level settings. See [architecture and invariants](ARCHITECTURE.md) before adding another edit type or changing project persistence.
 
+## Documentation hygiene
+
+- Keep the root `README.md` short: product promise, quick start, and links to canonical guides.
+- Update `USAGE.md` for end-user workflows; `DEVELOPMENT.md` for setup/tests; `ARCHITECTURE.md` for enduring invariants; `OPERATIONS.md` for deployment/performance; `SECURITY.md` and `LICENSE_AUDIT.md` for their specialized topics.
+- **Do not add a new Markdown file for every sprint, feature branch or one-time test.** Put durable findings in the appropriate existing guide and link to raw measurement data only when it adds reproducible evidence.
+- Keep scratch plans, local screenshots, generated reports, benchmarking recordings and private logs outside the repository. Git history and pull requests already preserve historical implementation notes.
+
 ## Profiling (opt-in)
 
 ```sh
