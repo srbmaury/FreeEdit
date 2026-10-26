@@ -149,6 +149,7 @@ $("applyPausesBtn").onclick = () => {
     $("silenceStatus").textContent = "Keep at most 100 cuts. Select fewer pauses or remove existing cuts.";
     return;
   }
+  if (!admitEdits(selected.map(segment => ({...segment, type: "cut"})))) return;
   const added = selected.map(({start,end}) => ({id:S.nextId++,type:"cut",start,end}));
   commitEdit("pauses:apply", state => {
     state.edits.push(...added);

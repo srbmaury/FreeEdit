@@ -78,7 +78,7 @@
       <input id="fileInput" type="file" accept=".mov,.mp4,.m4v,.mkv,.webm,.avi,.wav,.mp3,.m4a,.aac,.flac,.ogg,video/*,audio/*" hidden />
       <button type="button" id="chooseFileBtn" class="primary">Choose a file</button>
       <div class="dz-title">Drop a video or audio file here</div>
-      <div class="dz-sub">or choose a file above</div>
+      <div class="dz-sub">or use Choose a file</div>
       <div class="dz-formats">MOV · MP4 · WEBM · MKV · WAV · MP3 · M4A · FLAC</div>
       <div id="retentionNote" class="dz-formats"></div>
       <div id="dzLimits" class="dz-formats"></div>
@@ -166,7 +166,7 @@
               </div>
             </div>
           </div>
-          <p class="timeline-help">Drag across the waveform or ruler to select a range. Click to seek; drag an edit or its edges to adjust timing.</p>
+          <p class="timeline-help">Drag across the waveform or ruler to select a range, or press I / O to mark its start / end. Click to seek; drag an edit or its edges to adjust timing.</p>
         </div>
         <div id="fileMeta" class="meta"></div>
       </div>
@@ -494,7 +494,7 @@
 
   <dialog id="shortcutsDialog" class="info-dialog" aria-labelledby="shortcutsTitle">
     <form method="dialog"><h2 id="shortcutsTitle">Keyboard shortcuts</h2>
-      <dl class="shortcut-list"><dt>Space</dt><dd>Play or pause</dd><dt>V / H / T / X</dt><dd>Edits / Hide area / Add text / Cut section</dd><dt>← / →</dt><dd>Step through the recording; hold Shift for one second</dd><dt>Delete</dt><dd>Remove the selected edit</dd><dt>Esc</dt><dd>Deselect and return to Edits</dd><dt>⌘ or Ctrl + Z</dt><dd>Undo; add Shift to redo</dd></dl>
+      <dl class="shortcut-list"><dt>Space</dt><dd>Play or pause</dd><dt>V / H / T / X</dt><dd>Edits / Hide area / Add text / Cut section</dd><dt>← / →</dt><dd>Step through the recording; hold Shift for one second</dd><dt>I / O</dt><dd>Mark range start / end at the playhead</dd><dt>Delete</dt><dd>Remove the selected edit</dd><dt>Esc</dt><dd>Deselect and return to Edits</dd><dt>⌘ or Ctrl + Z</dt><dd>Undo; add Shift to redo</dd></dl>
       <p class="small">Editing shortcuts apply outside text fields. Use Place in center and the position fields to add overlays with a keyboard.</p>
       <button class="primary">Done</button></form>
   </dialog>
@@ -509,7 +509,7 @@
       <button class="primary">Done</button></form>
   </dialog>
   <dialog id="aboutDialog" class="info-dialog" aria-labelledby="aboutTitle">
-    <form method="dialog"><h2 id="aboutTitle">About FreeEdit</h2><p>A focused, open-source utility for cleaning up audio and video recordings.</p><p>Noise reduction uses DeepFilterNet3. Media analysis and export use FFmpeg.</p><p class="small">No account required. For setup, source code, and known limitations, visit the GitHub repository.</p><button class="primary">Done</button></form>
+    <form method="dialog"><h2 id="aboutTitle">About FreeEdit</h2><p id="runtimeVersion" class="small" role="status"></p><p>A focused, open-source utility for cleaning up audio and video recordings.</p><p>Noise reduction uses DeepFilterNet3. Media analysis and export use FFmpeg.</p><p class="small">No account required. For setup, source code, and known limitations, visit the GitHub repository.</p><button class="primary">Done</button></form>
   </dialog>
   <input id="projectInput" type="file" accept=".json,.freeedit.json" hidden />
   <input id="projectSourceInput" type="file" accept="video/*,audio/*,.mov,.mkv,.wav,.mp3,.m4a,.flac" hidden />

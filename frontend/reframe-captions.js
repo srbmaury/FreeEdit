@@ -66,8 +66,8 @@ $("captionInput").onchange=async event=>{
   try{
     if(file.size>1000000)throw new Error("Choose an SRT file under 1 MB.");
     const cues=freeeditParseSrt(await file.text(),duration());
-    if(S.edits.filter(edit=>edit.type==="hide"||edit.type==="text").length+cues.length>100)
-      throw new Error("FreeEdit supports at most 100 masks and text overlays.");
+    const limit = EditorModel.limitError([...S.edits, ...cues.map(cue => ({...cue, type: "text"}))]);
+    if (limit) throw new Error(limit);
     const fontSize=Math.max(16,Math.round(S.job.height*.045));
     const captions=cues.map(cue=>{
       const caption={id:S.nextId++,type:"text",start:cue.start,end:cue.end,
@@ -116,6 +116,7 @@ $("reframeAddSection").onclick=()=>{
     transition:$("reframeTransition").valueAsNumber};
   const error=EditorModel.validateReframe(section,duration(),S.edits);
   if(error){$("reframeStatus").textContent=error;return;}
+  if (!admitEdits([section])) return;
   S.nextId++;
   commitEdit("edit:add-reframe",state=>{
     state.edits.push(section);

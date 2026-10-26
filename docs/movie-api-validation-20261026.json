@@ -1,0 +1,92 @@
+{
+  "upload": {
+    "seconds": 5.105,
+    "bytes": 1257725297,
+    "duration": 8257.599,
+    "waveform_bins": 4096
+  },
+  "pauses": {
+    "total": 454,
+    "analysis_id": "90e8fbbae93b4fd1b808398783fcfa12",
+    "stored_count": 454,
+    "last": {
+      "index": 453,
+      "start": 8230.918,
+      "end": 8257.399
+    }
+  },
+  "full_audio_export": {
+    "seconds": 5.561,
+    "submission_id_matches": true,
+    "output": "output.wav",
+    "media": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_type": "audio",
+          "sample_rate": "48000",
+          "channels": 2
+        }
+      ],
+      "format": {
+        "duration": "8255.598833",
+        "size": "1585075076"
+      }
+    }
+  },
+  "download_during_preview": [
+    206,
+    1024
+  ],
+  "late_preview": {
+    "start": 7800.0,
+    "end": 7815.0,
+    "ranges": [
+      [
+        7800.0,
+        7805.0
+      ],
+      [
+        7806.0,
+        7815.0
+      ]
+    ],
+    "file": "output.mp4",
+    "signature": "9558f1ebdab54e71cee62e331308995e8b5794719002e49b585dc9b9db7de4db",
+    "error": null,
+    "media": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_type": "video"
+        },
+        {
+          "codec_type": "audio",
+          "sample_rate": "48000",
+          "channels": 2
+        },
+        {
+          "codec_type": "data"
+        }
+      ],
+      "format": {
+        "duration": "14.000000",
+        "size": "1101335"
+      }
+    }
+  },
+  "job_id": "1d65ca3d06ac",
+  "whole_output_decode": "audio export and late video preview passed",
+  "environment": {
+    "date": "2026-10-26",
+    "machine": "Apple M5 macOS; same host as earlier measurements",
+    "transport": "real localhost HTTP, streamed upload in 1 MiB chunks",
+    "max_upload_mb": 2048,
+    "denoise": false,
+    "background_segmentation": false,
+    "full_video_export_repeated": false,
+    "browser_validation": false
+  }
+}

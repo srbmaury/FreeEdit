@@ -11,17 +11,20 @@ def render(source: Path, work: Path, settings: dict, progress, presenter: Path |
     composition_work = work / "composition"
     try:
         if settings.get("presenter"):
-            from .composition import compose
+            from .composition import compose, compose_audio
             info = pipeline.probe(source)
-            required = source.stat().st_size * 4 + presenter.stat().st_size * 2 + int(info.duration * 1024**2)
+            audio_only = settings["preset"] == "audio_only"
+            required = (256 * 1024**2 + int(info.duration * 48000 * 2 * 2) if audio_only else
+                        source.stat().st_size * 4 + presenter.stat().st_size * 2 + int(info.duration * 1024**2))
             if shutil.disk_usage(work).free < required:
                 raise pipeline.PipelineError("Not enough temporary disk space to combine these recordings.")
             composition_work.mkdir(exist_ok=True)
-            if settings.get("background"):
+            if settings.get("background") and not audio_only:
                 source = pipeline.process(source, composition_work, denoise_audio=False, atten_lim=None,
                     edits=[], cuts=[], preset="high", background=settings["background"],
                     progress=progress, preserve_resolution=True)
-            source = compose(source, presenter, composition_work, settings["presenter"], progress)
+            mixer = compose_audio if audio_only else compose
+            source = mixer(source, presenter, composition_work, settings["presenter"], progress)
         return pipeline.process(source, work, denoise_audio=settings["denoise"], atten_lim=settings["atten_lim"],
             preset=settings["preset"], edits=settings["edits"], cuts=settings["cuts"], progress=progress,
             background=settings.get("background") if not settings.get("presenter") else None,

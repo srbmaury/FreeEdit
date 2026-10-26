@@ -1,0 +1,32 @@
+{
+  "operation": "overlays_export",
+  "seconds": 1.092,
+  "process_tree_peak_rss_mib": 459.6,
+  "result": {
+    "media": {
+      "duration": 10.0078,
+      "has_video": true,
+      "has_audio": true,
+      "width": 1280,
+      "height": 720,
+      "audio_channels": 1,
+      "frame_rate": 24.0
+    },
+    "output_bytes": 1467705,
+    "files_bytes_after_export": 1514105
+  },
+  "scope": {
+    "date": "2026-10-26",
+    "platform": "macOS-26.5.2-arm64-arm-64bit",
+    "ffmpeg": "ffmpeg version 9.0.2 Copyright (c) 2000-2026 the FFmpeg developers",
+    "sample_interval_seconds": 0.5,
+    "includes": "profiling Python process and descendants",
+    "excludes": [
+      "browser/GPU memory",
+      "OS page cache",
+      "brief peaks between samples"
+    ],
+    "workload": "10-second generated 720p24 input, 100 simultaneous 240x40 identical synthetic PNG overlays through text-edit path",
+    "quality_claim": false
+  }
+}

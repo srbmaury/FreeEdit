@@ -7,9 +7,13 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
+import wave
+import array
 from pathlib import Path
 
 from backend.composition import compose
+from backend import pipeline, rendering
 
 
 @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"),
@@ -101,6 +105,34 @@ class CompositionTests(unittest.TestCase):
         self.assertEqual(
             {s["codec_type"] for s in self.metadata(output)["streams"]},
             {"audio", "video"})
+
+    def test_audio_only_presenter_effects_never_run_segmentation(self):
+        for sound in ("main", "presenter", "both"):
+            with self.subTest(sound=sound), tempfile.TemporaryDirectory() as folder:
+                work = Path(folder)
+                settings = {"denoise": False, "atten_lim": None, "preset": "audio_only",
+                    "edits": [], "cuts": [{"start": 3, "end": 3.5}],
+                    "audio": {"level_speech": True, "fade_in": .1, "fade_out": .1},
+                    "presenter": {"box": {"x": 0, "y": 0, "w": 64, "h": 48},
+                        "offset": 1, "trim_start": 0, "trim_end": 2,
+                        "effect": "blur", "sound": sound, "main_volume": .5, "presenter_volume": .5}}
+                with patch("backend.composition.create_mask", side_effect=AssertionError("no segmentation")), \
+                     patch("backend.background.create_mask", side_effect=AssertionError("no segmentation")), \
+                     patch("backend.composition.compose", side_effect=AssertionError("no video composition")):
+                    output = rendering.render(self.main, work, settings, lambda *_: None, self.presenter)
+                info = pipeline.probe(output)
+                self.assertFalse(info.has_video)
+                self.assertTrue(info.has_audio)
+                self.assertAlmostEqual(info.duration, 3.5, delta=.05)
+                self.assertFalse((work / "composition").exists())
+                if sound == "presenter":
+                    with wave.open(str(output)) as audio:
+                        audio.setpos(int(.2 * audio.getframerate()))
+                        samples = array.array("h", audio.readframes(int(.2 * audio.getframerate())))
+                        self.assertLess(max(map(abs, samples)), 8)
+                        audio.setpos(int(1.2 * audio.getframerate()))
+                        samples = array.array("h", audio.readframes(int(.2 * audio.getframerate())))
+                        self.assertGreater(max(map(abs, samples)), 100)
 
     def test_muted_export_has_no_audio_track(self):
         output = self.compose_to(sound="muted")

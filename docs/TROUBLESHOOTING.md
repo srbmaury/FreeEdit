@@ -55,3 +55,13 @@ There is no default duration cap locally, but uploads are limited to 1,024 MB. R
 Waveform generation streams decoded samples to a temporary file and returns at most 4,096 peaks. Noise reduction processes short overlapping chunks rather than loading the whole recording. Disk use still increases with duration, audio channels, and export size. Export checks free disk space and uploads reserve a small free-space margin; concurrent external disk usage can still exhaust a disk.
 
 For measurements and their limitations, see [PERFORMANCE.md](PERFORMANCE.md).
+
+## Verify which checkout is running
+
+Run `./run.sh` from the checkout you intend to use. The script resolves its own directory, prints the checkout and Python paths, and reports the Git revision and a source fingerprint. It checks the selected port before expensive setup probes. If the port is occupied, it prints an inspection command and an alternative `PORT=8001 ./run.sh` invocation; it never stops another process automatically.
+
+In the app, open **⋯ → About FreeEdit** to see the server's revision, source fingerprint, local-change status, and start time. Source archives also have a fingerprint even without Git. These describe files at server startup, not a published release or a guarantee that the working tree is committed. The API deliberately omits local paths.
+
+After changing code, stop the server you launched with Ctrl+C and start it again, then reload the browser. Python modules remain loaded until restart; static frontend files are read from disk. Reloading the page alone can therefore mix new frontend files with old backend code. An older running checkout cannot display these version details until it is updated and restarted. Do not assume that a page on port 8000 belongs to your current checkout.
+
+Changing ports creates a different browser recovery origin. Save a project file and keep its original recording before switching. Cookies are shared across ports on the same hostname, so FreeEdit now namespaces its session cookie by signing key: independently configured instances no longer replace one another's session. Older servers must be restarted from the updated source to benefit. A restart without a persistent signing key still expires that server's session, and jobs remain in-memory; save your project before restarting.

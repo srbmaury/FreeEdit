@@ -246,3 +246,13 @@ button.primary, a.button.primary { background: var(--accent); color: var(--accen
 .pause-pagination { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 10px 0; }
 .pause-pagination .small { margin: 0; text-align: center; }
 .pause-row .pause-covered { color: var(--muted); font-size: 11px; white-space: nowrap; }
+
+/* Empty lanes add no editing targets on a narrow screen. Keep the waveform,
+   ruler and populated lanes visible; lanes reappear as soon as an edit is added. */
+@media (max-width: 600px) {
+  .editor:has(#pauseTrack:empty) :is(#pauseTrack, #pauseLabel),
+  .editor:has(#cutTrack:empty) :is(#cutTrack, #cutLabel),
+  .editor:has(#maskTrack:empty) :is(#maskTrack, #maskLabel),
+  .editor:has(#textTrack:empty) :is(#textTrack, #textLabel),
+  .editor:has(#zoomTrack:empty) :is(#zoomTrack, #zoomLabelTrack) { display: none; }
+}

@@ -88,3 +88,33 @@ To repeat effects with an installed runtime, use a new output directory:
 These are explicit long-running commands. Configure `DEEPFILTER_PYTHON`, `BACKGROUND_PYTHON` or `FREEEDIT_MODEL_DIR` when the optional runtimes/models are elsewhere.
 
 Still unverified: full-film presenter composition, real 4K/high-frame-rate recordings, maximum PNG-text workloads, multi-channel audio beyond stereo, low-disk exhaustion during a long job, browser/GPU peak memory, hard container memory budgets, and independent whole-output speech/lip-sync/segmentation quality review. The combined squash candidate subsequently passed browser setup, upload, editing, preview/export playback, project relink/recovery, stale-result invalidation, mixed-audio presenter preview, quota feedback and the dense timeline export.
+
+## PNG overlay follow-up — 26 October 2026
+
+A generated 10-second 1280×720/24fps clip passed export with **100 simultaneous PNG inputs through the text-overlay path**: 1.092 seconds, 459.6 MiB sampled process-tree peak RSS, 1,467,705-byte output, 10.0078-second duration. Retained files occupied 1,514,105 bytes after export; this is not peak temporary disk use. The inputs intentionally reuse a synthetic 240×40 pattern at the same position, so the measurement exercises 100 PNG decode/filter inputs, not readable caption layout or font/glyph generation. Timing is too short for strong peak-memory confidence with 0.5-second sampling. No claim of low-memory or movie-length 100-caption support follows from this run.
+
+Raw record: [png-overlay-measurement.json](png-overlay-measurement.json).
+
+Reproduce on a short generated or non-sensitive source with a new output directory:
+
+```sh
+.venv/bin/python -m scripts.profile_effects /path/to/short-720p.mp4 /tmp/png-overlays-new --effect overlays
+```
+
+The command reads the complete source, so choose a short clip deliberately. It requires no optional models or Pillow and records the result in `results.jsonl`. Real 4K text layers, long PNG workloads, non-stereo audio, disk exhaustion, browser/GPU peaks, hard memory limits, lower-memory machines and independent quality review remain open. Existing full-movie measurements were not repeated in this follow-up.
+
+## Current-source movie recheck — 26 October 2026
+
+Rechecked the supplied 1,257,725,297-byte Udaan MKV (8,257.599 seconds) against current working source on the same Apple M5. The isolated server set `MAX_UPLOAD_MB=2048`; ordinary defaults were not silently changed. The input was read without modification.
+
+Real localhost HTTP/API checks passed:
+
+- Streamed upload in 1 MiB chunks, including waveform preparation: 5.105 seconds, 4,096 bins. A source byte range at byte 1,000,000,000 returned 206 with the expected 1,024 bytes.
+- Whole-recording pause analysis: all 454 suggestions stored. The final suggestion spans 8,230.918–8,257.399 seconds, so analysis extends past 30 minutes and through the end of the movie.
+- Full audio-only export with a two-second cut, speech leveling and 0.5-second end fades: 5.561 seconds; 8,255.598833-second stereo 48 kHz WAV; 1,585,075,076 bytes. Server admission and returned export identity matched. Noise removal was disabled.
+- Combined video preview at 130:00–130:15 with a privacy mask, timed Reframe, one-second cut and audio finishing: exactly 14 seconds, 1,101,335 bytes. The existing full WAV remained downloadable with a 206 byte-range response during preview processing.
+- Whole-output FFmpeg decode passed for the audio export and late video preview. This verifies decoding and duration, not independent perceptual quality.
+
+A separate current-source profiler recorded waveform 5.042 seconds / 44.1 MiB sampled peak RSS; pauses 3.641 seconds / 43.9 MiB; late preview 0.732 seconds / 108.9 MiB; cancellation scheduled at five seconds returned at 5.011 seconds / 264.5 MiB with attached children stopped. RSS sampling has the same limitations described above. The HTTP/API checks were separate runs; their memory was not measured by this profiler.
+
+Raw records: [API checks](movie-api-validation-20261026.json), [profiler](movie-profile-20261026.json). Previous full-video, denoising and segmentation measurements remain relevant historical evidence; those expensive workloads were not repeated here. Browser access was disabled in Work settings, so none of this new evidence is described as a browser pass. Cross-platform/low-memory hardware and current recovery UI validation remain outstanding.

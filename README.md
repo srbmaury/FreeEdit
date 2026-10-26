@@ -4,10 +4,10 @@ A small web app for cleaning up screen recordings and other audio or video files
 
 - **Remove background noise** with [DeepFilterNet3](https://github.com/Rikorose/DeepFilterNet)
 - **Shorten pauses**: detect quiet sections, listen to suggestions, and choose which become cuts
-- **Select ranges directly**: drag across the waveform or ruler, then use the range for Cut or Reframe; play the selected source range before applying edits
+- **Select ranges directly**: drag across the waveform or ruler, or mark start/end with I / O, then use the range for Cut or Reframe; play the selected source range before applying edits
 - **Smart Focus**: pick a point in the video to position a portion’s zoom; move or resize Reframe portions directly on the timeline
 - **Reframe** videos: crop to 16:9, 9:16, square or original aspect ratio, with zoom/focus and smoothly animated time-range sections
-- **Import editable captions**: load SRT subtitles as timed text overlays you can adjust on the timeline
+- **Import editable captions**: load SRT subtitles as timed text overlays you can adjust on the timeline; automatic transcription is not included
 - **Combine two videos**: add a presenter inset, blur/remove its background, and choose Main, Presenter, Both, or Muted sound ([workflow](docs/COMBINING_VIDEOS.md))
 - **Person-aware backgrounds**: blur, solid colors, or built-in/uploaded images, with camera-inset selection and a short processed preview ([optional setup](docs/BACKGROUNDS.md))
 - **Export presets**: Balanced, Small file, High quality, or Audio only
@@ -16,6 +16,8 @@ A small web app for cleaning up screen recordings and other audio or video files
 - **Hide part of the video**: drag a box, then blur it, pixelate it or cover it with black, for a time range you choose
 - Preview a 10-second noise-removal sample, or use **Export → Preview result** for up to 15 seconds with visual edits and audio together
 - Optional speech leveling and output fades, saved with your project
+
+See [which preview to use and how to select a section](docs/PREVIEW_GUIDE.md) for the scope of each sample and the complete editing workflow.
 
 ## Current limitations
 
@@ -51,6 +53,8 @@ You need [Homebrew](https://brew.sh/). Then run:
 ./setup.sh     # installs python@3.12, rust, ffmpeg, then creates .venv with the app and noise-removal dependencies
 ./run.sh       # starts the server at http://localhost:8000
 ```
+
+`./run.sh` prints the checkout, Python environment, revision and source fingerprint. If the port is occupied, it explains how to inspect the listener or choose another port without stopping it. **⋯ → About FreeEdit** shows the server identity and start time. Restart the server after code changes, then reload the browser; a page reload alone does not reload Python modules.
 
 Startup checks media tools, rendering support, the noise environment, and writable temporary storage. Setup additionally verifies a one-second generated export; rerun it with `.venv/bin/python -m backend.preflight --verify-render`. Use `./setup.sh --warm-model` to download and load the noise model during setup instead of first use. See [local setup and troubleshooting](docs/TROUBLESHOOTING.md).
 

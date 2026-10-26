@@ -14,6 +14,7 @@ const S = {
   reviewing: false,
   undo: [], redo: [],
   exportSignature: null,
+  exportSubmission: null,
   submittedRanges: [],
   operation: null,
   suggestions: [],
@@ -96,8 +97,12 @@ async function api(path, opts = {}) {
 const adaptersReady = document.readyState === "loading"
   ? new Promise(resolve => document.addEventListener("DOMContentLoaded", resolve, {once: true}))
   : Promise.resolve();
-let sceneRules;
-const editorReady = Promise.all([adaptersReady, import("./scene-schema.mjs").then(rules => { sceneRules = rules; })]);
+let sceneRules, exportRules;
+const editorReady = Promise.all([
+  adaptersReady,
+  import("./scene-schema.mjs").then(rules => { sceneRules = rules; }),
+  import("./export-state.mjs").then(rules => { exportRules = rules; }),
+]);
 
 // ---------- upload ----------
 const dropZone = $("dropZone");
@@ -201,7 +206,7 @@ function openEditor(job) {
   restoreAudioSettings();
   resetBackground();
   resetVideos();
-  S.exportSignature = null; S.reviewing = false;
+  S.exportSignature = null; S.exportSubmission = null; S.reviewing = false;
   S.reframe = {...EditorModel.DEFAULT_REFRAME};
   if (typeof syncReframeControls === "function") syncReframeControls();
   S.operation = null; S.suggestions = [];
