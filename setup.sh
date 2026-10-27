@@ -23,7 +23,8 @@ if ! .venv/bin/python -c 'import sys; sys.exit(0 if sys.version_info[:2] == (3,1
   exit 1
 fi
 .venv/bin/python -m pip install --upgrade pip
-.venv/bin/python -m pip install -c requirements-web.lock -r requirements.txt
+.venv/bin/python -m pip install -r requirements-web.lock -r requirements.txt
+.venv/bin/python -m pip check
 
 .venv/bin/python -m backend.preflight --verify-render "$@"
 echo

@@ -9,6 +9,9 @@ from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from . import pipeline
+from .rate_limit import env_int
+
+MAX_OVERLAY_PIXELS = env_int("FREEEDIT_MAX_OVERLAY_PIXELS", 16_000_000)
 
 
 class TimeRange(BaseModel):
@@ -175,6 +178,22 @@ class ProcessRequest(BaseModel):
     preset: Literal["balanced", "small", "high", "audio_only"] = "balanced"
     edits: list[Annotated[HideEdit | TextEdit | AnnotationEdit, Field(discriminator="type")]] = Field(default_factory=list, max_length=100)
     cuts: list[TimeRange] = Field(default_factory=list, max_length=100)
+
+    @model_validator(mode="after")
+    def bound_decoded_overlays(self):
+        # Individual PNGs are already validated. Their first 32 base64
+        # characters contain the IHDR dimensions; don't decode them again.
+        images = [edit.image for edit in self.edits if isinstance(edit, (TextEdit, AnnotationEdit))]
+        if self.background and self.background.image:
+            images.append(self.background.image)
+        total = 0
+        for image in images:
+            header = base64.b64decode(image[len("data:image/png;base64,"):][:32])
+            width, height = struct.unpack(">II", header[16:24])
+            total += width * height
+        if total > MAX_OVERLAY_PIXELS:
+            raise ValueError("Overlay images exceed this server's total pixel budget. Use fewer or smaller text, annotation and background images.")
+        return self
 
     def validate_media(self, media):
         if self.reframe and (not media["has_video"] or self.preset == "audio_only"):

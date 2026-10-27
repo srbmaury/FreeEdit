@@ -7,6 +7,7 @@ Run from the project root:
 from __future__ import annotations
 
 import asyncio
+import copy
 import hashlib
 import json
 import re
@@ -17,6 +18,7 @@ import shutil
 import threading
 import time
 import uuid
+import anyio
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -31,6 +33,8 @@ from .execution import Cancelled, JobControl, cancellation_scope
 from .models import ProcessRequest, SilenceRequest, PreviewRequest, BackgroundPreviewRequest, CompositionPreviewRequest, ResultPreviewRequest
 from .observability import event, install_error_handling, public_processing_error
 from .sessions import COOKIE, create_session, verify_session
+from .body_limit import ControlBodyLimit
+from .job_store import JobStore, InstanceLease
 from .rate_limit import RequestLimiter, category_for, limits as admission_limits, env_int
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -49,6 +53,17 @@ JOBS_DIR.mkdir(parents=True, exist_ok=True)
 
 @asynccontextmanager
 async def lifespan(app):
+    lease = InstanceLease(JOBS_DIR)
+    await anyio.to_thread.run_sync(lease.acquire)
+    try:
+        recovered = await anyio.to_thread.run_sync(lambda: JobStore(JOBS_DIR).restore(ttl_hours=JOB_TTL_HOURS))
+        with jobs_lock:
+            for job_id, job in recovered.items():
+                jobs.setdefault(job_id, job)
+        event("jobs_restored", count=len(recovered))
+    except BaseException:
+        lease.release()
+        raise
     async def clean_periodically():
         while True:
             try:
@@ -66,14 +81,28 @@ async def lifespan(app):
             await task
         except asyncio.CancelledError:
             pass
+        # Stop child processes before releasing the directory to a new server.
+        with jobs_lock:
+            pending = list(job_futures.values())
+            for control in job_controls.values():
+                control.cancel()
+        if pending:
+            from concurrent.futures import wait
+            await anyio.to_thread.run_sync(lambda: wait(pending))
+        lease.release()
 
 
 app = FastAPI(title="FreeEdit", lifespan=lifespan)
+app.add_middleware(ControlBodyLimit,
+                   max_bytes=env_int("FREEEDIT_MAX_EDIT_REQUEST_MB", 16) * 1024**2,
+                   max_active=env_int("FREEEDIT_MAX_ACTIVE_EDIT_REQUESTS", 2),
+                   timeout=env_int("FREEEDIT_EDIT_REQUEST_TIMEOUT_SECONDS", 30))
 install_error_handling(app)
 # One job at a time: DeepFilterNet + x264 already saturate the CPU
 executor = ThreadPoolExecutor(max_workers=1)
 jobs: dict[str, dict] = {}
 jobs_lock = threading.Lock()
+persistence_lock = threading.Lock()
 job_controls = {}
 job_futures = {}
 active_uploads: set[str] = set()
@@ -147,7 +176,34 @@ async def protect_session_jobs(request: Request, call_next):
 
 def _update(job_id: str, **fields) -> None:
     with jobs_lock:
-        jobs[job_id].update(fields, updated_at=time.time())
+        previous_stage = jobs[job_id].get("stage")
+        previous_touch = jobs[job_id].get("updated_at", 0)
+        now = time.time()
+        jobs[job_id].update(fields, updated_at=now)
+        job = jobs[job_id]
+        persist = (bool(set(fields) - {"stage", "progress"})
+                   or fields.get("stage", previous_stage) != previous_stage
+                   or int(previous_touch // 30) != int(now // 30))
+    if persist:
+        _persist_job(job)
+
+
+def _persist_job(job):
+    # Serialize writers, then capture the latest state briefly under the registry
+    # lock. No filesystem operation may hold jobs_lock or run on the event loop.
+    with persistence_lock:
+        with jobs_lock:
+            current = jobs.get(job["id"])
+            if current is not job:
+                return  # Deleted/replaced while this writer waited.
+            snapshot = copy.deepcopy(current)
+        if (JOBS_DIR / snapshot["id"]).is_dir():
+            try:
+                JobStore(JOBS_DIR).save(snapshot)
+            except FileNotFoundError:
+                with jobs_lock:
+                    if jobs.get(job["id"]) is job:
+                        raise
 
 
 def _job(job_id: str) -> dict:
@@ -156,9 +212,13 @@ def _job(job_id: str) -> dict:
         if not job:
             raise HTTPException(404, "Job not found")
         now = time.time()
-        if now - job.get("updated_at", 0) >= 30:
+        persist = now - job.get("updated_at", 0) >= 30
+        if persist:
             job["updated_at"] = now
-        return dict(job)
+        snapshot = dict(job)
+    if persist:
+        _persist_job(job)
+    return snapshot
 
 
 def _cleanup_old_jobs() -> None:
@@ -190,6 +250,15 @@ def _drop_cache(f) -> None:
         os.posix_fadvise(f.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
 
 
+def _write_upload_chunk(file, chunk: bytes, work: Path, flush: bool):
+    """Disk checks, writes and fsync run together outside the event loop."""
+    if shutil.disk_usage(work).free < len(chunk) + 64 * 1024**2:
+        raise HTTPException(507, "Temporary storage is full. Use Storage and cleanup or free disk space.")
+    file.write(chunk)
+    if flush:
+        _drop_cache(file)
+
+
 @app.post("/api/upload")
 async def upload(request: Request, filename: str):
     return await _receive_upload(request, filename)
@@ -209,45 +278,38 @@ async def _receive_upload(request: Request, filename: str, protected_job: str | 
             raise HTTPException(429, "Too many uploads are in progress. Try again shortly.",
                                 headers={"Retry-After": "10"})
         active_uploads.add(job_id)
+    work_created = False
     try:
-        work.mkdir()
+        await anyio.to_thread.run_sync(work.mkdir)
+        work_created = True
         source = work / f"source{ext}"
         size = since_flush = 0
         limit = MAX_UPLOAD_MB * 1024 * 1024
-        try:
-            with source.open("wb") as f:
-                async for chunk in request.stream():
-                    size += len(chunk)
-                    if shutil.disk_usage(work).free < len(chunk) + 64 * 1024**2:
-                        raise HTTPException(507, "Temporary storage is full. Use Storage and cleanup or free disk space.")
-                    if size > limit:
-                        raise HTTPException(413, f"File is larger than {MAX_UPLOAD_MB} MB.")
-                    f.write(chunk)
-                    since_flush += len(chunk)
-                    if since_flush > 16 * 1024 * 1024:
-                        _drop_cache(f)
-                        since_flush = 0
-                _drop_cache(f)
-        except BaseException:
-            shutil.rmtree(work, ignore_errors=True)
-            raise
+        async with await anyio.open_file(source, "wb") as f:
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > limit:
+                    raise HTTPException(413, f"File is larger than {MAX_UPLOAD_MB} MB.")
+                since_flush += len(chunk)
+                flush = since_flush > 16 * 1024 * 1024
+                await anyio.to_thread.run_sync(_write_upload_chunk, f.wrapped, chunk, work, flush)
+                if flush:
+                    since_flush = 0
+            await anyio.to_thread.run_sync(_drop_cache, f.wrapped)
         if size == 0:
-            shutil.rmtree(work, ignore_errors=True)
             raise HTTPException(400, "The file is empty.")
 
         try:
-            info = await asyncio.to_thread(pipeline.probe, source)
+            info = await anyio.to_thread.run_sync(pipeline.probe, source)
         except pipeline.PipelineError as e:
-            shutil.rmtree(work, ignore_errors=True)
-            raise HTTPException(400, str(e))
+            raise HTTPException(400, str(e)) from e
         if MAX_DURATION_MIN and info.duration > MAX_DURATION_MIN * 60:
-            shutil.rmtree(work, ignore_errors=True)
             raise HTTPException(413, f"File is longer than {MAX_DURATION_MIN:g} minutes.")
 
         waveform = None
         if info.has_audio:
             try:
-                waveform = await asyncio.to_thread(pipeline.audio_waveform, source, info.duration)
+                waveform = await anyio.to_thread.run_sync(pipeline.audio_waveform, source, info.duration)
             except pipeline.PipelineError as exc:
                 event("waveform_unavailable", job_id=job_id, detail=str(exc))
 
@@ -264,9 +326,22 @@ async def _receive_upload(request: Request, filename: str, protected_job: str | 
                 "media": info.__dict__,
                 "updated_at": time.time(),
             }
+        try:
+            await anyio.to_thread.run_sync(_persist_job, jobs[job_id])
+        except BaseException:
+            with jobs_lock:
+                jobs.pop(job_id, None)
+            raise
         event("upload_ready", job_id=job_id, bytes=size, duration=info.duration,
               width=info.width, height=info.height, has_audio=info.has_audio)
         return {"id": job_id, "filename": filename, "waveform": waveform, **info.__dict__}
+    except BaseException:
+        # Includes disconnect/cancellation and failures during probe/waveform.
+        # Unregistered uploads must not strand media until the TTL sweep.
+        if work_created:
+            with anyio.CancelScope(shield=True):
+                await anyio.to_thread.run_sync(lambda: shutil.rmtree(work, ignore_errors=True))
+        raise
     finally:
         with jobs_lock:
             active_uploads.discard(job_id)
@@ -322,8 +397,24 @@ def _execute(worker, job_id, req, previous, control):
             for path in [*work.glob("output.*"), *work.glob("text_*.png"), work / "raw.wav"]:
                 path.unlink(missing_ok=True)
             shutil.rmtree(work / "denoised", ignore_errors=True)
-        _update(job_id, status="cancelled", stage="Stopped", progress=None, error=None, output=None if worker is _run else previous.get("output"))
+        try:
+            _update(job_id, status="cancelled", stage="Stopped", progress=None, error=None, output=None if worker is _run else previous.get("output"))
+        except OSError:
+            event("job_persist_failed", job_id=job_id)
         event("job_cancelled", job_id=job_id)
+    except Exception as exc:
+        code, message = public_processing_error(exc)
+        event("job_failed", job_id=job_id, code=code, exception=type(exc).__name__)
+        with jobs_lock:
+            job = jobs[job_id]
+            job.update(status="error", stage=None, progress=None, error=message,
+                       error_code=code, updated_at=time.time(), cancel_requested=False)
+            if worker is _run:
+                job["output"] = None
+        try:
+            _persist_job(job)
+        except OSError:
+            event("job_persist_failed", job_id=job_id)
     finally:
         shutil.rmtree(JOBS_DIR / job_id / "composition", ignore_errors=True)
         for temporary in (JOBS_DIR / job_id / "person-mask.mkv", JOBS_DIR / job_id / "background-worker.json", JOBS_DIR / job_id / "background.png"):
@@ -351,6 +442,7 @@ def cancel_processing(job_id: str):
             job_futures.pop(job_id, None)
         else:
             job["status"] = "cancelling"
+    _persist_job(job)
     return {"ok": True}
 
 
@@ -398,15 +490,22 @@ def _submit(job_id, req, worker):
             job["background_preview"] = None
         if worker is _preview_composition:
             job["composition_preview"] = None
-        try:
+        submission_id = (job.get("export_submission_id") if worker is _run else
+                         job.get("result_preview_submission_id") if worker is _preview_result else None)
+    try:
+        _persist_job(job)
+        with jobs_lock:
             job_futures[job_id] = executor.submit(_execute, worker, job_id, req, previous, control)
-        except RuntimeError as exc:
+    except (RuntimeError, OSError) as exc:
+        with jobs_lock:
             job.clear()
             job.update(previous)
             job_controls.pop(job_id, None)
-            raise HTTPException(503, "Export is temporarily unavailable. Please retry.") from exc
-        submission_id = (job.get("export_submission_id") if worker is _run else
-                         job.get("result_preview_submission_id") if worker is _preview_result else None)
+        try:
+            _persist_job(job)
+        except OSError:
+            event("job_persist_failed", job_id=job_id)
+        raise HTTPException(503, "Export is temporarily unavailable. Please retry.") from exc
     return {"ok": True, "submission_id": submission_id}
 
 
@@ -577,6 +676,7 @@ async def upload_presenter(job_id: str, request: Request, filename: str):
             source.replace(work / ("presenter" + source.suffix))
             metadata = {"filename": filename, "media": jobs[temporary_id]["media"]}
             jobs[job_id].update(presenter=metadata, updated_at=time.time(), composition_preview=None, result_preview=None)
+        await anyio.to_thread.run_sync(_persist_job, jobs[job_id])
         return metadata
     finally:
         with jobs_lock:
@@ -730,7 +830,10 @@ def delete_job(job_id: str):
             raise HTTPException(404, "Job not found")
         if job_id in active_uploads or job_id in job_controls or job["status"] in ("queued", "processing", "cancelling"):
             raise HTTPException(409, "Can't delete while processing.")
-        shutil.rmtree(JOBS_DIR / job_id, ignore_errors=True)
+        try:
+            shutil.rmtree(JOBS_DIR / job_id)
+        except FileNotFoundError:
+            pass
         jobs.pop(job_id, None)
     return {"ok": True}
 

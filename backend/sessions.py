@@ -1,16 +1,48 @@
 """Signed anonymous sessions for isolating temporary uploads.
 
-Cookie tokens are not user accounts; losing the signing key on restart expires
-the session. Configure FREEEDIT_SESSION_SECRET to retain it across restarts.
+Cookie tokens are not user accounts. The signing key lives on the jobs volume
+unless FREEEDIT_SESSION_SECRET supplies it; losing either key resets sessions.
 """
 import hashlib
 import hmac
 import os
 import secrets
+from pathlib import Path
+import tempfile
 
-# An ephemeral secret is appropriate for the single-process, ephemeral jobs
-# storage used by default. Set a durable secret for a persistent deployment.
-_SECRET = (os.environ.get("FREEEDIT_SESSION_SECRET") or "").encode() or secrets.token_bytes(32)
+def load_secret(root: Path) -> bytes:
+    """Keep anonymous sessions usable after a restart on the same jobs volume."""
+    configured = os.environ.get("FREEEDIT_SESSION_SECRET")
+    if configured:
+        return configured.encode()
+    root.mkdir(parents=True, exist_ok=True)
+    target = root / ".session-secret"
+    if not target.exists():
+        # Publish a fully written key atomically; a concurrent initializer
+        # either wins the hard link or reads the winner's complete key.
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=root, prefix=".session-", delete=False) as file:
+                temporary = Path(file.name)
+                file.write(secrets.token_bytes(32))
+                file.flush()
+                os.fsync(file.fileno())
+            try:
+                os.link(temporary, target)
+            except FileExistsError:
+                pass
+        finally:
+            if temporary:
+                temporary.unlink(missing_ok=True)
+    if target.is_symlink():
+        raise RuntimeError("The session key must be a regular private file.")
+    secret = target.read_bytes()
+    if len(secret) != 32:
+        raise RuntimeError("Invalid persisted session key. Restore it from backup or remove it to reset sessions.")
+    return secret
+
+
+_SECRET = load_secret(Path(os.environ.get("FREEEDIT_JOBS_DIR", Path(__file__).resolve().parent.parent / "jobs")))
 # Cookies are scoped to hosts, not ports. Independent signing keys must use
 # independent names so another local server cannot replace this session.
 def cookie_name(secret: bytes) -> str:

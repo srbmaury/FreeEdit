@@ -93,11 +93,12 @@ async function api(path, opts = {}) {
 const adaptersReady = document.readyState === "loading"
   ? new Promise(resolve => document.addEventListener("DOMContentLoaded", resolve, {once: true}))
   : Promise.resolve();
-let sceneRules, exportRules;
+let sceneRules, exportRules, exportPayloadRules;
 const editorReady = Promise.all([
   adaptersReady,
   import("./scene-schema.mjs").then(rules => { sceneRules = rules; }),
   import("./export-state.mjs").then(rules => { exportRules = rules; }),
+  import("./export-payload.mjs").then(rules => { exportPayloadRules = rules; }),
 ]);
 
 // ---------- upload ----------

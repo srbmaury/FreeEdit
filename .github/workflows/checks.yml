@@ -35,10 +35,8 @@ jobs:
           sudo apt-get install -y ffmpeg
           python -m pip install --upgrade pip
           python -m pip install -r requirements-web.lock
-      - name: Compile Python
-        run: python -m compileall -q backend tests
-      - name: Run Python integration and session tests
-        run: python -m unittest discover -s tests -v
+      - name: Check dependencies, Python, restart recovery and rendering
+        run: python -m scripts.check --suite python
 
   frontend:
     runs-on: ubuntu-latest
@@ -48,11 +46,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Check JavaScript syntax
-        run: |
-          for file in frontend/*.js frontend/*.mjs; do node --check "$file"; done
-      - name: Run frontend regression tests
-        run: node --test tests/*.cjs tests/test_*.mjs
+      - name: Check JavaScript syntax and frontend regressions
+        run: python3 -m scripts.check --suite frontend
 
   browser-smoke:
     runs-on: ubuntu-latest

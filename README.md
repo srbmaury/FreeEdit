@@ -103,6 +103,7 @@ GitHub Actions also runs a Chromium end-to-end upload/edit/export check. Synthet
 | [Usage](docs/USAGE.md) | Editing workflow, media preview types, shortcuts, presenter and background controls |
 | [Development](docs/DEVELOPMENT.md) | Setup, troubleshooting, tests and code navigation |
 | [Architecture](docs/ARCHITECTURE.md) | State model, module boundaries and invariants |
+| [Code flow](docs/CODE_FLOW.md) | Function index and Mermaid diagrams for startup, editing, export, recovery and cancellation |
 | [Operations](docs/OPERATIONS.md) | Runtime limits, performance evidence, hosting and releases |
 | [Security](docs/SECURITY.md) | Anonymous sessions, data isolation and deployment caveats |
 | [Dependency / model licensing](docs/LICENSE_AUDIT.md) | Open third-party distribution questions |

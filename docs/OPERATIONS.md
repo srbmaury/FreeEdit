@@ -32,6 +32,10 @@ These are product limits, not FFmpeg capability limits. Reframing, cuts and over
 | `DF_CHUNK_SECONDS` | 5 | Noise-reduction worker chunking |
 | `FFMPEG_THREADS` / `OMP_NUM_THREADS` | automatic | Resource-use knobs |
 | `FREEEDIT_MAX_ACTIVE_UPLOADS` | 2 | Cap simultaneous uploads |
+| `FREEEDIT_MAX_EDIT_REQUEST_MB` | 16 MiB | Aggregate control/edit request body limit, including all overlay images; enforced before JSON parsing even for chunked bodies |
+| `FREEEDIT_MAX_ACTIVE_EDIT_REQUESTS` | 2 | Concurrent control bodies held through receipt, JSON parsing and endpoint completion; excess requests return 429 |
+| `FREEEDIT_EDIT_REQUEST_TIMEOUT_SECONDS` | 30 | Maximum time to receive a control body; slow bodies return 408 and release admission |
+| `FREEEDIT_MAX_OVERLAY_PIXELS` | 16,000,000 | Combined PNG pixel budget per render request, including text, annotations and image backgrounds; checked after individual PNG validation |
 | `FREEEDIT_UPLOADS_PER_SESSION_10M` | 8 | Per-session upload budget |
 | `FREEEDIT_UPLOADS_PER_PEER_10M` | 32 | Per-connection-peer upload budget |
 | `FREEEDIT_OPERATIONS_PER_SESSION_10M` | 40 | Per-session heavy-operation budget |
@@ -45,9 +49,31 @@ MAX_UPLOAD_MB=2048 ./run.sh
 
 Raising upload limits does **not** increase available disk, RAM, filter-graph tolerance or project caps.
 
-The standard service runs one API worker with in-memory job/session state and local disk. Do **not** run several API processes over the same job directory without redesigning shared ownership and admission state. An external reverse proxy should enforce rate limits based on verified client IPs; untrusted `X-Forwarded-For` is not an identity source. See [security and privacy](SECURITY.md).
+The standard service runs one API worker with a live in-memory registry and
+atomic `job.json` metadata beside each recording. A directory lock rejects a
+second API process sharing `FREEEDIT_JOBS_DIR`. This is single-instance restart
+recovery; it does not provide a distributed queue or replicated storage. An
+external reverse proxy should enforce rate limits based on verified client IPs;
+untrusted `X-Forwarded-For` is not an identity source. See [security and privacy](SECURITY.md).
 
-`FREEEDIT_SESSION_SECRET` should be stable, random and high-entropy on a persistent deployment. Set `FREEEDIT_SECURE_COOKIES=true` when TLS is terminated before the ASGI server.
+On restart, unexpired uploads, completed outputs and their submission identities
+are restored with their original ownership. Interrupted queued/running operations
+become retryable errors. Partial full exports are removed; an interrupted preview
+preserves the previous full export. Missing/corrupt metadata is skipped, and old
+uploads without metadata are never assigned an inferred owner. Browser project
+recovery still holds the edit document.
+
+Recovery requires the **same persistent jobs volume**. Ephemeral container disks,
+including a host that replaces its filesystem on redeploy, cannot preserve these
+files. Uploads created before metadata support cannot be restored retroactively.
+Deleting a job removes its metadata with its media; normal TTL cleanup still applies.
+
+Without an explicit `FREEEDIT_SESSION_SECRET`, a private 0600 `.session-secret`
+file on the jobs volume preserves browser signatures across restarts. Protect and
+back up this key with the volume; do not share it with unrelated instances. An
+explicit environment secret must remain stable, random and high-entropy. Rotating
+either key invalidates existing cookies. Set `FREEEDIT_SECURE_COOKIES=true` when
+TLS is terminated before the ASGI server.
 
 ## Disk, memory and codec risks
 
@@ -99,3 +125,10 @@ Keep generated recordings and measurements out of the repository; add a reviewed
 6. Record which Git SHA and tested image/tag were released. Never bundle users' recordings, temporary jobs, model caches with unclear terms, or private logs.
 
 Historical one-time readiness reports and unmerged-branch notes have been removed from the active docs; they remain recoverable through Git history.
+
+Metadata writers are serialized outside the shared job-registry lock; each writer
+captures the latest state before saving. Async upload routes offload metadata
+writes to a thread. Failed admission saves return 503 and roll back queue
+reservation. Unexpected worker failures leave a retryable in-memory error state
+even if saving that error also fails; restart recovery handles the last durable
+manifest as interrupted work.

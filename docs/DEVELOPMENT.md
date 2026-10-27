@@ -50,6 +50,34 @@ Check [deployment and releases](OPERATIONS.md) and [license terms](LICENSE_AUDIT
 
 ## Health checks and test commands
 
+Run the shared local/CI checks with one command:
+
+```sh
+.venv/bin/python -m scripts.check
+# Also run the actual denoiser (and segmentation with a supplied person fixture):
+.venv/bin/python -m scripts.check --models
+```
+
+The checker validates dependency compatibility, Python/JavaScript syntax,
+regressions and a generated-media render. `--suite python` and `--suite frontend`
+run the same subsets used by CI. Restart tests launch separate processes and
+verify restored session ownership, source downloads and completed results.
+
+For backend/frontend development without installing the optional ML stack, use
+Python **3.12** and install the complete web lockfile (not just its constraints):
+
+```sh
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -r requirements-web.lock
+.venv/bin/python -m pip check
+```
+
+This also installs the HTTP client needed by API tests. If an existing
+environment reports missing `httpx`/`httpx2` or incompatible Starlette packages,
+rerun the lockfile install before testing. `./setup.sh` installs this same web
+set alongside the denoising dependencies. Use a fresh environment when checking
+reproducibility; merely applying constraints does not install missing packages.
+
 CI builds the production Docker image, checks its installed dependencies, and
 runs the actual denoiser against deterministic noise across chunk boundaries.
 The same editing/recovery/export smoke test runs in Chrome, Firefox and WebKit.
@@ -105,7 +133,7 @@ steady display and exits, including cut timing.
 | Upload/review fails from lack of storage | Inspect **⋯ → Storage and cleanup**, `FREEEDIT_JOBS_DIR` and server free disk space |
 | Video uploaded but won't play in browser | Convert to a browser-supported MP4; ffprobe acceptance does not imply browser codec support |
 | Port 8000 already occupied | Inspect listener or use `PORT=8001 ./run.sh`; do not kill an unrelated server |
-| Edits lost after restart or browser reset | Reopen your saved project with the unchanged original media |
+| Recovery unavailable after restart or browser reset | Keep the same persistent jobs volume and signing key; browser recovery holds edits. After disk replacement, reopen the saved project with the original media |
 | Large export slow | Reduce the range/resolution, use Small file, or disable optional noise/background effects |
 
 Use **⋯ → About FreeEdit** to compare the server revision, start time and source fingerprint with the working checkout. It represents the code at server startup, not necessarily the latest repository head. Logs include request IDs and bounded diagnostics; detailed processing errors remain server-side.

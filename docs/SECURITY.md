@@ -20,15 +20,31 @@ claim a security audit or guarantee that hosted processing is private.
   server-side handling to an untrusted public deployment.
 - Set `FREEEDIT_SECURE_COOKIES=true` when HTTPS terminates at a proxy
   and the application receives internal HTTP; the Render config sets it.
-- Set `FREEEDIT_SESSION_SECRET` to a randomly generated, high-entropy value
-  on a persistent deployment. Without it, the process generates a fresh key
-  on startup; old cookies become invalid. In-memory job metadata is also lost
-  on restart. Multi-worker or replicated deployments require shared session
-  keys, job metadata, ownership checks and job storage.
+- Sessions survive restarts on the same jobs volume. A private 0600
+  `.session-secret` is created atomically unless `FREEEDIT_SESSION_SECRET`
+  supplies a stable, high-entropy key. Protect the key and media directory;
+  rotating/deleting the key invalidates existing browser cookies.
+- Atomic per-job metadata preserves ownership and completed-result identities.
+  Restart recovery never guesses ownership for orphan files. Interrupted work
+  requires retry; partial full exports are not made available for download.
+  A directory lock prevents two API workers from sharing this store. Replication
+  still requires a different storage/admission architecture.
 - Unsafe requests carrying a cross-site Origin header are rejected.
 - The API enforces configurable session and peer request quotas for upload,
   processing and diagnostics, plus a hard concurrent-upload cap and a
   processing queue limit. Quotas return 429 with `Retry-After`.
+- Control/edit bodies have a 16 MiB aggregate limit before JSON parsing
+  (`FREEEDIT_MAX_EDIT_REQUEST_MB`), including chunked transfers. Media uploads
+  retain their separate streaming size limit. Oversized bodies return 413.
+- At most two control requests are retained through parsing/validation by
+  default (`FREEEDIT_MAX_ACTIVE_EDIT_REQUESTS`). Extra requests receive 429;
+  receiving a body times out after 30 seconds
+  (`FREEEDIT_EDIT_REQUEST_TIMEOUT_SECONDS`, 408). This bounds concurrent raw
+  control-body buffering, not total decoded-image/renderer memory.
+- Render requests also cap combined overlay/background PNG dimensions at
+  16 million pixels (`FREEEDIT_MAX_OVERLAY_PIXELS`), so highly compressed
+  images cannot multiply the individual image limit across 100 overlays.
+  This is admission headroom, not a guarantee of total FFmpeg/ML RSS.
 - The peer is taken from the ASGI connection, never untrusted forwarding
   headers. Behind Render or another reverse proxy, multiple end users may
   appear as the *same peer*: configure a **real-client-IP edge limiter** and
