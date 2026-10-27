@@ -293,7 +293,7 @@ video.addEventListener("timeupdate", () => { updateTransport(); if (video.paused
 video.addEventListener("play", () => { $("playBtn").textContent = "❚❚"; tick(); });
 video.addEventListener("pause", () => { S.auditionUntil = null; $("playBtn").textContent = "▶"; render(); });
 video.addEventListener("error", () => {
-  $("fileMeta").textContent += " · This browser can't preview this format. You can still process it, but you can't place edits here. Try Safari, or upload an MP4.";
+  $("fileMeta").textContent += " · This browser can't preview this source format. You can still export it. Use an H.264/AAC MP4 for browser playback and visual placement.";
 });
 
 // While playing, jump over removed parts so the preview matches the result
