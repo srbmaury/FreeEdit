@@ -173,6 +173,22 @@ class RealMediaTests(unittest.TestCase):
         self.assertTrue(media.has_audio)
         self.assertAlmostEqual(media.duration,4,delta=.25)
 
+    def test_background_replacement_uses_mask_for_color_planes(self):
+        work=self.root/'background-color'; work.mkdir()
+        mask=work/'person-mask.mkv'
+        subprocess.run(['ffmpeg','-v','error','-y','-f','lavfi','-i',
+            'color=black:size=160x90:rate=18:duration=4','-vf','format=gray',
+            '-c:v','ffv1','-threads','1',str(mask)],check=True,capture_output=True)
+        with patch('backend.background.create_mask',return_value=mask):
+            output=pipeline.process(self.source,work,denoise_audio=False,atten_lim=None,
+                edits=[],cuts=[],progress=lambda *_:None,
+                background=dict(mode='color',color='#00ff00'),preset='high')
+        raw=subprocess.run(['ffmpeg','-v','error','-i',str(output),'-frames:v','1',
+            '-pix_fmt','rgb24','-f','rawvideo','-'],check=True,capture_output=True).stdout
+        red,green,blue=raw[(40*160+80)*3:(40*160+80)*3+3]
+        self.assertGreater(green,220)
+        self.assertLess(max(red,blue),30)
+
 
 if __name__=="__main__":
     unittest.main()

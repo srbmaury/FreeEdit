@@ -50,6 +50,22 @@ Check [deployment and releases](OPERATIONS.md) and [license terms](LICENSE_AUDIT
 
 ## Health checks and test commands
 
+CI builds the production Docker image, checks its installed dependencies, and
+runs the actual denoiser against deterministic noise across chunk boundaries.
+The same editing/recovery/export smoke test runs in Chrome, Firefox and WebKit.
+These are engine checks; WebKit does not replace testing Safari on target devices.
+
+Optional real-person segmentation verification accepts an explicit centered
+portrait fixture (not committed to the repository):
+
+```sh
+FREEEDIT_PERSON_FIXTURE=/absolute/path/portrait.jpg .venv/bin/python -m unittest discover -s tests -p model_smoke.py -k segmentation -v
+```
+
+This checks foreground/background confidence and actual replacement pixels.
+The denoiser smoke checks suppression, duration and sample count, not perceptual
+speech quality; segmentation still needs moving-person and varied-lighting review.
+
 Startup checks essential FFmpeg codecs/filters, disk space, writable temporary storage, and optional model availability. **⋯ → Check setup** can rerun these checks.
 
 ```sh

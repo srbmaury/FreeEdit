@@ -100,6 +100,13 @@ in lambdas to avoid early `ReferenceError` exceptions.
 
 ## Project schema v2
 
+Browser recovery uses `recovery-store.mjs`, a small IndexedDB adapter with
+serialized transactions and immutable queued snapshots. Project saves track
+revisions so stale completions cannot report a newer document as saved. Only
+the small tab-ownership lease uses localStorage; there is no legacy recovery
+migration. Failed transactions preserve the previous snapshot and prompt users
+to download a project file.
+
 Project files store `format: "FreeEdit", version: 2`, a cryptographic identity
 of the unchanged original recording, `edits`, scene settings, and a playhead
 view. File bytes are intentionally never embedded. The old v1 structure with

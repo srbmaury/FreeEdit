@@ -4,6 +4,10 @@ FreeEdit is a focused screen-recording editor. It keeps edits relative to the **
 
 ## Typical workflow
 
+Privacy masks remain covered when export resolution is reduced. Regions too
+small for blur or pixelation use a solid cover. Always review the exported
+recording before sharing sensitive material.
+
 1. Upload a screen recording, webcam clip or audio file.
 2. Choose **Audio**, **Pauses**, **Cut**, **Text**, **Hide area**, **Reframe**, **Captions**, **Annotations**, **Background**, or **Videos** from the task rail.
 3. Use **Edits (V)** beside the preview to select and adjust existing edits. Drag timeline blocks to change their position or edges to change their duration. Changes can be undone.

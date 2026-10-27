@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
-import { chromium } from "playwright";
+import { chromium, firefox, webkit } from "playwright";
 import { readFile, mkdir } from "node:fs/promises";
 
-const browser = await chromium.launch({headless: true,
+const engine=process.env.FREEEDIT_TEST_ENGINE || "chrome";
+const browserType={chrome:chromium,firefox,webkit}[engine];
+assert.ok(browserType,"Use FREEEDIT_TEST_ENGINE=chrome, firefox or webkit");
+const browser = await browserType.launch({headless: true,
   ...(process.env.FREEEDIT_TEST_BROWSER ? {executablePath:process.env.FREEEDIT_TEST_BROWSER}
-    : {channel:process.env.FREEEDIT_TEST_CHANNEL || "chrome"})});
+    : engine==='chrome' ? {channel:process.env.FREEEDIT_TEST_CHANNEL || "chrome"} : {})});
 const page = await browser.newPage({viewport:{width:1440,height:900}});
 page.setDefaultTimeout(15000);
 page.setDefaultNavigationTimeout(30000);
@@ -27,6 +30,39 @@ try {
   assert.ok(codecs.video && codecs.audio,"Smoke browser must decode H.264/AAC; install Chrome with Playwright");
   console.log("Smoke: upload and audio history");
   await page.goto("http://127.0.0.1:8765/",{waitUntil:"domcontentloaded"});
+  console.log("Smoke: IndexedDB recovery, large snapshots and failed writes");
+  const storage=await page.evaluate(async()=>{
+    const {createRecoveryStore}=await import('./recovery-store.mjs');
+    const name='freeedit-smoke-'+crypto.randomUUID();
+    const store=createRecoveryStore({name});
+    const original={image:'data:image/png;base64,'+'a'.repeat(6*1024*1024),edit:1};
+    const writing=store.write(original);
+    original.edit=2;
+    await writing;
+    const large=await store.read();
+    const put=IDBObjectStore.prototype.put;
+    let quota=false;
+    try {
+      IDBObjectStore.prototype.put=()=>{throw new DOMException('Test quota','QuotaExceededError');};
+      await store.write({edit:3});
+    } catch { quota=true; }
+    finally { IDBObjectStore.prototype.put=put; }
+    const preserved=(await store.read()).edit;
+    await Promise.all([store.write({edit:4}),store.clear(),store.write({edit:5})]);
+    const ordered=(await store.read()).edit;
+    await store.clear();
+    const cleared=(await store.read())===undefined;
+    await new Promise((resolve,reject)=>{
+      const request=indexedDB.deleteDatabase(name);
+      request.onsuccess=resolve;request.onerror=()=>reject(request.error);
+    });
+    return {length:large.image.length,edit:large.edit,quota,preserved,ordered,cleared};
+  });
+  assert.equal(storage.length,6*1024*1024+'data:image/png;base64,'.length);
+  assert.equal(storage.edit,1,'Queued storage must own its snapshot');
+  assert.ok(storage.quota && storage.cleared);
+  assert.equal(storage.preserved,1,'An aborted save must preserve the last good snapshot');
+  assert.equal(storage.ordered,5,'A late clear must not erase a newer queued save');
   await assert.doesNotReject(async()=>page.locator("#chooseFileBtn").waitFor());
   await page.locator("#fileInput").setInputFiles("/tmp/freeedit-ci-sample.mp4");
   await page.locator("#editorView:not(.hidden)").waitFor({timeout:30000});
@@ -260,6 +296,7 @@ try {
   await page.locator("#processBtn").click();
   await page.locator("#resultPanel:not(.hidden)").waitFor({timeout:120000});
   assert.equal(await page.locator("#downloadBtn").getAttribute("href") !== "#",true);
+  await page.waitForFunction(()=>projects.pendingSignature===null && !!projects.signature);
   // A finished export must remain available after a new editor context.
   await page.reload({waitUntil:'domcontentloaded'});
   await page.locator('#resumeProjectBtn').click();
