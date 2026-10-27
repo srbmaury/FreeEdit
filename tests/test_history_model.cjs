@@ -53,3 +53,12 @@ test('combined byte and entry budgets retain recent steps and reject oversized h
  history.push(undo,history.capture({text:'x'.repeat(2000)}),redo,{maxBytes:1000});
  assert.equal(undo.length+redo.length,0,'an oversized snapshot cannot bypass the budget');
 });
+
+test('budget pruning preserves nearby redo when the undo stack is much longer',()=>{
+ const undo=Array.from({length:5},(_,index)=>history.capture({index}));
+ const redo=[];
+ history.push(redo,history.capture({index:5}),undo,{maxEntries:5});
+ assert.equal(redo.length,1);
+ assert.equal(history.read(redo[0]).index,5);
+ assert.equal(history.read(undo[0]).index,1,'discard the farthest undo step');
+});

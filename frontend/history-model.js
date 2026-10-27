@@ -37,7 +37,7 @@ const HistoryModel = (() => {
   function trim(primary, secondary, {maxBytes = MAX_BYTES, maxEntries = MAX_ENTRIES} = {}) {
     while (primary.length + secondary.length > maxEntries || bytes([...primary, ...secondary]) > maxBytes) {
       // Keep the nearest undo/redo steps, discarding the farthest steps first.
-      const stack = secondary.length ? secondary : primary;
+      const stack = secondary.length >= primary.length && secondary.length ? secondary : primary;
       if (!stack.length) break;
       stack.shift();
     }
