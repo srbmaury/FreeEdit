@@ -13,6 +13,7 @@ FreeEdit targets screen recordings and short demos; it is **not a guaranteed mov
 | Timed Reframe | 20 non-overlapping sections; 1–3× zoom |
 | Projects | Version 2 `.freeedit.json`, up to 2 MiB, **without media files** |
 | Timeline | At most 4,096 waveform bins; zoom up to 16× |
+| Undo/redo | Up to 100 combined steps within a 16 MiB document/asset payload budget; images shared across snapshots |
 | Presenter composition | One main recording and one inset; no multi-clip sequence/reordering |
 | Playback/export speed | No global or per-section speed-ramping |
 

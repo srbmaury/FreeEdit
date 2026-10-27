@@ -24,8 +24,8 @@ function renderTimeline() {
   $("zoomOutBtn").disabled = timeline.zoom === 1;
   $("zoomInBtn").disabled = timeline.zoom === 16;
   $("pauseTrack").replaceChildren();
-  show($("pauseTrack"), S.job.has_audio);
-  show($("pauseLabel"), S.job.has_audio);
+  show($("pauseTrack"), S.job.has_audio && S.suggestions.length > 0);
+  show($("pauseLabel"), S.job.has_audio && S.suggestions.length > 0);
   for (const suggestion of S.suggestions) {
     const marker = document.createElement("button");
     marker.className = "pause-marker" + (suggestion.selected ? " selected" : "");
@@ -39,7 +39,8 @@ function renderTimeline() {
   for (const row of timelineRows) {
     const track = $(row.track);
     track.replaceChildren();
-    const visible = row.type === "cut" || S.job.has_video;
+    const visible = row.type === "cut" ||
+      (S.job.has_video && S.edits.some(edit => edit.type === row.type));
     show(track, visible); show($(row.label), visible);
     if (!visible) continue;
     const laneHeight = window.matchMedia("(max-width: 600px)").matches ? 48 : 32;

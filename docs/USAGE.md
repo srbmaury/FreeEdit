@@ -10,6 +10,11 @@ FreeEdit is a focused screen-recording editor. It keeps edits relative to the **
 4. Use **Export → Preview result** to review the selected range, then export the complete result.
 5. Save a `.freeedit.json` project and keep both source recordings if you want to edit again later.
 
+The desktop timeline sits below the preview, beside the settings inspector.
+Effect tracks appear when they contain edits; pause suggestions appear after
+analysis. Undo and redo keep recent changes within a memory budget, so older
+steps can expire in large projects. Save a project file to keep a lasting copy.
+
 ### Cut, range selection and pauses
 
 - Drag across the waveform or timeline ruler, or mark the start and end with **I** and **O**. Range actions include Play, Cut and Reframe. Draft ranges do not change the project until applied.

@@ -64,6 +64,19 @@ node --test tests/*.cjs tests/test_*.mjs
 
 GitHub Actions (`.github/workflows/checks.yml`) covers Python/FFmpeg, Node and a Chromium smoke test for upload, editing, project round-trip and export. A green run is not a substitute for real-person segmentation, many-browser testing, or profiling long recordings.
 
+The browser smoke test uses Chrome because the pinned Playwright Chromium
+build does not decode the application's H.264/AAC export. Install it with
+`npx playwright install --with-deps chrome`; codec support and source decoding
+are checked before editing. Browser smoke waits default to 15 seconds (30 for navigation), with explicit
+longer export waits and a five-minute overall deadline. Failures save a screenshot
+and Playwright trace under `/tmp/freeedit-browser-artifacts/`; CI uploads these
+with seven-day retention. Stage logs identify the last completed workflow phase.
+Set `FREEEDIT_TEST_CHANNEL` to another installed compatible Playwright channel,
+`FREEEDIT_TEST_BROWSER` to a compatible local Chromium executable, or
+`FREEEDIT_TEST_ARTIFACTS` to choose another diagnostics directory. Pixel regression
+tests compare range-preview and full-export annotation frames through entrances,
+steady display and exits, including cut timing.
+
 ## Common problems
 
 | Symptom | What to check |

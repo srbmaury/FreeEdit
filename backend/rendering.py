@@ -55,10 +55,17 @@ def preview(source: Path, presenter: Path | None, work: Path, settings: dict,
         args += ["-af", "atrim=start=0,asetpts=PTS-STARTPTS", "-c:a", "pcm_s16le"]
     pipeline._run_ffmpeg([*args, str(sample)], length, "Preparing selected range", progress)
     local = copy.deepcopy(settings)
+    # Animation progress depends on the complete annotation interval. Clipping
+    # it would restart an entrance or add an exit at the preview boundary.
     for key in ("edits", "cuts"):
-        local[key] = [{**edit, "start": max(start, edit["start"]) - start,
-                       "end": min(end, edit["end"]) - start}
-                      for edit in settings[key] if min(end, edit["end"]) > max(start, edit["start"])]
+        local[key] = []
+        for edit in settings[key]:
+            if min(end, edit["end"]) <= max(start, edit["start"]):
+                continue
+            animated = edit.get("type") == "annotation"
+            local[key].append({**edit,
+                "start": (edit["start"] if animated else max(start, edit["start"])) - start,
+                "end": (edit["end"] if animated else min(end, edit["end"])) - start})
     if local.get("reframe"):
         # Keep complete section lengths, including negative local starts, so
         # clipping a preview never restarts or shortens a zoom transition.

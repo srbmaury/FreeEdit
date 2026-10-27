@@ -1,16 +1,44 @@
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
-import { readFile } from "node:fs/promises";
+import { readFile, mkdir } from "node:fs/promises";
 
-const browser = await chromium.launch({headless: true});
+const browser = await chromium.launch({headless: true,
+  ...(process.env.FREEEDIT_TEST_BROWSER ? {executablePath:process.env.FREEEDIT_TEST_BROWSER}
+    : {channel:process.env.FREEEDIT_TEST_CHANNEL || "chrome"})});
 const page = await browser.newPage({viewport:{width:1440,height:900}});
+page.setDefaultTimeout(15000);
+page.setDefaultNavigationTimeout(30000);
+// Bound asynchronous page.evaluate calls as well as Playwright's own waits.
+const deadline=setTimeout(()=>{
+  console.error("Browser smoke test exceeded its five-minute deadline");
+  process.exitCode=1;
+  void browser.close();
+},300000);
+await page.context().tracing.start({screenshots:true,snapshots:true});
 const errors=[];
 page.on("pageerror",error=>errors.push(error.message));
 try {
+  console.log("Smoke browser:",browser.version());
+  const codecs=await page.evaluate(()=>{
+    const player=document.createElement('video');
+    return {video:player.canPlayType('video/mp4; codecs="avc1.42E01E"'),
+      audio:player.canPlayType('audio/mp4; codecs="mp4a.40.2"')};
+  });
+  assert.ok(codecs.video && codecs.audio,"Smoke browser must decode H.264/AAC; install Chrome with Playwright");
+  console.log("Smoke: upload and audio history");
   await page.goto("http://127.0.0.1:8765/",{waitUntil:"domcontentloaded"});
   await assert.doesNotReject(async()=>page.locator("#chooseFileBtn").waitFor());
   await page.locator("#fileInput").setInputFiles("/tmp/freeedit-ci-sample.mp4");
   await page.locator("#editorView:not(.hidden)").waitFor({timeout:30000});
+  await page.waitForFunction(()=>{
+    const player=document.getElementById('video');
+    if(player.error)throw Error('Uploaded source failed to decode: '+player.error.code);
+    return player.readyState>=2;
+  });
+  const transportBounds=await page.locator('#transport').boundingBox();
+  const waveformBounds=await page.locator('#waveformTrack').boundingBox();
+  assert.ok(transportBounds.y<900 && waveformBounds.y+waveformBounds.height<=900,
+    "Playback and initial timeline must fit beside the desktop inspector");
   await page.locator('.workspace-rail button').filter({hasText:'Audio'}).click();
   await page.locator('#denoise').uncheck();
   await page.locator('#audioFinishControls summary').click();
@@ -101,6 +129,7 @@ try {
 
   // A visual tile arms click-to-place; one click on the actual preview must
   // create a visible icon at the clicked source coordinates.
+  console.log("Smoke: annotations and animation controls");
   await page.locator(".workspace-rail button").filter({hasText:"Annotations"}).click();
   assert.equal(await page.locator("#annotationTypePicker .annotation-choice").count(),5);
   assert.equal(await page.locator("#annotationIconPicker .annotation-choice").count(),6);
@@ -202,9 +231,16 @@ try {
   assert.equal(await page.locator("#annotationTrack .timeline-block.annotation").count(),2);
   await page.locator('#editsList .card[data-id="'+logoPlaced.id+'"] .annotation-image-preview').waitFor();
   assert.ok(await page.locator('#editsList .card[data-id="'+logoPlaced.id+'"] .annotation-image-preview').isVisible());
+  // PNG-backed edits must survive the asset-sharing history codec intact.
+  await page.locator('#undoBtn').click();
+  assert.equal(await page.locator('#annotationTrack .timeline-block.annotation').count(),1);
+  await page.locator('#redoBtn').click();
+  assert.equal(await page.locator('#annotationTrack .timeline-block.annotation').count(),2);
+  assert.equal(await page.evaluate(id=>getEdit(id).image,logoPlaced.id),logoPlaced.image);
 
   // V2 projects store all timed edits together; no separate reframe sections
   // remain in scene settings. Round-trip through the actual validator.
+  console.log("Smoke: project round-trip");
   const [download]=await Promise.all([
     page.waitForEvent("download"),
     page.locator("#saveProjectBtn").evaluate(node=>node.click())
@@ -219,6 +255,7 @@ try {
   assert.equal(await page.locator("#zoomTrack .timeline-block.zoom").count(),1);
   assert.match(await page.locator("#editsList").innerText(),/Reframe/);
 
+  console.log("Smoke: FFmpeg export and recovery");
   await page.locator(".workspace-rail button").filter({hasText:"Export"}).click();
   await page.locator("#processBtn").click();
   await page.locator("#resultPanel:not(.hidden)").waitFor({timeout:120000});
@@ -228,15 +265,21 @@ try {
   await page.locator('#resumeProjectBtn').click();
   await page.locator('#resultPanel:not(.hidden)').waitFor({timeout:30000});
   assert.equal(await page.locator('#downloadBtn').isVisible(),true);
-  await page.locator('#resultVideo').evaluate(async player => {
-    if(player.readyState<1) await new Promise((resolve,reject)=>{
-      player.addEventListener('loadedmetadata',resolve,{once:true});
-      player.addEventListener('error',()=>reject(Error('Recovered result failed to load')),{once:true});
-    });
-    if(!Number.isFinite(player.duration)||player.duration<=0)throw Error('Invalid recovered duration');
-  });
+  await page.waitForFunction(()=>{
+    const player=document.getElementById('resultVideo');
+    if(player.error)throw Error('Recovered result failed to load: '+player.error.code);
+    return player.readyState>=1 && Number.isFinite(player.duration) && player.duration>0;
+  },null,{timeout:15000});
   assert.deepEqual(errors,[],"Browser JavaScript errors: "+errors.join("; "));
   console.log("Browser upload → all edit types → v2 project reload → FFmpeg export: PASS");
+} catch(error) {
+  const artifacts=process.env.FREEEDIT_TEST_ARTIFACTS || "/tmp/freeedit-browser-artifacts";
+  await mkdir(artifacts,{recursive:true});
+  await page.screenshot({path:artifacts+"/failure.png",timeout:5000}).catch(()=>{});
+  await page.context().tracing.stop({path:artifacts+"/trace.zip"}).catch(()=>{});
+  console.error("Browser errors:",errors);
+  throw error;
 } finally {
+  clearTimeout(deadline);
   await browser.close();
 }

@@ -69,6 +69,13 @@ Undo/redo captures scene settings, timed edits and presenter placement together,
 then emits a document change when restored. Project import similarly creates a
 validated v2 document and applies it via the store.
 
+`history-model.js` owns a pure snapshot codec and retention policy. PNG data
+is kept in shared asset tables rather than repeated in each JSON snapshot.
+Undo and redo together retain at most 100 entries and 16 MiB of accounted
+UTF-16 document/asset payload; object overhead and the live document are outside
+that budget. Oldest steps are dropped first. Clearing either stack releases
+its unused assets without a separate global asset cache.
+
 ## Module map and load order
 
 Classic JavaScript script tags share a global lexical scope. FreeEdit keeps
@@ -165,3 +172,9 @@ the source-resolution canvas and creates transparent raster assets for export.
 them before cuts, with time-based static, fade or slide settings. Asset imports
 are decoded before sending preview/export jobs. Project v2 includes annotation
 styles and compact image data as part of the edit document.
+
+Range previews retain complete annotation animation intervals on their local
+clock, including negative starts, so preview boundaries do not invent fade/slide
+entrances or exits. Fade evaluation uses a shifted nonnegative clock because
+FFmpeg rejects negative fade start times. Video cuts use half-open retained
+intervals, matching audio trimming and avoiding duplicate boundary timestamps.

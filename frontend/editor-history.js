@@ -7,29 +7,30 @@ function audioHistorySnapshot() {
   return {audio: getAudioSettings(), denoise: $("denoise").checked, strength: $("strength").value};
 }
 function snapshot() {
-  return JSON.stringify({edits: S.edits, background: S.background, presenter: presenterProject(),
-    reframe: S.reframe, ...audioHistorySnapshot()});
+  return HistoryModel.capture({edits: S.edits, background: S.background, presenter: presenterProject(),
+    reframe: S.reframe, ...audioHistorySnapshot()}, [...S.undo, ...S.redo]);
 }
 function audioSettingsChanged() {
   if (S.job && audioHistoryState) {
-    const previous = JSON.stringify({...JSON.parse(snapshot()), ...audioHistoryState});
-    if (previous !== snapshot()) checkpoint(previous);
+    const current = snapshot();
+    const previous = HistoryModel.capture({...HistoryModel.read(current), ...audioHistoryState}, [...S.undo, ...S.redo]);
+    if (!HistoryModel.same(previous, current)) checkpoint(previous);
   }
   refreshExportState();
 }
 function checkpoint(current = snapshot()) {
   // Also used directly as a focus listener; DOM events are not snapshots.
-  if (typeof current !== "string") current = snapshot();
-  if (S.undo.at(-1) !== current) S.undo.push(current);
-  if (S.undo.length > 100) S.undo.shift();
+  if (!current || typeof current.json !== "string" || !Array.isArray(current.assets)) current = snapshot();
   S.redo = [];
+  HistoryModel.push(S.undo, current);
 }
 function restoreHistory(redo = false) {
   const from = redo ? S.redo : S.undo, to = redo ? S.undo : S.redo;
-  while (from.length && from.at(-1) === snapshot()) from.pop();
+  const current = snapshot();
+  while (from.length && HistoryModel.same(from.at(-1), current)) from.pop();
   if (!from.length) return;
-  to.push(snapshot());
-  const restored = JSON.parse(from.pop());
+  const restored = HistoryModel.read(from.pop());
+  HistoryModel.push(to, current, from);
   restorePresenter(restored.presenter, true);
   restoreAudioSettings(restored.audio);
   $("denoise").checked = restored.denoise;

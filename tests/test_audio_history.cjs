@@ -14,8 +14,9 @@ test('audio changes undo and redo in order with visual edits',()=>{
   editorStore:{dispatch:(_,mutate)=>{mutate(S);vm.runInContext('audioHistoryState=audioHistorySnapshot()',c);}},
   refreshExportState:()=>vm.runInContext('audioHistoryState=audioHistorySnapshot()',c),
   syncReframeControls:()=>{},syncBackgroundControls:()=>{},invalidateBackgroundPreview:()=>{},renderSilenceReview:()=>{}});
+ vm.runInContext(fs.readFileSync('frontend/history-model.js','utf8'),c);
  vm.runInContext(functions,c);vm.runInContext('audioHistoryState=audioHistorySnapshot()',c);
- vm.runInContext('checkpoint({type:"focus"})',c);assert.equal(typeof S.undo[0],'string');S.undo=[];
+ vm.runInContext('checkpoint({type:"focus"})',c);assert.equal(typeof S.undo[0].json,'string');S.undo=[];
  audio.fade_in=2;audio.level_speech=true;vm.runInContext('audioSettingsChanged()',c);
  assert.equal(S.undo.length,1);
  elements.denoise.checked=false;elements.strength.value='30';vm.runInContext('audioSettingsChanged()',c);

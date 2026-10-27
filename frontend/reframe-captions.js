@@ -214,7 +214,8 @@ function renderZoomSelectList(){
 function renderZoomTimeline(){
   const track=$("zoomTrack"),label=$("zoomLabelTrack");
   if(!track||!S.job)return;
-  show(track,S.job.has_video);show(label,S.job.has_video);
+  const visible=S.job.has_video && zoomSections().length>0;
+  show(track,visible);show(label,visible);
   track.replaceChildren();
   for(const edit of zoomSections()){
     const block=document.createElement("button");block.type="button";

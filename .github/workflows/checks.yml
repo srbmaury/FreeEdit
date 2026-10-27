@@ -59,7 +59,7 @@ jobs:
           sudo apt-get install -y ffmpeg
           python -m pip install -r requirements-web.lock
           npm install --no-save playwright@1.56.1
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chrome
       - name: Generate synthetic sample and start editor
         run: |
           ffmpeg -hide_banner -loglevel error -y -f lavfi -i "testsrc2=size=320x180:rate=24:duration=4" -f lavfi -i "sine=frequency=440:duration=4" -c:v libx264 -preset ultrafast -threads 1 -c:a aac -shortest /tmp/freeedit-ci-sample.mp4
@@ -70,8 +70,16 @@ jobs:
           done
           cat /tmp/freeedit-browser-server.log
           exit 1
-      - name: Upload, reframe, select and export in Chromium
+      - name: Upload, reframe, select and export in Chrome
+        timeout-minutes: 6
         run: node tests/browser_smoke.mjs
       - name: Server diagnostics on failure
         if: failure()
         run: cat /tmp/freeedit-browser-server.log
+      - name: Browser diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failure
+          path: /tmp/freeedit-browser-artifacts/
+          retention-days: 7
