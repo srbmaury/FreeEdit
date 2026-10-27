@@ -126,7 +126,7 @@ api("/api/limits").then((l) => {
   $("dzLimits").textContent = text;
 }).catch(() => {});
 
-async function upload(file, knownIdentity = null) {
+async function upload(file, knownIdentity = null, onReady = null) {
   S.pendingUpload = file;
   try { await editorReady; }
   catch { return uploadFailed("Could not load the editor. Refresh the page and try again.", true); }
@@ -171,6 +171,12 @@ async function upload(file, knownIdentity = null) {
       }
       openEditor(body);
       projectSourceReady(identity);
+      if (onReady) Promise.resolve(onReady(body, identity)).catch(error => {
+        if (S.job?.id === body.id) {
+          projects.restoringSequence = false; projects.pending = null;
+          $("projectStatus").textContent = error.message || "Could not restore the clip sequence.";
+        }
+      });
     }
     else uploadFailed(body.detail || `Upload failed (${xhr.status})`, xhr.status === 429 || xhr.status >= 500);
   };
@@ -184,6 +190,7 @@ async function upload(file, knownIdentity = null) {
 $("retryUploadBtn").onclick = () => { if (S.pendingUpload) upload(S.pendingUpload); };
 
 function uploadFailed(msg, retry = false) {
+  if (projects.restoringSequence) { projects.restoringSequence = false; projects.pending = null; }
   show($("retryUploadBtn"), retry && !!S.pendingUpload);
   show($("uploadProgress"), false);
   show(dropZone);
@@ -271,7 +278,7 @@ function layoutStage() {
   // The timeline stays beneath the preview and never gets overlapped.
   const maxH = window.innerWidth <= 850
     ? Math.max(180, window.innerHeight * 0.5)
-    : Math.max(180, window.innerHeight - 550);
+    : Math.max(220, window.innerHeight - 420);
   const { width: W, height: H } = S.job;
   const guide = typeof reframeGuideSection === "function" && reframeGuideSection();
   let shape = guide ? {w: W, h: H} : freeeditCropRect(W, H, {...S.reframe, zoom: 1});

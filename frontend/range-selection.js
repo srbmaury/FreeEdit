@@ -21,11 +21,12 @@ function displayRangeSelection() {
   rangeLabel.textContent = `${fmt(range.start)}–${fmt(range.end)} · ${(range.end-range.start).toFixed(2)}s selected`;
   positionTimelineBlock(rangeHighlight, range);
   rangeActions.querySelector('[data-action="reframe"]').disabled = !S.job?.has_video;
+  rangeActions.querySelector('[data-action="audio"]').disabled = !S.job?.has_audio && !presenterProject()?.source.has_audio;
 }
 function clearRangeSelection() {
   rangeSelection.range = null; displayRangeSelection();
 }
-for (const [action, label] of [["cut", "Cut range"], ["reframe", "Reframe range"], ["preview", "Play range"], ["clear", "Clear"]]) {
+for (const [action, label] of [["cut", "Cut range"], ["reframe", "Reframe range"], ["audio", "Set volume"], ["preview", "Play range"], ["clear", "Clear"]]) {
   const button = document.createElement("button");
   button.type = "button"; button.className = "mini"; button.dataset.action = action; button.textContent = label;
   button.onclick = () => {
@@ -35,6 +36,13 @@ for (const [action, label] of [["cut", "Cut range"], ["reframe", "Reframe range"
     if (action === "preview") {
       sourcePlayer().currentTime = range.start; S.auditionUntil = range.end;
       sourcePlayer().play().catch(() => { S.auditionUntil = null; }); return;
+    }
+    if (action === "audio") {
+      $("audioRegionStart").value = range.start.toFixed(3);
+      $("audioRegionEnd").value = range.end.toFixed(3);
+      window.dispatchEvent(new CustomEvent("freeedit:workspace", {detail: "audio-regions"}));
+      requestAnimationFrame(() => $("audioRegionVolume").focus());
+      return;
     }
     if (action === "cut") {
       window.dispatchEvent(new CustomEvent("freeedit:workspace", {detail: "cut"}));

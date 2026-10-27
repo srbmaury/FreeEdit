@@ -7,6 +7,7 @@
   const side = editor.querySelector(".side");
   const cleanup = side.querySelector(".audio-cleanup");
   const noise = cleanup.querySelector(".panel");
+  noise.querySelector("h3").textContent = "Noise reduction";
   const pauses = byId("silencePanel");
   const edits = byId("editsPanel");
   const exportPanel = byId("exportPanel");
@@ -82,6 +83,7 @@
   }
   const previewHeading = document.querySelector(".preview-heading");
   previewHeading.append(byId("toolbar"));
+  previewHeading.querySelector(".workspace-title").textContent = "Canvas";
   const previewInfo = document.createElement("details");
   previewInfo.className = "preview-info";
   const infoButton = document.createElement("summary");
@@ -140,7 +142,7 @@
   editor.append(footer);
   const timelineTitle = document.createElement("div");
   timelineTitle.className = "timeline-heading";
-  timelineTitle.innerHTML = '<strong>Timeline</strong><span>Original timing</span>';
+  timelineTitle.innerHTML = '<strong>Timeline</strong><span>Arrange and time your edits</span>';
   byId("transport").prepend(timelineTitle);
   const heading = document.createElement("div");
   heading.className = "inspector-heading"; heading.textContent = "Edit settings";

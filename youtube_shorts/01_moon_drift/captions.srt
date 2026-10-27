@@ -1,0 +1,35 @@
+1
+00:00:00,000 --> 00:00:04,600
+The Moon is moving away from Earth.
+
+2
+00:00:04,600 --> 00:00:06,800
+NASA's laser measurements reveal…
+
+3
+00:00:06,800 --> 00:00:11,000
+About 3.8 centimeters per year.
+
+4
+00:00:11,000 --> 00:00:13,200
+The reason? Ocean tides.
+
+5
+00:00:13,200 --> 00:00:17,000
+Earth's rotation pulls the tidal bulge ahead.
+
+6
+00:00:17,000 --> 00:00:22,000
+That tug transfers energy into the Moon's orbit.
+
+7
+00:00:22,000 --> 00:00:27,800
+Scientists bounce lasers off reflectors on the Moon.
+
+8
+00:00:27,800 --> 00:00:30,300
+They time the return to measure its distance.
+
+9
+00:00:30,300 --> 00:00:33,000
+A tiny drift—about as fast as fingernails grow.

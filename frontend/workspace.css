@@ -58,7 +58,7 @@ button.primary, a.button.primary { background: var(--accent); color: var(--accen
 :root[data-theme="dark"] #toolbar > .tool[data-mode="select"].active { color: #e5e1ff; background: #35314e; border-color: #7067ac; }
 #toolbar > .tool[data-mode="select"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 #toolbar .hint { width: auto; margin: 0; font-size: 12px; }
-.stage-wrap { min-height: 260px; padding: 12px; background: var(--stage); border: 0; border-radius: 9px; }
+.stage-wrap { min-height: 320px; padding: 12px; background: var(--stage); border: 0; border-radius: 9px; }
 .stage { flex-shrink: 0; border-radius: 6px; overflow: hidden; box-shadow: 0 12px 30px #0002; }
 .stage video { background: #000; }
 #resultVideo { max-height: 78vh; max-width: 100%; }
@@ -160,13 +160,26 @@ button.primary, a.button.primary { background: var(--accent); color: var(--accen
 }
 #compositionPreviewPlayer { width: 100%; max-height: 240px; margin-top: 12px; background: #000; border-radius: 8px; }
 #videosPanel input { max-width: 100%; min-width: 0; }
+.sequence-clips { display: grid; gap: 6px; margin: 12px 0 8px; }
+.sequence-transitions { display:grid; gap:8px; margin:8px 0; }
+.sequence-transition { display:flex; align-items:center; gap:8px; font-size:.9rem; }
+.sequence-transition label { display:flex; align-items:center; gap:8px; flex:1; }
+.sequence-transition select { min-width:110px; }
+.sequence-transition input { width:76px; }
+.sequence-clip { display: grid; gap: 6px; padding: 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); }
+.sequence-clip > span { font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+.sequence-clip-actions { display: flex; gap: 5px; }
+.sequence-clip-actions .mini { min-height: 28px; }
+#videosPanel hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 16px 0; }
 #reframePanel input[type="range"] { width: 100%; }
 #reframeZoomLabel { color: var(--muted); font-size: 12px; }
 #captionStatus { margin-top: 12px; overflow-wrap: anywhere; }
 .panel-divider { padding: 14px 0 8px; margin-top: 12px; border-top: 1px solid var(--border); }
-.reframe-section { display: flex; align-items: center; gap: 5px; padding: 7px 0; border-bottom: 1px solid var(--border); }
-.reframe-section span { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 11px; color: var(--text); }
-.reframe-section button { font-size: 11px; padding: 5px 7px; flex-shrink: 0; }
+.reframe-section { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 6px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+.reframe-section > span { min-width: 0; font-size: 11px; line-height: 1.45; color: var(--text); overflow-wrap: normal; word-break: normal; }
+.reframe-section > button { font-size: 11px; padding: 5px 7px; white-space: nowrap; }
+.reframe-section > .edit-actions { grid-column: 1 / -1; margin-top: 0; }
+.reframe-section > .edit-actions button { white-space: nowrap; }
 #reframeSections { margin: 8px 0; }
 
 /* Keyboard navigation remains visible on both light and dark surfaces. */

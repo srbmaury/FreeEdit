@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>FreeEdit — Clean up your screen recordings</title>
-  <meta name="description" content="Remove background noise, cut out parts, add text, and hide anything private in your screen recordings and audio. Free." />
+  <title>FreeEdit — Video editor for polished videos</title>
+  <meta name="description" content="Edit video with a visual timeline, captions, reframing, annotations, audio cleanup, and flexible export. Free and open source." />
   <meta name="theme-color" content="#2f6fe4" />
   <link rel="canonical" href="https://freeedit.srbmaury.com/" />
   <link rel="icon" href="/favicon.ico" sizes="48x48" />
@@ -14,8 +14,8 @@
 
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="FreeEdit" />
-  <meta property="og:title" content="FreeEdit — Clean up your screen recordings" />
-  <meta property="og:description" content="Remove background noise, cut out parts, add text, and hide anything private. Free." />
+  <meta property="og:title" content="FreeEdit — Video editor for polished videos" />
+  <meta property="og:description" content="Edit video with a visual timeline, captions, reframing, annotations, audio cleanup, and flexible export. Free and open source." />
   <meta property="og:url" content="https://freeedit.srbmaury.com/" />
   <meta property="og:image" content="https://freeedit.srbmaury.com/social-preview.png" />
   <meta property="og:image:secure_url" content="https://freeedit.srbmaury.com/social-preview.png" />
@@ -25,8 +25,8 @@
   <meta property="og:image:alt" content="FreeEdit: a video editor with a hidden area, a text overlay, a cut on the timeline, and audio before and after noise removal" />
 
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="FreeEdit — Clean up your screen recordings" />
-  <meta name="twitter:description" content="Remove background noise, cut out parts, add text, and hide anything private. Free." />
+  <meta name="twitter:title" content="FreeEdit — Video editor for polished videos" />
+  <meta name="twitter:description" content="Edit video with a visual timeline, captions, reframing, annotations, audio cleanup, and flexible export. Free and open source." />
   <meta name="twitter:image" content="https://freeedit.srbmaury.com/social-preview.png" />
   <meta name="twitter:image:alt" content="FreeEdit: a video editor with a hidden area, a text overlay, a cut on the timeline, and audio before and after noise removal" />
   <script src="theme.js"></script>
@@ -37,7 +37,7 @@
   <a class="skip-link" href="#main">Skip to editor</a>
   <header class="topbar">
     <div class="brand">FreeEdit</div>
-    <div class="tagline">A little cleanup. A recording ready to share.</div>
+    <div class="tagline">A video editor for tutorials, demos, and social clips</div>
     <button id="newFileBtn" class="ghost hidden">Open another file</button>
     <details id="appMenu" class="app-menu">
       <summary aria-label="FreeEdit menu">⋯</summary>
@@ -72,14 +72,15 @@
       <div><strong>Continue your last project</strong><p id="resumeDetails" class="small"></p></div>
       <div class="row"><button id="resumeProjectBtn" class="primary">Resume editing</button><button id="discardRecoveryBtn" class="ghost">Discard recovery</button></div>
     </div>
-    <h1>Make your recording ready to share.</h1>
-    <p class="upload-intro">Clean up noise, shorten pauses, hide private details.</p>
+    <h1>Edit your video. Make every moment clear.</h1>
+    <p class="upload-intro">Cut, caption, reframe, annotate, mix audio, and export a polished video.</p>
     <div id="dropZone" class="dropzone">
       <input id="fileInput" type="file" accept=".mov,.mp4,.m4v,.mkv,.webm,.avi,.wav,.mp3,.m4a,.aac,.flac,.ogg,video/*,audio/*" hidden />
       <button type="button" id="chooseFileBtn" class="primary">Choose a file</button>
-      <div class="dz-title">Drop a video or audio file here</div>
+      <div class="dz-title">Start with a video</div>
       <div class="dz-sub">or use Choose a file</div>
-      <div class="dz-formats">MOV · MP4 · WEBM · MKV · WAV · MP3 · M4A · FLAC</div>
+      <div class="dz-formats">Video: MOV · MP4 · WEBM · MKV · AVI</div>
+      <div class="dz-formats">Audio files can also be opened for cleanup and export.</div>
       <div id="retentionNote" class="dz-formats"></div>
       <div id="dzLimits" class="dz-formats"></div>
     </div>
@@ -175,8 +176,16 @@
 
       <aside class="side">
         <section id="videosPanel" class="panel">
-          <h2 class="section-title">Combine videos</h2>
-          <p class="small">The main video fills the frame and sets the duration. Add one presenter video as an inset.</p>
+          <h2 class="section-title">Clips & presenter</h2>
+          <p class="small">Arrange up to 8 matching clips in one sequence. Then optionally add a presenter inset.</p>
+          <div id="sequenceClips" class="sequence-clips" aria-label="Main video clip sequence"></div>
+          <div id="sequenceTransitions" class="sequence-transitions" aria-label="Transitions between clips"></div>
+          <button id="addSequenceClipBtn" type="button">Add video clip…</button>
+          <input id="sequenceClipInput" type="file" accept="video/*,.mov,.mkv,.mp4,.webm" multiple hidden />
+          <p id="sequenceStatus" class="small" role="status" aria-live="polite"></p>
+          <hr />
+          <h3>Presenter inset</h3>
+          <p class="small">The presenter video overlays the main sequence.</p>
           <p id="presenterName" class="small">No presenter video added.</p>
           <button id="choosePresenterBtn" type="button">Add presenter video…</button>
           <input id="presenterInput" type="file" accept="video/*,.mov,.mkv,.mp4,.webm" hidden />
@@ -661,7 +670,7 @@
     <form method="dialog"><h2 id="aboutTitle">About FreeEdit</h2><p id="runtimeVersion" class="small" role="status"></p><p>A focused, open-source utility for cleaning up audio and video recordings.</p><p>Noise reduction uses DeepFilterNet3. Media analysis and export use FFmpeg.</p><p class="small">No account required. For setup, source code, and known limitations, visit the GitHub repository.</p><button class="primary">Done</button></form>
   </dialog>
   <input id="projectInput" type="file" accept=".json,.freeedit.json" hidden />
-  <input id="projectSourceInput" type="file" accept="video/*,audio/*,.mov,.mkv,.wav,.mp3,.m4a,.flac" hidden />
+  <input id="projectSourceInput" type="file" accept="video/*,audio/*,.mov,.mkv,.wav,.mp3,.m4a,.flac" multiple hidden />
   <dialog id="projectDialog" class="info-dialog" aria-labelledby="projectDialogTitle">
     <h2 id="projectDialogTitle">Open project</h2>
     <p id="projectMessage" role="status" aria-live="polite"></p>
@@ -702,6 +711,7 @@
   <script src="noise-preview.js"></script>
   <script src="background.js"></script>
   <script src="videos.js"></script>
+  <script src="clips.js"></script>
   <script src="workspace.js"></script>
   <script src="reframe-captions.js"></script>
   <script src="annotations.js"></script>
