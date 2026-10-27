@@ -6,3 +6,15 @@ jobs/
 .DS_Store
 
 .venv-background/
+
+# Exclude local browser/test artifacts from the Docker build context
+node_modules/
+playwright-report/
+test-results/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage/
+*.log
+release-inventory.json

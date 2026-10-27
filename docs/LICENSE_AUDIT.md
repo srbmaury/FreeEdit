@@ -17,7 +17,12 @@ Reviewed 23 October 2026; project license and upstream model-license issue reche
 
 ## Optional background engine (24 October 2026)
 
-MediaPipe 0.10.21 and its dependencies are installed separately through `requirements-background.txt`. The SelfieSegmenter v1 URL and SHA-256 are recorded in [BACKGROUNDS.md](BACKGROUNDS.md). The model is not committed or baked into the optional Docker environment; it downloads on first use or through setup. Inventory this environment's native/Python dependencies separately and establish the exact model terms before redistributing weights. This record does not claim a completed redistribution audit for the new engine.
+MediaPipe 0.10.21 and its dependencies are installed separately through `requirements-background.txt`. The MediaPipe SelfieSegmenter v1 (float16 square) model is downloaded from
+https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/1/selfie_segmenter.tflite
+with expected SHA-256
+`191ac9529ae506ee0beefa6b2c945a172dab9d07d1e802a290a4e4038226658b`.
+Its source, checksum and redistribution obligations should be verified before shipping
+binaries. See [optional installation](DEVELOPMENT.md) and [usage limitations](USAGE.md). The model is not committed or baked into the optional Docker environment; it downloads on first use or through setup. Inventory this environment's native/Python dependencies separately and establish the exact model terms before redistributing weights. This record does not claim a completed redistribution audit for the new engine.
 
 ## Release decisions still open
 
