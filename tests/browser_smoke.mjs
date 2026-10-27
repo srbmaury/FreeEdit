@@ -167,7 +167,7 @@ try {
   // create a visible icon at the clicked source coordinates.
   console.log("Smoke: annotations and animation controls");
   await page.locator(".workspace-rail button").filter({hasText:"Annotations"}).click();
-  assert.equal(await page.locator("#annotationTypePicker .annotation-choice").count(),5);
+  assert.equal(await page.locator("#annotationTypePicker .annotation-choice").count(),7);
   assert.equal(await page.locator("#annotationIconPicker .annotation-choice").count(),6);
   await page.locator('#annotationIconPicker [data-choice-value="star"]').click();
   assert.equal(await page.evaluate(()=>S.mode),"annotation");
@@ -274,6 +274,144 @@ try {
   assert.equal(await page.locator('#annotationTrack .timeline-block.annotation').count(),2);
   assert.equal(await page.evaluate(id=>getEdit(id).image,logoPlaced.id),logoPlaced.image);
 
+  console.log("Smoke: freehand pen, highlighter, eraser and history");
+  await page.locator('.workspace-rail button').filter({hasText:/^Draw$/}).click();
+  await page.locator('#drawingStart').fill('0.5');
+  await page.locator('#drawingEnd').fill('3');
+  await page.locator('#drawingColor').fill('#ef4444');
+  const drawGesture=async(points)=>{
+    const box=await overlay.boundingBox();
+    await page.mouse.move(box.x+box.width*points[0][0],box.y+box.height*points[0][1]);
+    await page.mouse.down();
+    for(const [x,y] of points.slice(1))await page.mouse.move(box.x+box.width*x,box.y+box.height*y,{steps:5});
+    await page.mouse.up();
+  };
+  await drawGesture([[.60,.75],[.7,.65],[.85,.75]]);
+  const drawing=await page.evaluate(()=>{
+    const e=S.edits.find(e=>e.kind==='drawing');
+    return e&&structuredClone(e);
+  });
+  assert.ok(drawing?.points.length>2,'A gesture retains editable vector points');
+  assert.equal(drawing.start,.5);assert.equal(drawing.end,3);
+  assert.equal(await page.locator('#workspace-draw').isVisible(),true);
+  await page.locator('#undoBtn').click();
+  assert.equal(await page.evaluate(()=>S.edits.filter(e=>e.kind==='drawing').length),0);
+  await page.locator('#redoBtn').click();
+  assert.equal(await page.evaluate(()=>S.edits.filter(e=>e.kind==='drawing').length),1);
+  await page.locator('[data-drawing-tool="highlighter"]').click();
+  await drawGesture([[.2,.75],[.4,.75]]);
+  assert.equal(await page.evaluate(()=>S.edits.filter(e=>e.kind==='drawing').at(-1).opacity),.35);
+  // A canceled gesture is discarded; a tap creates a dot that can be undone.
+  await page.locator('[data-drawing-tool="pen"]').click();
+  const cancelBox=await overlay.boundingBox();
+  await page.mouse.move(cancelBox.x+cancelBox.width*.9,cancelBox.y+cancelBox.height*.2);
+  await page.mouse.down();
+  await overlay.dispatchEvent('pointercancel',{pointerId:await page.evaluate(()=>S.drag.pointerId)});
+  await page.mouse.up();
+  assert.equal(await page.evaluate(()=>S.edits.filter(e=>e.kind==='drawing').length),2);
+  await overlay.click({position:{x:cancelBox.width*.9,y:cancelBox.height*.2}});
+  assert.equal(await page.evaluate(()=>S.edits.filter(e=>e.kind==='drawing').at(-1).points.length),1);
+  await page.locator('#undoBtn').click();
+  assert.equal(await page.evaluate(()=>S.edits.filter(e=>e.kind==='drawing').length),2);
+  // Erase by proximity to a stroke, then undo the entire erase operation.
+  await page.locator('[data-drawing-tool="eraser"]').click();
+  const drawBox=await overlay.boundingBox();
+  await overlay.click({position:{x:drawBox.width*.3,y:drawBox.height*.75}});
+  assert.equal(await page.evaluate(()=>S.edits.filter(e=>e.kind==='drawing').length),1);
+  await page.locator('#undoBtn').click();
+  assert.equal(await page.evaluate(()=>S.edits.filter(e=>e.kind==='drawing').length),2);
+  await page.locator('#drawingClearBtn').click();
+  assert.equal(await page.evaluate(()=>S.edits.filter(e=>e.kind==='drawing').length),0);
+  await page.locator('#undoBtn').click();
+  assert.equal(await page.evaluate(()=>S.edits.filter(e=>e.kind==='drawing').length),2);
+  await page.locator('#drawingDoneBtn').click();
+  assert.equal(await page.locator('#workspace-edits').isVisible(),true);
+  const drawingCard=page.locator('#editsList .card[data-id="'+drawing.id+'"]');
+  await drawingCard.locator('.card-title').click();
+  await drawingCard.locator('.drawing-stroke-input').fill('12');
+  await drawingCard.locator('.drawing-stroke-input').dispatchEvent('change');
+  assert.equal(await page.evaluate(id=>{const e=getEdit(id);return e.strokeWidth*Math.min(e.w,e.h);},drawing.id),12);
+  await page.locator('#undoBtn').click();
+  assert.equal(await page.evaluate(id=>{const e=getEdit(id);return e.strokeWidth*Math.min(e.w,e.h);},drawing.id),6);
+  // The same painter must produce a non-empty transparent export PNG.
+  const drawingRaster=await page.evaluate(async()=>{
+    const e=S.edits.find(e=>e.kind==='drawing');
+    const payload=annotationPayload(e),bounds=AnnotationModel.rasterBounds(e);
+    const image=new Image();image.src=payload.image;await image.decode();
+    const raster=document.createElement('canvas');raster.width=image.width;raster.height=image.height;
+    const c=raster.getContext('2d');c.drawImage(image,0,0);
+    const [x,y]=e.points[Math.floor(e.points.length/2)];
+    const pixel=Array.from(c.getImageData(Math.floor(e.x+x*e.w-bounds.x),Math.floor(e.y+y*e.h-bounds.y),1,1).data);
+    return {image:payload.image,start:payload.start,end:payload.end,pixel};
+  });
+  assert.ok(drawingRaster.image.startsWith('data:image/png;base64,'));
+  assert.equal(drawingRaster.start,.5);assert.equal(drawingRaster.end,3);
+  assert.deepEqual(drawingRaster.pixel,[239,68,68,255],'Export PNG must contain the painted pen color');
+
+  console.log("Smoke: drawing groups, shared transforms, erasing and ungrouping");
+  await page.locator('.workspace-rail button').filter({hasText:/^Draw$/}).click();
+  await page.locator('#drawingGroupChoices input[type=checkbox]').nth(0).check();
+  await page.locator('#drawingGroupChoices input[type=checkbox]').nth(1).check();
+  await page.locator('#drawingGroupBtn').click();
+  const group=await page.evaluate(()=>structuredClone(S.edits.find(e=>e.kind==='drawing'&&e.strokes)));
+  assert.equal(group.strokes.length,2);
+  const groupPixels=await page.evaluate(async()=>{
+    const e=S.edits.find(e=>e.strokes),bounds=AnnotationModel.rasterBounds(e),payload=annotationPayload(e);
+    const image=new Image();image.src=payload.image;await image.decode();
+    const raster=document.createElement('canvas');raster.width=image.width;raster.height=image.height;
+    const c=raster.getContext('2d');c.drawImage(image,0,0);
+    return e.strokes.map(s=>{
+      const [x,y]=s.points[Math.floor(s.points.length/2)];
+      return Array.from(c.getImageData(Math.floor(e.x+x*e.w-bounds.x),Math.floor(e.y+y*e.h-bounds.y),1,1).data);
+    });
+  });
+  assert.deepEqual(groupPixels[0],[239,68,68,255]);
+  assert.ok(Math.abs(groupPixels[1][3]-89)<=1,'Highlighter opacity survives grouping and raster export');
+  assert.equal(await page.locator('#workspace-edits').isVisible(),true);
+  let groupCard=page.locator('#editsList .card[data-id="'+group.id+'"]');
+  assert.equal(await groupCard.locator('.drawing-ungroup-btn').isVisible(),true);
+  await groupCard.locator('[data-k="start"]').fill('0.6');
+  await groupCard.locator('[data-k="end"]').fill('2.8');
+  await groupCard.locator('.geometry summary').click();
+  const oldX=await groupCard.locator('[data-k="x"]').inputValue();
+  await groupCard.locator('[data-k="x"]').fill(String(Number(oldX)+2));
+  const oldWidth=await groupCard.locator('[data-k="w"]').inputValue();
+  await groupCard.locator('[data-k="w"]').fill(String(Number(oldWidth)*.9));
+  const transformed=await page.evaluate(id=>structuredClone(getEdit(id)),group.id);
+  assert.ok(transformed.w<group.w);assert.ok(transformed.x>group.x);
+  assert.equal(transformed.start,.6);assert.equal(transformed.end,2.8);
+  assert.equal(JSON.stringify(transformed.strokes),JSON.stringify(group.strokes));
+  // Whole-group transforms retain all vectors and one shared timeline interval.
+  await groupCard.locator('.drawing-ungroup-btn').click();
+  assert.equal(await page.evaluate(()=>S.edits.filter(e=>e.kind==='drawing').length),2);
+  const ungrouped=await page.evaluate(()=>S.edits.filter(e=>e.kind==='drawing').map(e=>({start:e.start,end:e.end,color:e.color,opacity:e.opacity})));
+  assert.ok(ungrouped.every(e=>e.start===.6&&e.end===2.8));
+  assert.deepEqual(ungrouped.map(e=>e.color),['#ef4444','#facc15']);
+  assert.equal(ungrouped[1].opacity,.35);
+  await page.locator('#undoBtn').click();
+  assert.equal(await page.evaluate(()=>S.edits.filter(e=>e.kind==='drawing').length),1);
+  assert.equal(await page.evaluate(()=>S.edits.find(e=>e.strokes)?.strokes.length),2);
+  // Erasing within a group removes one member, rather than the whole group.
+  await page.locator('.workspace-rail button').filter({hasText:/^Draw$/}).click();
+  await page.locator('[data-drawing-tool="eraser"]').click();
+  await page.evaluate(()=>new Promise(resolve=>{
+    video.addEventListener('seeked',resolve,{once:true});
+    video.currentTime=S.edits.find(e=>e.strokes).start+.2;
+  }));
+  const erasePoint=await page.evaluate(()=>{
+    const e=S.edits.find(e=>e.strokes),s=DrawingModel.worldStrokes(e)[1];
+    const p=s.points[Math.floor(s.points.length/2)];
+    const crop=freeeditCropRect(S.job.width,S.job.height,freeeditReframeAt(EditorModel.exportReframe(S.reframe,S.edits),video.currentTime));
+    return {x:(p.x-crop.x)/crop.w,y:(p.y-crop.y)/crop.h};
+  });
+  const eraseBox=await overlay.boundingBox();
+  await overlay.click({position:{x:eraseBox.width*erasePoint.x,y:eraseBox.height*erasePoint.y}});
+  assert.equal(await page.evaluate(()=>S.edits.find(e=>e.strokes)?.strokes.length),1);
+  await page.locator('#undoBtn').click();
+  assert.equal(await page.evaluate(()=>S.edits.find(e=>e.strokes)?.strokes.length),2);
+  await page.locator('#drawingDoneBtn').click();
+  const savedGroup=await page.evaluate(()=>structuredClone(S.edits.find(e=>e.strokes)));
+
   // V2 projects store all timed edits together; no separate reframe sections
   // remain in scene settings. Round-trip through the actual validator.
   console.log("Smoke: project round-trip");
@@ -286,9 +424,12 @@ try {
   for(const type of ["cut","hide","text","reframe","annotation"]) {
     assert.ok(document.edits.some(edit=>edit.type===type),"Missing "+type);
   }
+  assert.equal(document.edits.filter(e=>e.kind==='drawing').length,1);
+  assert.deepEqual(document.edits.find(e=>e.kind==='drawing').strokes,savedGroup.strokes);
   assert.ok(!("sections" in (document.settings.reframe||{})));
   await page.evaluate(async doc=>applyProject(await validateProject(doc)),document);
   assert.equal(await page.locator("#zoomTrack .timeline-block.zoom").count(),1);
+  assert.equal(await page.evaluate(()=>S.edits.filter(e=>e.kind==='drawing').length),1);
   assert.match(await page.locator("#editsList").innerText(),/Reframe/);
 
   console.log("Smoke: FFmpeg export and recovery");
@@ -302,6 +443,7 @@ try {
   await page.locator('#resumeProjectBtn').click();
   await page.locator('#resultPanel:not(.hidden)').waitFor({timeout:30000});
   assert.equal(await page.locator('#downloadBtn').isVisible(),true);
+  assert.equal(await page.evaluate(()=>S.edits.filter(e=>e.kind==='drawing').length),1);
   await page.waitForFunction(()=>{
     const player=document.getElementById('resultVideo');
     if(player.error)throw Error('Recovered result failed to load: '+player.error.code);

@@ -93,6 +93,8 @@ function render() {
     else paintAnnotation(ctx,e,e.x,e.y,video.currentTime);
   }
 
+  if(S.drag?.kind==="drawing")paintPendingDrawing(ctx,S.drag);
+
   const sel = getEdit(S.selected);
   if (sel && (sel.type === "hide" || sel.type === "text" || sel.type === "annotation")) {
     ctx.save();
@@ -137,7 +139,7 @@ function render() {
     ctx.restore();
   }
   if (typeof updateReframePreview === "function") {
-    const active = reframeGuideSection() || S.reframe && (S.reframe.aspect !== "original" || S.reframe.zoom > 1 || EditorModel.sections(S.edits).length);
+    const active = S.framing || reframeGuideSection() || S.reframe && (S.reframe.aspect !== "original" || S.reframe.zoom > 1 || EditorModel.sections(S.edits).length);
     updateReframePreview(active ? freeeditCropRect(W, H, freeeditReframeAt(EditorModel.exportReframe(S.reframe, S.edits), video.currentTime)) : null);
   }
 }
@@ -152,10 +154,13 @@ function toSource(ev) {
   const r = canvas.getBoundingClientRect();
   const crop = reframeGuideSection() ? {x: 0, y: 0, w: S.job.width, h: S.job.height}
     : freeeditCropRect(S.job.width, S.job.height, freeeditReframeAt(EditorModel.exportReframe(S.reframe, S.edits), video.currentTime));
-  return {
-    x: crop.x + clamp((ev.clientX - r.left) / r.width, 0, 1) * crop.w,
-    y: crop.y + clamp((ev.clientY - r.top) / r.height, 0, 1) * crop.h,
-  };
+  let nx=(ev.clientX-r.left)/r.width, ny=(ev.clientY-r.top)/r.height;
+  if(S.framing && !reframeGuideSection()) {
+    const base=freeeditCropRect(S.job.width,S.job.height,{...S.reframe,zoom:1});
+    const g=CanvasModel.geometry(base.w,base.h,S.framing);
+    nx=(nx*g.w-g.x)/g.iw;ny=(ny*g.h-g.y)/g.ih;
+  }
+  return {x:crop.x+clamp(nx,0,1)*crop.w,y:crop.y+clamp(ny,0,1)*crop.h,inside:nx>=0&&nx<=1&&ny>=0&&ny<=1};
 }
 
 function hitTest(p) {
@@ -177,8 +182,11 @@ function hitTest(p) {
 }
 
 canvas.addEventListener("pointerdown", (ev) => {
+  if(!S.job?.has_video || S.reviewing || ev.button!==0 || S.drag)return;
   const p = toSource(ev);
+  if (!p.inside) return;
   canvas.setPointerCapture(ev.pointerId);
+  if(S.mode==="draw"){ev.preventDefault();beginDrawingStroke(p,ev.pointerId);return;}
   if (S.mode === "hide" || S.mode === "background") {
     S.drag = { background: S.mode === "background", kind: "new", x0: p.x, y0: p.y, x1: p.x, y1: p.y };
     return;
@@ -234,6 +242,7 @@ canvas.addEventListener("pointermove", (ev) => {
     return;
   }
   const W = S.job.width, H = S.job.height;
+  if(d.kind==="drawing"){extendDrawingStroke(d,p,ev.pointerId);render();return;}
   if (d.kind === "new") {
     d.x1 = p.x; d.y1 = p.y;
   } else if (d.kind === "move") {
@@ -245,17 +254,24 @@ canvas.addEventListener("pointermove", (ev) => {
     }
   } else if (d.kind === "resize") {
     const minimum = d.edit.type === "annotation" ? 16 : 8;
-    d.edit.w = Math.round(clamp(p.x - d.edit.x, minimum, W - d.edit.x));
-    d.edit.h = Math.round(clamp(p.y - d.edit.y, minimum, H - d.edit.y));
+    const w=Math.round(clamp(p.x-d.edit.x,minimum,W-d.edit.x));
+    const h=Math.round(clamp(p.y-d.edit.y,minimum,H-d.edit.y));
+    if(d.edit.kind==="drawing"&&AnnotationModel.validate({...d.edit,w,h},duration(),W,H))return;
+    d.edit.w=w;d.edit.h=h;
   }
   render();
 });
 
-canvas.addEventListener("pointercancel", () => { S.drag = null; render(); });
+canvas.addEventListener("pointercancel", (ev) => {
+  if(S.drag?.kind==="drawing"&&S.drag.pointerId!==ev.pointerId)return;
+  S.drag=null;render();
+});
 
-canvas.addEventListener("pointerup", () => {
+canvas.addEventListener("pointerup", (ev) => {
+  if(S.drag?.kind==="drawing" && S.drag.pointerId!==ev.pointerId)return;
   const d = S.drag;
   S.drag = null;
+  if(d?.kind==="drawing"){extendDrawingStroke(d,toSource(ev),ev.pointerId);finishDrawingStroke(d);}
   if (d?.kind === "move" || d?.kind === "resize") {
     editorStore.dispatch("edit:drag", () => {});
   }

@@ -38,13 +38,29 @@ function paintAnnotation(c,e,x,y,t=video.currentTime,animated=true){
   const state=animated?AnnotationModel.animationState(e,t):{alpha:1,dx:0};
   c.save();
   c.globalAlpha=e.opacity*state.alpha;
+  if(e.kind==="spotlight"){
+    // Even-odd fill leaves the aperture transparent, revealing the complete
+    // composition beneath it without sampling or duplicating video pixels.
+    const ox=x-e.x,oy=y-e.y,W=S.job.width,H=S.job.height;
+    c.fillStyle=e.color;c.beginPath();c.rect(ox,oy,W,H);
+    const angle=e.rotation*Math.PI/180;
+    c.moveTo(x+e.w/2+state.dx+e.w/2*Math.cos(angle),y+e.h/2+e.w/2*Math.sin(angle));
+    c.ellipse(x+e.w/2+state.dx,y+e.h/2,e.w/2,e.h/2,angle,0,Math.PI*2);
+    c.fill("evenodd");c.restore();return;
+  }
   c.translate(x+e.w/2+state.dx,y+e.h/2);
   c.rotate(e.rotation*Math.PI/180);
   const w=e.w,h=e.h;
   c.strokeStyle=e.color;c.fillStyle=e.color;
   c.lineWidth=Math.max(3,Math.min(w,h)*.07);
   c.lineCap="round";c.lineJoin="round";
-  if(e.kind==="image"){
+  if(e.kind==="click"){
+    c.beginPath();c.ellipse(0,0,w*.43,h*.43,0,0,Math.PI*2);
+    c.save();c.globalAlpha*=.18;c.fill();c.restore();c.stroke();
+    c.beginPath();c.arc(0,0,Math.min(w,h)*.07,0,Math.PI*2);c.fill();
+  } else if(e.kind==="drawing"){
+    DrawingModel.paint(c,e);
+  } else if(e.kind==="image"){
     const img=annotationImage(e);if(img)c.drawImage(img,-w/2,-h/2,w,h);
   } else if(e.kind==="shape"){
     if(e.shape==="ellipse"){c.beginPath();c.ellipse(0,0,w*.47,h*.47,0,0,Math.PI*2);c.stroke();}
@@ -74,12 +90,16 @@ async function prepareAnnotationAssets(){
   }
 }
 function annotationPayload(e){
-  const bounds=AnnotationModel.rasterBounds(e);
-  const c=document.createElement("canvas");c.width=bounds.w;c.height=bounds.h;
-  paintAnnotation(c.getContext("2d"),e,e.x-bounds.x,e.y-bounds.y,e.start,false);
+  const bounds=AnnotationModel.rasterBounds(e,S.job.width,S.job.height);
+  const c=document.createElement("canvas");
+  const scale=e.kind==="spotlight"?Math.min(1,1024/Math.max(bounds.w,bounds.h)):1;
+  c.width=Math.max(1,Math.round(bounds.w*scale));c.height=Math.max(1,Math.round(bounds.h*scale));
+  const context=c.getContext("2d");context.scale(c.width/bounds.w,c.height/bounds.h);
+  paintAnnotation(context,e,e.x-bounds.x,e.y-bounds.y,e.start,false);
   return {type:"annotation",start:e.start,end:e.end,x:bounds.x,y:bounds.y,
+    ...(e.kind==="spotlight"?{canvas_size:[S.job.width,S.job.height]}:{}),
     image:c.toDataURL("image/png"),animation:e.animation,transition:e.transition,
-    shift:Math.max(8,Math.round(Math.min(90,e.w*.4)))};
+    shift:e.animationShift ?? Math.max(8,Math.round(Math.min(90,e.w*.4)))};
 }
 // The selected visual tool is transient UI state. Only placed annotations
 // belong in the editor document and are saved in projects/undo history.
@@ -92,6 +112,8 @@ const annotationKinds = [
   {value:"shape",label:"Shapes",svg:'<rect x="4" y="4" width="16" height="16" rx="2"/>'},
   {value:"arrow",label:"Arrows",svg:'<path d="M4 17 19 6M11 6h8v8"/>'},
   {value:"callout",label:"Callouts",svg:'<path d="M4 4h16v13H9l-5 4V4z M8 9h8M8 13h5"/>'},
+  {value:"spotlight",label:"Cursor spotlight",svg:'<circle cx="12" cy="12" r="5"/><path d="M3 8V3h5m8 0h5v5M3 16v5h5m8 0h5v-5"/>'},
+  {value:"click",label:"Click highlight",svg:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>'},
   {value:"image",label:"Images",svg:'<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="9" r="1.5"/><path d="m3 17 5-5 3 3 4-5 6 7"/>'}
 ];
 const annotationIconLabels = {
@@ -139,6 +161,7 @@ function makeAnnotationChoiceGroups() {
         return;
       }
       annotationPicker.kind=kind.value;annotationPicker.preset=null;
+      if(["spotlight","click"].includes(kind.value))annotationPicker.animation="fade";
       armAnnotationPlacement();
     });
   }
@@ -160,7 +183,7 @@ function makeAnnotationChoiceGroups() {
     let graphic=preset==="success" ? iconPreviewSvg("check")
       :preset==="warning" ? iconPreviewSvg("warning")
       :preset==="highlight" ? annotationTileSymbol(null,annotationShapes[0].svg)
-      :annotationTileSymbol(null,annotationKinds[3].svg);
+      :annotationTileSymbol(null,annotationKinds.find(item=>item.value==="callout").svg);
     createAnnotationChoice($("annotationPresetPicker"),"preset",preset,annotationPresetLabels[preset],
       graphic,()=>{
         annotationPicker.preset=preset;
@@ -185,6 +208,7 @@ function makeAnnotationChoiceGroups() {
 function refreshAnnotationPicker(){
   for(const button of $("annotationsPanel").querySelectorAll("[data-choice-group]")){
     const group=button.dataset.choiceGroup;
+    button.disabled=group==="animation" && button.dataset.choiceValue==="slide" && annotationPicker.kind==="spotlight";
     const value=group==="kind" ? annotationPicker.kind :
       group==="icon" ? annotationPicker.icon :
       group==="shape" ? annotationPicker.shape :
@@ -194,7 +218,7 @@ function refreshAnnotationPicker(){
   }
   show($("annotationIconSection"),annotationPicker.kind==="icon");
   show($("annotationShapeSection"),annotationPicker.kind==="shape");
-  const label=annotationPicker.kind==="image"?"logo":annotationPicker.kind;
+  const label=annotationPicker.kind==="image"?"logo":annotationPicker.kind==="spotlight"?"spotlight":annotationPicker.kind==="click"?"click highlight":annotationPicker.kind;
   $("addAnnotationBtn").textContent="Place "+label+" at center";
   $("annotationUploadBtn").classList.toggle("has-upload",!!annotationPicker.pendingImage);
   $("annotationUploadBtn").querySelector("strong").textContent=
@@ -207,7 +231,7 @@ function annotationDefaultTimesFromPlayhead(){
   const playhead=Math.max(0,Math.min(sourcePlayer().currentTime||0,d-.1));
   const start=Math.max(0,Math.min(playhead,Math.max(0,d-.1)));
   $("annotationStart").value=start.toFixed(2);
-  $("annotationEnd").value=Math.min(d,start+3).toFixed(2);
+  $("annotationEnd").value=Math.min(d,start+(annotationPicker.kind==="click"?.7:3)).toFixed(2);
 }
 function armAnnotationPlacement(){
   if(!S.job?.has_video)return;
@@ -226,6 +250,8 @@ function createAnnotationEditAt(x,y){
   e.icon=annotationPicker.icon;
   e.shape=annotationPicker.shape;
   e.animation=annotationPicker.animation;
+  // Slide applies to local sprites; a full-frame spotlight uses Fade or None.
+  if(e.kind==="spotlight" && e.animation==="slide")e.animation="fade";
   if(e.kind==="image"){
     if(!annotationPicker.pendingImage){
       $("annotationMessage").textContent="Upload a logo or picture first.";
@@ -335,7 +361,7 @@ const animationStyleVisuals = Object.freeze({
 });
 function changeAnnotationAnimation(edit, animation) {
   if(!S.job || !S.edits.includes(edit) ||
-     !AnnotationModel.ANIMATIONS.includes(animation))return;
+     !AnnotationModel.ANIMATIONS.includes(animation) || edit.kind==="spotlight" && animation==="slide")return;
   if(edit.animation!==animation){
     commitEdit("annotation:animation", state=>{
       const current=state.edits.find(item=>item.id===edit.id);
@@ -354,7 +380,7 @@ function changeAnnotationAnimation(edit, animation) {
 function buildAnnotationAnimationControls(container,edit) {
   if(!container)return;
   container.replaceChildren();
-  for(const animation of AnnotationModel.ANIMATIONS){
+  for(const animation of AnnotationModel.ANIMATIONS.filter(value=>edit.kind!=="spotlight"||value!=="slide")){
     const graphic=annotationTileSymbol(null,animationStyleVisuals[animation]);
     const label=animation==="none"?"None":animation==="fade"?"Fade":"Slide";
     const button=createAnnotationChoice(container,"animation",animation,label,graphic,()=>{

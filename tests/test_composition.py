@@ -73,6 +73,25 @@ class CompositionTests(unittest.TestCase):
         position = (y * 128 + x) * 3
         return frame[position:position + 3]
 
+    def test_audio_regions_mute_the_combined_sound(self):
+        settings = {"denoise":False,"atten_lim":None,"preset":"audio_only","edits":[],"cuts":[],
+            "audio_regions":[{"start":1.2,"end":1.8,"volume":0,"fade":.05}],
+            "presenter":{"box":{"x":24,"y":16,"w":48,"h":32},"offset":1,
+                "trim_start":0,"trim_end":2,"effect":"original","sound":"both",
+                "main_volume":1,"presenter_volume":1}}
+        work=self.root/"regional-mix";work.mkdir()
+        output=rendering.render(self.main,work,settings,lambda *_:None,self.presenter)
+        def energy(path, start):
+            raw=subprocess.check_output(["ffmpeg","-v","error","-ss",str(start),"-i",str(path),
+                "-t","0.1","-f","f32le","-"])
+            samples=array.array("f");samples.frombytes(raw)
+            return max(abs(x) for x in samples)
+        self.assertGreater(energy(output,1.05),.05)
+        self.assertLess(energy(output,1.4),1e-5)
+        preview=self.root/"regional-mix-preview";preview.mkdir()
+        sample,_=rendering.preview(self.main,self.presenter,preview,settings,1.35,1.65,4,lambda *_:None)
+        self.assertLess(energy(sample,.05),1e-5)
+
     def test_presenter_appears_only_during_its_interval(self):
         output = self.compose_to()
         meta = self.metadata(output)

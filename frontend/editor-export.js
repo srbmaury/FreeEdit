@@ -14,7 +14,7 @@ function buildPayload() {
   return exportPayloadRules.buildExportPayload({
     job: S.job, edits: S.edits, audio: getAudioSettings(),
     presenter: getPresenterSettings(), presenterHasAudio: !!presenterProject()?.source.has_audio,
-    reframe: S.reframe, background: getBackgroundSettings(),
+    framing: S.framing, reframe: S.reframe, background: getBackgroundSettings(),
     denoise: $("denoise").checked, strength: $("strength").value, preset: $("exportPreset").value,
   }, {exportReframe: EditorModel.exportReframe, textToPng, annotationPayload});
 }

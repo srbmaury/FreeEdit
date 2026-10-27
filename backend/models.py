@@ -43,6 +43,9 @@ class AnnotationEdit(TimeRange):
     animation: Literal["none", "fade", "slide"] = "none"
     transition: float = Field(default=0.35, ge=0, le=1.5)
     shift: int = Field(default=40, ge=0, le=90)
+    # Low-resolution alpha masks may cover the complete source canvas. Their
+    # display size is checked against the video before any render is admitted.
+    canvas_size: tuple[Annotated[int, Field(ge=2, le=65536)], Annotated[int, Field(ge=2, le=65536)]] | None = None
 
     @field_validator("image")
     @classmethod
@@ -160,6 +163,11 @@ class ReframeSettings(BaseModel):
         return self
 
 
+class AudioRegion(TimeRange):
+    volume: float = Field(default=0, ge=0, le=2)
+    fade: float = Field(default=.05, ge=0, le=.25)
+
+
 class AudioSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     level_speech: bool = False
@@ -167,12 +175,29 @@ class AudioSettings(BaseModel):
     fade_out: float = Field(default=0, ge=0, le=5)
 
 
+class FramingSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    aspect: Literal["original", "wide", "vertical", "square"] = "original"
+    padding: float = Field(default=8, ge=0, le=25)
+    radius: float = Field(default=3, ge=0, le=25)
+    shadow: float = Field(default=3, ge=0, le=10)
+    color: str = Field(default="#243047", pattern=r"^#[a-fA-F0-9]{6}$")
+    image: str | None = Field(default=None, max_length=900_000)
+
+    @field_validator("image")
+    @classmethod
+    def valid_image(cls, value):
+        return TextEdit.valid_png(value) if value is not None else None
+
+
 class ProcessRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     presenter: PresenterSettings | None = None
     background: BackgroundSettings | None = None
     reframe: ReframeSettings | None = None
+    framing: FramingSettings | None = None
     audio: AudioSettings = Field(default_factory=AudioSettings)
+    audio_regions: list[AudioRegion] = Field(default_factory=list, max_length=50)
     denoise: bool = True
     atten_lim: int | None = Field(default=None, ge=0, le=100)
     preset: Literal["balanced", "small", "high", "audio_only"] = "balanced"
@@ -183,9 +208,13 @@ class ProcessRequest(BaseModel):
     def bound_decoded_overlays(self):
         # Individual PNGs are already validated. Their first 32 base64
         # characters contain the IHDR dimensions; don't decode them again.
+        if sum(isinstance(edit, AnnotationEdit) and edit.canvas_size is not None for edit in self.edits) > 8:
+            raise ValueError("Keep at most 8 cursor spotlights.")
         images = [edit.image for edit in self.edits if isinstance(edit, (TextEdit, AnnotationEdit))]
         if self.background and self.background.image:
             images.append(self.background.image)
+        if self.framing and self.framing.image:
+            images.append(self.framing.image)
         total = 0
         for image in images:
             header = base64.b64decode(image[len("data:image/png;base64,"):][:32])
@@ -196,6 +225,8 @@ class ProcessRequest(BaseModel):
         return self
 
     def validate_media(self, media):
+        if self.framing and (not media["has_video"] or self.preset == "audio_only"):
+            raise HTTPException(422, "Canvas framing requires video output.")
         if self.reframe and (not media["has_video"] or self.preset == "audio_only"):
             raise HTTPException(422, "Reframing requires video output.")
         if self.reframe:
@@ -211,12 +242,17 @@ class ProcessRequest(BaseModel):
             raise HTTPException(422, "Visual edits require a video.")
         if self.preset == "audio_only" and not media["has_audio"] and not self.presenter:
             raise HTTPException(422, "This recording has no audio to export.")
-        for item in [*self.edits, *self.cuts]:
+        if self.audio_regions and not media["has_audio"] and (not self.presenter or self.presenter.sound == "muted"):
+            raise HTTPException(422, "Audio regions require an audio track.")
+        for item in [*self.edits, *self.cuts, *self.audio_regions]:
             if item.end > media["duration"] + 0.05:
                 raise HTTPException(422, "Edit extends beyond the recording.")
             item.end = min(item.end, media["duration"])
             if item.start >= item.end:
                 raise HTTPException(422, "Edit must include part of the recording.")
+            if isinstance(item, AnnotationEdit) and item.canvas_size is not None:
+                if item.canvas_size != (media["width"], media["height"]) or item.x != 0 or item.y != 0 or item.animation == "slide":
+                    raise HTTPException(422, "Full-frame spotlight masks must match the source canvas and use Fade or None.")
             if isinstance(item, HideEdit):
                 if item.x + item.w > media["width"] or item.y + item.h > media["height"]:
                     raise HTTPException(422, "Mask extends beyond the video.")

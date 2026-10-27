@@ -85,7 +85,11 @@ jobs:
           exit 1
       - name: Upload, reframe, select and export
         timeout-minutes: 6
-        run: node tests/browser_smoke.mjs
+        run: |
+          node tests/browser_smoke.mjs
+          node tests/browser_features.mjs
+          node tests/browser_cursor.mjs
+          node tests/browser_audio_regions.mjs
       - name: Server diagnostics on failure
         if: failure()
         run: cat /tmp/freeedit-browser-server.log

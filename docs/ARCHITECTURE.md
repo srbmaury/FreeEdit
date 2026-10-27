@@ -202,3 +202,41 @@ clock, including negative starts, so preview boundaries do not invent fade/slide
 entrances or exits. Fade evaluation uses a shifted nonnegative clock because
 FFmpeg rejects negative fade start times. Video cuts use half-open retained
 intervals, matching audio trimming and avoiding duplicate boundary timestamps.
+
+## Drawing strokes
+
+Custom drawings are `type: "annotation", kind: "drawing"` edits, not a separate
+timeline collection. `drawing-model.js` owns normalized vector points, stroke
+width, rotated raster bounds, painting and segment hit testing. `drawing.js` owns
+the transient pointer gesture and tool controls. A completed gesture commits one
+edit through the store; cancellation discards it. Project validation deep-copies
+validated points, while existing history/recovery preserve the document.
+
+The annotation painter handles both live rendering and PNG export. Drawing bounds
+include rounded caps after stroke-width changes and rotation, and validation
+bounds point count and raster area. Pointer movement decimates long gestures to
+keep their endpoint without unbounded document growth. Erasing removes complete
+visible strokes; clearing a time range is one document mutation.
+
+Drawing groups remain `kind: "drawing"` annotations with a bounded `strokes`
+array instead of `points`. Child strokes contain normalized points, width, color
+and opacity; transform, timing and animation belong to the group. Nested groups
+are flattened when regrouped. Group creation transforms original points into
+source coordinates, preserving rotations and paint order, then normalizes them
+inside shared bounds. Ungrouping bakes the current transform and opacity into
+independent strokes. An explicit animation shift preserves common slide motion.
+Groups deep-copy through project validation and history, and rasterize through
+the existing annotation export adapter. Overlay admission counts member strokes.
+
+
+Canvas framing is an optional scene setting (`framing`), separate from person-background replacement. The validated settings travel through the existing project/recovery, history and export contracts. The live canvas compositor and `backend/canvas_frame.py` use the same bounded aspect/contain geometry; FFmpeg applies the frame after all source-coordinate overlays and Reframe, before cuts. Pillow generates static background/shadow and rounded alpha-mask PNGs; the looped inputs end with the recording to keep cut exports bounded. Framing images count against the aggregate decoded-overlay pixel budget.
+
+Duplicate/style actions use the document mutation boundary. Copies receive fresh IDs and deep-copy drawing strokes. Style transfer uses an explicit compatible-property allowlist, leaving source text, images, drawing paths, coordinates, dimensions and times intact.
+
+
+Cursor effects reuse `annotation` edits with `kind: "spotlight"` or `kind: "click"`. Position and time are authored manually; no pointer metadata or detection is assumed. The shared canvas painter draws a full-source even-odd alpha mask for spotlights and a local ring/dot for clicks. Spotlight opacity controls outside dimming; its aperture stays transparent. Both reuse the annotation fade clock and source-time preview mapping.
+
+Spotlight PNGs are capped at a 1024-pixel longest side. The export adapter supplies `canvas_size` on their annotation payloads; admission requires it to equal the source dimensions at origin (0,0), allows Fade/None only, and caps these masks at eight. FFmpeg scales their alpha masks to its actual preset-scaled source canvas before applying animation, Reframe, framing and cuts. Encoded masks also count toward the shared decoded-image budget. Projects store editable annotation geometry and style; the raster and `canvas_size` are derived again for each export.
+
+
+Audio regions are `type: "audio"` timed edits with a linear gain and bounded edge fade. FFmpeg applies their original-source-clock envelopes before cuts; multiple region gains multiply with a 2x cap, then output-clock fades are applied. Speech leveling runs before the envelopes and an audio limiter follows boosts. Range previews shift region boundaries by the selected source start, preserving partial fades. Regions affect the final selected mix, after optional presenter composition, and work on video and audio-only outputs. The API admits at most 50 regions and validates their ranges against the recording.

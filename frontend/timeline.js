@@ -2,6 +2,7 @@
 
 const timeline = {zoom: 1, dragging: null};
 const timelineRows = [
+  {type: "audio", track: "audioRegionTrack", label: "audioRegionLabel"},
   {type: "cut", track: "cutTrack", label: "cutLabel"},
   {type: "hide", track: "maskTrack", label: "maskLabel"},
   {type: "text", track: "textTrack", label: "textLabel"},
@@ -39,7 +40,7 @@ function renderTimeline() {
   for (const row of timelineRows) {
     const track = $(row.track);
     track.replaceChildren();
-    const visible = row.type === "cut" ||
+    const visible = row.type === "cut" || (row.type === "audio" && S.edits.some(edit=>edit.type==="audio")) ||
       (S.job.has_video && S.edits.some(edit => edit.type === row.type));
     show(track, visible); show($(row.label), visible);
     if (!visible) continue;
@@ -61,7 +62,7 @@ function renderTimeline() {
       block.setAttribute("aria-pressed", String(edit.id === S.selected));
       const label = document.createElement("span");
       label.className = "block-label";
-      label.textContent = edit.type === "text" ? edit.text || "Text" : edit.type === "hide" ? "Mask" : edit.type === "annotation" ? "Annotation" : "Cut";
+      label.textContent = edit.type === "audio" ? (edit.volume===0?"Mute":Math.round(edit.volume*100)+"% volume") : edit.type === "text" ? edit.text || "Text" : edit.type === "hide" ? "Mask" : edit.type === "annotation" ? (edit.kind === "drawing" ? (edit.strokes ? "Drawing group" : "Drawing") : edit.kind === "spotlight" ? "Spotlight" : edit.kind === "click" ? "Click highlight" : "Annotation") : "Cut";
       block.append(label);
       for (const edge of ["l", "r"]) {
         const handle = document.createElement("span");

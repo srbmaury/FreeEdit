@@ -24,6 +24,11 @@ class OverlayBudgetTests(unittest.TestCase):
                 models.ProcessRequest(edits=[text, annotation],
                                       background={"mode": "image", "image": png(1, 1)})
 
+    def test_canvas_images_share_overlay_budget(self):
+        with patch.object(models, "MAX_OVERLAY_PIXELS", 10_000):
+            with self.assertRaisesRegex(ValidationError, "total pixel budget"):
+                models.ProcessRequest(framing={"image": png(101, 100)})
+
     def test_repeated_small_payloads_cannot_expand_past_the_budget(self):
         edit = {"type": "text", "start": 0, "end": 1, "x": 0, "y": 0, "image": png(2000, 2000)}
         self.assertLess(len(edit["image"]), 100)

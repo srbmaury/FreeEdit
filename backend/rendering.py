@@ -28,7 +28,7 @@ def render(source: Path, work: Path, settings: dict, progress, presenter: Path |
         return pipeline.process(source, work, denoise_audio=settings["denoise"], atten_lim=settings["atten_lim"],
             preset=settings["preset"], edits=settings["edits"], cuts=settings["cuts"], progress=progress,
             background=settings.get("background") if not settings.get("presenter") else None,
-            reframe=settings.get("reframe"), audio=settings.get("audio"),
+            audio_regions=settings.get("audio_regions"), framing=settings.get("framing"), reframe=settings.get("reframe"), audio=settings.get("audio"),
             audio_offset=audio_offset, audio_duration=audio_duration)
     finally:
         shutil.rmtree(composition_work, ignore_errors=True)
@@ -66,6 +66,8 @@ def preview(source: Path, presenter: Path | None, work: Path, settings: dict,
             local[key].append({**edit,
                 "start": (edit["start"] if animated else max(start, edit["start"])) - start,
                 "end": (edit["end"] if animated else min(end, edit["end"])) - start})
+    local["audio_regions"] = [{**region,"start":region["start"]-start,"end":region["end"]-start}
+        for region in settings.get("audio_regions", [])]
     if local.get("reframe"):
         # Keep complete section lengths, including negative local starts, so
         # clipping a preview never restarts or shortens a zoom transition.
