@@ -132,7 +132,16 @@ function zoomTimeline(zoom) {
 $("zoomInBtn").onclick = () => zoomTimeline(timeline.zoom * 2);
 $("zoomOutBtn").onclick = () => zoomTimeline(timeline.zoom / 2);
 $("zoomFitBtn").onclick = () => zoomTimeline(1);
-new ResizeObserver(renderTimeline).observe($("timelineViewport"));
+let timelineResizeFrame = null;
+new ResizeObserver(() => {
+  // Rendering changes track heights. Defer that write out of the observer's
+  // delivery cycle to avoid WebKit's undelivered-notifications loop.
+  if (timelineResizeFrame !== null) return;
+  timelineResizeFrame = requestAnimationFrame(() => {
+    timelineResizeFrame = null;
+    renderTimeline();
+  });
+}).observe($("timelineViewport"));
 
 function startTimelineDrag(event, edit) {
   if (event.button !== 0) return;
