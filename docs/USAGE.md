@@ -5,7 +5,7 @@ FreeEdit is a focused screen-recording editor. It keeps edits relative to the **
 ## Typical workflow
 
 1. Upload a screen recording, webcam clip or audio file.
-2. Choose **Audio**, **Pauses**, **Cut**, **Text**, **Hide area**, **Reframe**, **Captions**, **Background**, or **Videos** from the task rail.
+2. Choose **Audio**, **Pauses**, **Cut**, **Text**, **Hide area**, **Reframe**, **Captions**, **Annotations**, **Background**, or **Videos** from the task rail.
 3. Use **Edits (V)** beside the preview to select and adjust existing edits. Drag timeline blocks to change their position or edges to change their duration. Changes can be undone.
 4. Use **Export → Preview result** to review the selected range, then export the complete result.
 5. Save a `.freeedit.json` project and keep both source recordings if you want to edit again later.
@@ -22,6 +22,14 @@ FreeEdit is a focused screen-recording editor. It keeps edits relative to the **
 - **Text (T):** click the recording, type text in Edits, then position, resize, style and time it.
 - **Hide area (H):** drag a region and choose solid cover, blur or pixelation. **Use a solid cover for genuinely sensitive material**; blur and pixelation are not strong redaction.
 - **Captions:** import an SRT file; captions become editable timed text. There is no automatic transcription.
+
+### Annotations: icons, arrows, shapes, callouts and logos
+
+Open **Annotations** and choose a pictured icon, shape, arrow or callout from the visual gallery. The next click on the recording **places the selected annotation immediately**. Alternatively, choose **Upload image or logo** (PNG, JPG or WebP under 750 KB) before clicking the video; the image is decoded first so it appears as soon as it is placed.
+
+Use **Edits** to drag/resize, change color/opacity/rotation/timing, or select **None, Fade or Slide** animations. Switching animation styles on an existing edit updates the saved project and seeks to a sample of the new effect; the gallery animation choice only affects new annotations. When an existing annotation is selected, click an empty part of the video to reposition it. The inspector scrolls at full available height rather than clipping long edit cards.
+
+Annotations use the original source timeline and render as transparent PNG overlays in FFmpeg export. Images are embedded into version-2 project JSON; keep them small, as the overall project file size limit still applies. They share the combined overlay count with text and privacy masks. Free motion keyframes and object tracking are not included.
 
 ### Reframe and smart focus
 
@@ -55,7 +63,7 @@ Segmentation works best with a single clearly visible person. Hair, transparent 
 
 | Preview | What it checks | Scope |
 | --- | --- | --- |
-| Editing preview | Timing, cuts, text, masks, Reframe | Interactive original playback; processed audio/background are not shown |
+| Editing preview | Timing, cuts, text, masks, annotations, Reframe | Interactive original playback; processed audio/background are not shown |
 | Audio → Preview noise removal | Original versus cleaned audio | Up to 10 seconds at playhead, without visual edits |
 | Background preview | Person segmentation and chosen background | Short rendered sample, without other edits |
 | Videos → Preview combined video | Presenter location, background, sound | Short sample; excludes other timeline edits |

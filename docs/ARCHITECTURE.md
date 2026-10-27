@@ -153,3 +153,15 @@ Audio-only presenter rendering calls a lossless sound mixer with the shared timi
 The optional About identity is a server-start snapshot. `runtime_info.py` fingerprints backend/frontend source and records Git metadata when available. The endpoint omits local paths. `launch.py` prints local checkout/runtime paths to the terminal and diagnoses a busy port before running preflight. Runtime code is not hot-reloaded; static-file changes still require a restart to avoid mixing frontend and backend revisions.
 
 Recovery now defers its storage write until document, full-export identity and preview identity are restored together. A completed full export reconnects its result/download controls. Result previews receive an independent server admission ID; their submitted document signature is saved separately from later edits. Reconnected previews can finish or reopen after completion. Unknown identities remain reviewable with explicitly unverified/stale settings instead of being labeled current.
+
+## Timed annotation edits
+
+The `annotation` timeline type handles icons, arrows, shapes, callouts and
+pictures, with consistent IDs, start/end timestamps, positioning and undo.
+`frontend/annotation-model.js` validates shape/style constraints and defines
+presets/animation easing. `frontend/annotations.js` renders annotations to
+the source-resolution canvas and creates transparent raster assets for export.
+`backend/models.py` validates PNG payloads; `backend/pipeline.py` composites
+them before cuts, with time-based static, fade or slide settings. Asset imports
+are decoded before sending preview/export jobs. Project v2 includes annotation
+styles and compact image data as part of the edit document.

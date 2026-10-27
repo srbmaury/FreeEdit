@@ -52,6 +52,7 @@ $("resultPreviewBtn").onclick = async () => {
   $("resultPreviewStatus").textContent = `Rendering ${fmt(start)}–${fmt(end)}${selected && selected.end > end ? " · first 15 seconds of selection" : ""}…`;
   setProgress("Preparing result preview…", null);
   try {
+    await prepareAnnotationAssets();
     const response = await api(`/api/jobs/${id}/result-preview`, {method:"POST", headers:{"Content-Type":"application/json"},
       body:JSON.stringify({...buildPayload(), start, end})});
     if (S.job?.id === id) {

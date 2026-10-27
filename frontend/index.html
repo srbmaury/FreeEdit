@@ -145,7 +145,7 @@
               <div id="pauseLabel" class="timeline-label">Pauses</div>
               <div id="cutLabel" class="timeline-label">Cuts</div>
               <div id="maskLabel" class="timeline-label">Masks</div>
-              <div id="textLabel" class="timeline-label">Text</div><div id="zoomLabelTrack" class="timeline-label">Zoom</div>
+              <div id="textLabel" class="timeline-label">Text</div><div id="annotationLabel" class="timeline-label">Notes</div><div id="zoomLabelTrack" class="timeline-label">Zoom</div>
             </div>
             <div id="timelineViewport" class="timeline-viewport" tabindex="0" aria-label="Timeline; scroll horizontally when zoomed">
               <div id="timelineContent" class="timeline-content">
@@ -161,7 +161,7 @@
                 <div id="pauseTrack" class="timeline-track" aria-label="Suggested pauses"></div>
                 <div id="cutTrack" class="timeline-track" aria-label="Cuts"></div>
                 <div id="maskTrack" class="timeline-track" aria-label="Masks"></div>
-                <div id="textTrack" class="timeline-track" aria-label="Text overlays"></div><div id="zoomTrack" class="timeline-track" aria-label="Zoom sections"></div>
+                <div id="textTrack" class="timeline-track" aria-label="Text overlays"></div><div id="annotationTrack" class="timeline-track" aria-label="Annotations"></div><div id="zoomTrack" class="timeline-track" aria-label="Zoom sections"></div>
                 <div id="timelinePlayhead" class="timeline-playhead" aria-hidden="true"></div>
               </div>
             </div>
@@ -202,6 +202,42 @@
             <video id="compositionPreviewPlayer" class="hidden" controls playsinline aria-label="Combined video sample"></video>
           </div>
           <p id="compositionStatus" class="small" role="status">Preview three seconds from the playhead, including your sound choice. Main background effects, cuts, text, and privacy masks are applied in the full export.</p>
+        </section>
+        <section id="annotationsPanel" class="panel">
+          <h2 class="section-title">Annotations</h2>
+          <p class="small">Choose a visual annotation, then place it on your recording. Edit its style, position and timing from Edits.</p>
+          <div class="annotation-picker-section">
+            <span class="annotation-picker-heading">What would you like to add?</span>
+            <div id="annotationTypePicker" class="annotation-tiles annotation-type-tiles" role="group" aria-label="Annotation type"></div>
+          </div>
+          <div id="annotationIconSection" class="annotation-picker-section">
+            <span class="annotation-picker-heading">Choose an icon</span>
+            <div id="annotationIconPicker" class="annotation-tiles annotation-icon-tiles" role="group" aria-label="Choose an icon"></div>
+          </div>
+          <div id="annotationShapeSection" class="annotation-picker-section hidden">
+            <span class="annotation-picker-heading">Choose a shape</span>
+            <div id="annotationShapePicker" class="annotation-tiles annotation-icon-tiles" role="group" aria-label="Choose a shape"></div>
+          </div>
+          <div class="annotation-picker-section">
+            <span class="annotation-picker-heading">Quick styles</span>
+            <div id="annotationPresetPicker" class="annotation-tiles annotation-preset-tiles" role="group" aria-label="Annotation presets"></div>
+          </div>
+          <button type="button" id="annotationUploadBtn" class="annotation-upload-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 3 3 4-5 6 7"/></svg>
+            <span><strong>Upload image or logo</strong><small>PNG, JPG or WebP · up to 750 KB</small></span>
+            <span class="annotation-upload-plus" aria-hidden="true">+</span>
+          </button>
+          <input id="annotationUploadInput" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+          <div class="annotation-picker-section">
+            <span class="annotation-picker-heading">Animation</span>
+            <div id="annotationAnimationPicker" class="annotation-option-pills" role="group" aria-label="Annotation entrance and exit animation"></div>
+          </div>
+          <div class="grid2">
+            <label class="field"><span>Start (seconds)</span><input id="annotationStart" type="number" min="0" step=".1" value="0"></label>
+            <label class="field"><span>End (seconds)</span><input id="annotationEnd" type="number" min="0" step=".1" value="3"></label>
+          </div>
+          <button id="addAnnotationBtn" type="button" class="primary">Add icon</button>
+          <p id="annotationMessage" class="small" role="status" aria-live="polite"></p>
         </section>
         <section id="reframePanel" class="panel">
           <h2 class="section-title">Reframe recording</h2>
@@ -430,6 +466,39 @@
     </div>
   </template>
 
+  <template id="annotationCardTpl">
+    <div class="card">
+      <div class="card-head"><span class="badge annotation">Note</span><button class="card-title" type="button" aria-expanded="false"></button><button class="del" title="Delete annotation" aria-label="Delete annotation">✕</button></div>
+      <label class="field annotation-callout-field"><span>Callout label</span><input data-k="text" type="text" maxlength="120" aria-label="Callout label"></label>
+      <div class="annotation-card-icon-picker annotation-picker-section">
+        <span class="annotation-picker-heading">Icon</span>
+        <div class="annotation-tiles annotation-icon-tiles annotation-card-choices" data-annotation-choices="icon" role="group" aria-label="Change annotation icon"></div>
+      </div>
+      <div class="annotation-card-shape-picker annotation-picker-section">
+        <span class="annotation-picker-heading">Shape</span>
+        <div class="annotation-tiles annotation-icon-tiles annotation-card-choices" data-annotation-choices="shape" role="group" aria-label="Change annotation shape"></div>
+      </div>
+      <div class="annotation-image-field">
+        <span class="annotation-picker-heading">Your image / logo</span>
+        <img class="annotation-image-preview" alt="Selected image overlay preview">
+        <label class="annotation-replace-label">Replace image or logo <input class="annotation-image-input" type="file" accept="image/png,image/jpeg,image/webp"></label>
+      </div>
+      <div class="grid2">
+        <label class="field"><span>Color</span><input data-k="color" type="color"></label>
+        <label class="field"><span>Opacity</span><input data-k="opacity" type="range" min=".1" max="1" step=".05"></label>
+        <label class="field"><span>Rotation</span><input data-k="rotation" type="number" min="-180" max="180"></label>
+        <div class="annotation-edit-animation"><span class="annotation-picker-heading">Animation style</span><div class="annotation-option-pills annotation-inspector-animation" role="group" aria-label="Change animation style"></div></div>
+        <label class="field"><span>Transition</span><input data-k="transition" type="number" min="0" max="1.5" step=".05"></label>
+      </div>
+      <details class="geometry"><summary>Position and size</summary><div class="grid2">
+        <label class="field"><span>X</span><input data-k="x" type="number" step="1"></label>
+        <label class="field"><span>Y</span><input data-k="y" type="number" step="1"></label>
+        <label class="field"><span>Width</span><input data-k="w" type="number" min="16" step="1"></label>
+        <label class="field"><span>Height</span><input data-k="h" type="number" min="16" step="1"></label>
+      </div></details>
+      <div class="times"></div>
+    </div>
+  </template>
   <template id="textCardTpl">
     <div class="card">
       <div class="card-head"><span class="badge text">Text</span><button class="card-title" type="button" aria-expanded="false"></button><button class="del" title="Delete">✕</button></div>
@@ -537,6 +606,7 @@
   <script src="ui.js"></script>
   <script src="media-utils.js"></script>
   <script src="editor-model.js"></script>
+  <script src="annotation-model.js"></script>
   <script src="app.js"></script>
   <script src="editor-render.js"></script>
   <script src="editor-edits.js"></script>
@@ -551,6 +621,7 @@
   <script src="videos.js"></script>
   <script src="workspace.js"></script>
   <script src="reframe-captions.js"></script>
+  <script src="annotations.js"></script>
   <script src="range-selection.js"></script>
   <script src="result-preview.js"></script>
 </body>

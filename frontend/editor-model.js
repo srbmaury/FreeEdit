@@ -4,13 +4,13 @@
 // all have the same identity and original-source [start, end] interval.
 // Whole-video reframe, background and presenter remain scene-level settings.
 const EditorModel = (() => {
-  const TIMELINE_TYPES = Object.freeze(["cut", "hide", "text", "reframe"]);
+  const TIMELINE_TYPES = Object.freeze(["cut", "hide", "text", "reframe", "annotation"]);
   const DEFAULT_REFRAME = Object.freeze({aspect: "original", zoom: 1, focus_x: .5, focus_y: .5});
 
   function limitError(edits) {
     if (edits.length > 200) return "Keep at most 200 edits in a project.";
     if (edits.filter(edit => edit.type === "cut").length > 100) return "Keep at most 100 cuts. Remove a cut before adding another.";
-    if (edits.filter(edit => edit.type === "hide" || edit.type === "text").length > 100) return "Keep at most 100 masks and text overlays.";
+    if (edits.filter(edit => edit.type === "hide" || edit.type === "text" || edit.type === "annotation").length > 100) return "Keep at most 100 masks, text and annotations.";
     if (edits.filter(edit => edit.type === "reframe").length > 20) return "Keep at most 20 timed Reframe edits.";
     return null;
   }

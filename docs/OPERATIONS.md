@@ -8,7 +8,7 @@ FreeEdit targets screen recordings and short demos; it is **not a guaranteed mov
 | --- | --- |
 | Pause analysis | 25 suggestions per UI page; up to 100 per API page; all qualifying matches stored temporarily on disk |
 | Cuts | 100 |
-| Text/captions and privacy masks | 100 combined |
+| Text/captions, annotations and privacy masks | 100 combined |
 | SRT import | Up to 100 usable cues, less than 1 MiB; max 240 characters/four lines per cue |
 | Timed Reframe | 20 non-overlapping sections; 1–3× zoom |
 | Projects | Version 2 `.freeedit.json`, up to 2 MiB, **without media files** |

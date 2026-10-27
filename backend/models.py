@@ -32,6 +32,21 @@ class HideEdit(TimeRange):
     style: Literal["black", "blur", "pixelate"] = "black"
 
 
+class AnnotationEdit(TimeRange):
+    type: Literal["annotation"]
+    x: int = Field(ge=-16384, le=16384)
+    y: int = Field(ge=-16384, le=16384)
+    image: str = Field(max_length=2_800_000)
+    animation: Literal["none", "fade", "slide"] = "none"
+    transition: float = Field(default=0.35, ge=0, le=1.5)
+    shift: int = Field(default=40, ge=0, le=90)
+
+    @field_validator("image")
+    @classmethod
+    def valid_image(cls, value):
+        return TextEdit.valid_png(value)
+
+
 class TextEdit(TimeRange):
     type: Literal["text"]
     x: int = Field(ge=-16384, le=16384)
@@ -158,7 +173,7 @@ class ProcessRequest(BaseModel):
     denoise: bool = True
     atten_lim: int | None = Field(default=None, ge=0, le=100)
     preset: Literal["balanced", "small", "high", "audio_only"] = "balanced"
-    edits: list[Annotated[HideEdit | TextEdit, Field(discriminator="type")]] = Field(default_factory=list, max_length=100)
+    edits: list[Annotated[HideEdit | TextEdit | AnnotationEdit, Field(discriminator="type")]] = Field(default_factory=list, max_length=100)
     cuts: list[TimeRange] = Field(default_factory=list, max_length=100)
 
     def validate_media(self, media):

@@ -69,6 +69,7 @@ const MODE_HINTS = {
   select: "Select an edit to adjust it.",
   hide: "Drag over the part of the video you want to hide.",
   text: "Click where the text should go.",
+  annotation: "Click the video to place your selected annotation. Press Esc to cancel.",
   background: "Drag a rectangle around the camera inset. Press Escape to cancel.",
 };
 

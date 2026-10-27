@@ -347,7 +347,7 @@ def build_video_edits(
             out = next_label()
             parts.append(f"{base}{patch}overlay={x}:{y}:enable='{en}'{out}")
             cur = out
-        elif kind == "text":
+        elif kind in {"text", "annotation"}:
             png = e.get("image", "")
             if not png.startswith("data:image/png;base64,"):
                 continue
@@ -363,7 +363,32 @@ def build_video_edits(
             # Single-frame input; overlay's default eof_action=repeat keeps it on
             # screen. (A `-loop 1` input is an endless stream that ffmpeg reads
             # ahead of, buffering gigabytes once cuts shift the output timeline.)
-            parts.append(f"{cur}{img}overlay={x}:{y}:enable='{en}'{out}")
+            if kind == "annotation":
+                transition = min(e.get("transition", .35), (e["end"] - e["start"]) / 2)
+                animation = e.get("animation", "none")
+                if animation == "fade" and transition > 0:
+                    # A single still image is repeated as frames at the source
+                    # rate, so alpha fades use the original source timeline.
+                    animated = f"[ann{i}]"
+                    fps = min(60, max(1, info.frame_rate))
+                    # Never loop a PNG indefinitely: the overlay would feed
+                    # FFmpeg unbounded frames and stall short previews.
+                    frames = max(1, int(math.ceil(e["end"] * fps)) + 2)
+                    parts.append(
+                        f"{img}format=rgba,loop=loop={frames}:size=1:start=0,"
+                        f"setpts=N/({fps:.3f}*TB),fps={fps:.3f},"
+                        f"fade=t=in:st={e['start']:.3f}:d={transition:.3f}:alpha=1,"
+                        f"fade=t=out:st={e['end']-transition:.3f}:d={transition:.3f}:alpha=1{animated}")
+                    img = animated
+                xpos = str(x)
+                if animation == "slide" and transition > 0:
+                    shift = max(0, int(e.get("shift", 40) * scale))
+                    xpos = (
+                        f"({x})-({shift})*max(0,1-(t-{e['start']:.3f})/{transition:.3f})"
+                        f"-({shift})*max(0,1-({e['end']:.3f}-t)/{transition:.3f})")
+                parts.append(f"{cur}{img}overlay=x='{xpos}':y={y}:enable='{en}'{out}")
+            else:
+                parts.append(f"{cur}{img}overlay={x}:{y}:enable='{en}'{out}")
             cur = out
 
     return parts, images, cur

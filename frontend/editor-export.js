@@ -12,9 +12,10 @@ function textToPng(e) {
 
 function buildPayload() {
   const cuts = S.edits.filter((e) => e.type === "cut").map((e) => ({ start: e.start, end: e.end }));
-  const edits = S.edits.filter((e) => e.type === "hide" || e.type === "text").map((e) => {
+  const edits = S.edits.filter((e) => ["hide","text","annotation"].includes(e.type)).map((e) => {
     const base = { type: e.type, start: e.start, end: e.end };
     if (e.type === "hide") return { ...base, style: e.style, x: e.x, y: e.y, w: e.w, h: e.h };
+    if(e.type==="annotation")return annotationPayload(e);
     return { ...base, x: Math.round(e.x), y: Math.round(e.y), image: textToPng(e) };
   });
   const strength = $("strength").value;
@@ -40,6 +41,8 @@ async function startExport() {
   video.pause(); $("audio").pause();
   setBusy("export");
   const id = S.job.id;
+  try { await prepareAnnotationAssets(); }
+  catch(error) { procFailed(error.message); return; }
   const payload = buildPayload();
   const signature = editSignature();
   const ranges = keptRangesForExport();

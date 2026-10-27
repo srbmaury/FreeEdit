@@ -20,13 +20,13 @@ function setMode(mode) {
   window.dispatchEvent(new CustomEvent("freeedit:workspace", { detail: "mode" }));
   $("drawCameraAreaBtn").setAttribute("aria-pressed", String(mode === "background"));
   $("drawCameraAreaBtn").textContent = mode === "background" ? "Cancel area selection" : "Draw camera area";
-  show($("placeEditBtn"), mode !== "select" && mode !== "background" && !!S.job?.has_video);
+  show($("placeEditBtn"), ["text","hide"].includes(mode) && !!S.job?.has_video);
   document.querySelectorAll(".tool").forEach((b) => {
     b.classList.toggle("active", b.dataset.mode === mode);
     b.setAttribute("aria-pressed", String(b.dataset.mode === mode));
   });
   $("modeHint").textContent = MODE_HINTS[mode];
-  canvas.className = (mode === "hide" || mode === "background") ? "crosshair" : mode === "text" ? "text" : "";
+  canvas.className = (mode === "hide" || mode === "background") ? "crosshair" : mode === "text" ? "text" : mode === "annotation" ? "annotation-place" : "";
 }
 function chooseSelectTool() {
   if (S.reviewing) setReview(false);
@@ -93,6 +93,11 @@ function deleteEdit(id) {
 function select(id) {
   stopReviewLoop();
   S.selected = id;
+  if(S.mode==="select"){
+    $("modeHint").textContent=getEdit(id)?.type==="annotation"
+      ? "Click an empty spot on the video to move this annotation, or drag it directly."
+      : MODE_HINTS.select;
+  }
   if (typeof syncZoomSelection === "function") syncZoomSelection();
   window.dispatchEvent(new CustomEvent("freeedit:workspace", { detail: "selection" }));
   document.querySelectorAll(".card").forEach((c) => {
@@ -108,6 +113,7 @@ function select(id) {
 function cardTitle(e) {
   const range = `${fmt(e.start)}–${fmt(e.end)}`;
   if (e.type === "cut") return `${range} (${(e.end - e.start).toFixed(1)}s)`;
+  if (e.type === "annotation") return `${e.kind === "callout" ? e.text : e.kind} · ${range}`;
   if (e.type === "reframe") return `Reframe ${e.zoom.toFixed(2)}× · ${range}`;
   if (e.type === "text") return `${(e.text || "").split("\n")[0]} · ${range}`;
   return `${{ blur: "Blur", pixelate: "Pixelate", black: "Solid cover" }[e.style]} · ${range}`;
@@ -122,7 +128,7 @@ function renderList() {
   renderTimeline();
 
   for (const e of EditorModel.sorted(S.edits).filter(e=>e.type!=="reframe")) {
-    const tpl = $({ hide: "hideCardTpl", text: "textCardTpl", cut: "cutCardTpl" }[e.type]).content.cloneNode(true);
+    const tpl = $({ hide: "hideCardTpl", text: "textCardTpl", cut: "cutCardTpl", annotation: "annotationCardTpl" }[e.type]).content.cloneNode(true);
     const card = tpl.querySelector(".card");
     card.dataset.id = e.id;
     card.dataset.start = e.start;
@@ -131,7 +137,11 @@ function renderList() {
     const title = card.querySelector(".card-title");
     title.textContent = cardTitle(e);
     title.setAttribute("aria-expanded", String(e.id === S.selected));
-    title.onclick = () => { select(e.id); sourcePlayer().currentTime = e.start; };
+    title.onclick = () => {
+      select(e.id);
+      sourcePlayer().currentTime = e.type === "annotation"
+        ? AnnotationModel.visibleTime(e) : e.start;
+    };
 
     card.querySelectorAll("[data-k]").forEach((input) => {
       const k = input.dataset.k;
@@ -141,23 +151,48 @@ function renderList() {
       if (input.type === "number") input.addEventListener("change", () => { input.value = e[k]; });
       input.addEventListener("input", () => {
         let v = input.type === "checkbox" ? input.checked : input.value;
-        if (input.type === "number") {
+        if (input.type === "number" || input.type === "range") {
           v = parseFloat(v);
-          if (Number.isNaN(v)) return;
+          if (!Number.isFinite(v)) return;
           if (["x", "y", "w", "h"].includes(k)) {
             const axis = ["x", "w"].includes(k) ? S.job.width : S.job.height;
             if (k === "w" || k === "h") v = clamp(Math.round(v), 8, axis - e[k === "w" ? "x" : "y"]);
             else v = clamp(Math.round(v), 0, axis - (e.type === "hide" ? e[k === "x" ? "w" : "h"] : 1));
           }
           if (k === "fontSize") v = clamp(Math.round(v), 8, 400);
+          if (e.type === "annotation") {
+            if (k === "opacity") v = clamp(v, .1, 1);
+            if (k === "transition") v = clamp(v, 0, 1.5);
+            if (k === "rotation") v = clamp(v, -180, 180);
+            if (k === "w" || k === "h") v = clamp(v, 16, 4096);
+          }
           if (k === "start") v = clamp(v, 0, e.end);
           if (k === "end") v = clamp(v, e.start, duration());
         }
+        if(e.type==="annotation" && AnnotationModel.validate({...e,[k]:v},duration(),S.job.width,S.job.height)){input.value=e[k];return;}
         commitEdit("edit:property", () => { e[k] = v; }, false);
         title.textContent = cardTitle(e);
       });
     });
 
+    if(e.type==="annotation"){
+      const imageField=card.querySelector(".annotation-image-field");
+      imageField.hidden=e.kind!=="image";
+      const calloutField=card.querySelector(".annotation-callout-field");
+      calloutField.hidden=e.kind!=="callout";
+      const iconChoices=card.querySelector(".annotation-card-icon-picker");
+      const shapeChoices=card.querySelector(".annotation-card-shape-picker");
+      iconChoices.hidden=e.kind!=="icon";
+      shapeChoices.hidden=e.kind!=="shape";
+      if(e.kind==="icon")buildAnnotationInspectorChoices(iconChoices.querySelector("[data-annotation-choices]"),e,"icon");
+      if(e.kind==="shape")buildAnnotationInspectorChoices(shapeChoices.querySelector("[data-annotation-choices]"),e,"shape");
+      buildAnnotationAnimationControls(card.querySelector(".annotation-inspector-animation"),e);
+      const img=card.querySelector(".annotation-image-input");
+      img.onchange=event=>{loadAnnotationImage(e,event.target.files?.[0]);event.target.value="";};
+      const thumb=card.querySelector(".annotation-image-preview");
+      if(e.kind==="image"&&e.image)thumb.src=e.image;
+      thumb.hidden=e.kind!=="image";
+    }
     card.querySelectorAll("[data-now]").forEach((btn) => {
       btn.onclick = (ev) => {
         ev.preventDefault();
