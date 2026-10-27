@@ -244,8 +244,9 @@ canvas.addEventListener("pointermove", (ev) => {
       d.edit.y = clamp(d.edit.y, 0, H - d.edit.h);
     }
   } else if (d.kind === "resize") {
-    d.edit.w = Math.round(clamp(p.x - d.edit.x, 8, W - d.edit.x));
-    d.edit.h = Math.round(clamp(p.y - d.edit.y, 8, H - d.edit.y));
+    const minimum = d.edit.type === "annotation" ? 16 : 8;
+    d.edit.w = Math.round(clamp(p.x - d.edit.x, minimum, W - d.edit.x));
+    d.edit.h = Math.round(clamp(p.y - d.edit.y, minimum, H - d.edit.y));
   }
   render();
 });

@@ -347,7 +347,7 @@ def build_video_edits(
             out = next_label()
             parts.append(f"{base}{patch}overlay={x}:{y}:enable='{en}'{out}")
             cur = out
-        elif kind == "text":
+        elif kind in {"text", "annotation"}:
             png = e.get("image", "")
             if not png.startswith("data:image/png;base64,"):
                 continue

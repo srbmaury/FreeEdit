@@ -69,3 +69,25 @@ test("rotated overlay raster fits corners",()=>{
  const bounds=call("AnnotationModel.rasterBounds("+JSON.stringify(edit)+")");
  assert.ok(bounds.w>=edit.w&&bounds.h>=edit.h);
 });
+
+test("canvas resize keeps annotations valid for project loading",()=>{
+ const handlers={};
+ const context=vm.createContext({
+   document:{createElement:()=>({})},
+   canvas:{addEventListener:(name,handler)=>{handlers[name]=handler;}},
+   clamp:(value,min,max)=>Math.max(min,Math.min(max,value)),
+   S:{job:{width:1280,height:720}}
+ });
+ vm.runInContext(fs.readFileSync("frontend/annotation-model.js","utf8"),context);
+ vm.runInContext(fs.readFileSync("frontend/editor-render.js","utf8"),context);
+ vm.runInContext(`render=()=>{};toSource=event=>event;
+   var edit=AnnotationModel.defaultEdit('icon',1280,720,0,2);
+   S.drag={kind:'resize',edit};`,context);
+ handlers.pointermove({x:0,y:0});
+ assert.equal(vm.runInContext("edit.w",context),16);
+ assert.equal(vm.runInContext("edit.h",context),16);
+ assert.equal(vm.runInContext("AnnotationModel.validate(edit,3,1280,720)",context),null);
+ vm.runInContext("edit.type='hide'",context);
+ handlers.pointermove({x:0,y:0});
+ assert.equal(vm.runInContext("edit.w",context),8);
+});

@@ -13,13 +13,13 @@ from backend import pipeline
 from backend.models import AnnotationEdit, ProcessRequest
 
 
-def png_pixel(color=(255, 0, 0, 255)):
+def png_pixel(color=(255, 0, 0, 255), size=1):
     """A tiny valid RGBA PNG; no Pillow dependency required."""
     def chunk(tag, payload):
         return struct.pack(">I",len(payload))+tag+payload+struct.pack(">I",zlib.crc32(tag+payload)&0xffffffff)
     signature=b"\x89PNG\r\n\x1a\n"
-    header=chunk(b"IHDR",struct.pack(">IIBBBBB",1,1,8,6,0,0,0))
-    data=chunk(b"IDAT",zlib.compress(b"\x00"+bytes(color)))
+    header=chunk(b"IHDR",struct.pack(">IIBBBBB",size,size,8,6,0,0,0))
+    data=chunk(b"IDAT",zlib.compress((b"\x00"+bytes(color)*size)*size))
     return "data:image/png;base64,"+base64.b64encode(signature+header+data+chunk(b"IEND",b"")).decode()
 
 
@@ -41,6 +41,27 @@ class AnnotationValidationTests(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"),"FFmpeg required")
 class AnnotationVideoTests(unittest.TestCase):
+    def test_export_contains_annotation_pixels(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            source=root/"source.mp4"
+            subprocess.run(["ffmpeg","-v","error","-y","-f","lavfi","-i",
+                "color=black:size=160x90:rate=24:duration=2",
+                "-c:v","libx264","-threads","1",str(source)],check=True,capture_output=True)
+            for animation in ("none", "fade", "slide"):
+                with self.subTest(animation=animation):
+                    result=pipeline.process(source,root,denoise_audio=False,atten_lim=None,
+                        edits=[dict(type="annotation",start=.2,end=1.8,x=40,y=30,
+                            image=png_pixel(size=32),animation=animation,transition=.3)],
+                        cuts=[],progress=lambda *_:None,preset="high")
+                    frame=subprocess.run(["ffmpeg","-v","error","-ss","1","-i",str(result),
+                        "-frames:v","1","-pix_fmt","rgb24","-f","rawvideo","-"],
+                        check=True,capture_output=True).stdout
+                    pixel=frame[(40*160+50)*3:(40*160+50)*3+3]
+                    self.assertEqual(len(pixel),3)
+                    self.assertGreater(pixel[0],180)
+                    self.assertLess(max(pixel[1:]),60)
+
     def test_export_annotations_with_cut_and_sound(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
