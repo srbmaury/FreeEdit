@@ -11,6 +11,7 @@ function recoveryTabId() {
 
 const projects = {
   source: null, pending: null, recovery: null,
+  restoringSequence: false,
   timer: null, signature: null, savedSignature: null, writing: false,
   recoveryRevision: 0, pendingSignature: null,
   tabId: recoveryTabId(), ownerKey: "freeedit.recovery.owner", conflict: false,
@@ -25,9 +26,11 @@ async function fingerprintSource(file) {
 function projectDocument() {
   if (!S.job || !projects.source) return null;
   const edits = S.edits.map(EditorModel.editableProperties);
+  const original = typeof sequenceOriginalMedia !== "undefined" && sequenceOriginalMedia || S.job;
   return {
     format: "FreeEdit", version: 2,
-    source: {...projects.source, duration: S.job.duration, width: S.job.width, height: S.job.height, has_video: S.job.has_video, has_audio: S.job.has_audio},
+    source: {...projects.source, duration: original.duration, width: original.width, height: original.height, has_video: original.has_video, has_audio: original.has_audio},
+    ...(sequenceClips?.length > 1 ? {sequence:{duration:S.job.duration, transitions:sequenceTransitions, clips:sequenceClips.map(({id,name,duration,identity})=>({id,name,duration,source:identity}))}} : {}),
     view: {playhead: sourcePlayer().currentTime || 0, zoom: timeline.zoom},
     edits, settings: {audio: getAudioSettings(), presenter: presenterProject(), background: getBackgroundSettings(), framing: S.job.has_video ? S.framing : null, reframe: S.job.has_video ? S.reframe : null, denoise: $("denoise").checked, strength: $("strength").value, preset: $("exportPreset").value},
   };
@@ -70,6 +73,7 @@ function projectSourceReady(identity, {save = true} = {}) {
   projects.signature = null;
   projects.savedSignature = null;
   if (projects.pending) {
+    if (projects.pending.sequence && projects.restoringSequence) return;
     const pending = projects.pending;
     projects.pending = null;
     applyProject(pending);
@@ -81,6 +85,13 @@ function projectSourceReady(identity, {save = true} = {}) {
 
 function applyProject(project) {
   projects.writing = true;
+  if (project.sequence && typeof sequenceClips !== "undefined") {
+    sequenceTransitions = project.sequence.transitions || project.sequence.clips.slice(1).map(()=>({type:"cut",duration:0}));
+    sequenceClips = project.sequence.clips.map((clip,index)=>({id:S.job.sequence_clips?.[index]?.id || clip.id,
+      name:clip.name,duration:clip.duration,identity:clip.source}));
+    if (typeof sequenceOriginalMedia !== "undefined") sequenceOriginalMedia = {...S.job, duration:project.source.duration,
+      width:project.source.width,height:project.source.height,has_video:project.source.has_video,has_audio:project.source.has_audio};
+  }
   restorePresenter(project.settings.presenter);
   const imported = project.edits.map(edit => ({...edit, id: S.nextId++}));
   editorStore.dispatch("project:load", state => {
@@ -228,8 +239,10 @@ async function locateProjectSource(project, recovery) {
       const response = await fetch(`/api/jobs/${recovery.jobId}/source`, {headers: {Range: "bytes=0-0"}, signal: AbortSignal.timeout(10000)});
       if (response.body) await response.body.cancel();
       if (!current()) return;
-      if (response.ok && projectMediaMatches(project.source, job.media)) {
-        openEditor({id: job.id, filename: project.source.name, ...job.media, waveform: recovery.waveform});
+      if (response.ok && projectMediaMatches({...project.source, duration:project.sequence?.duration ?? project.source.duration,
+        width:project.sequence ? project.source.width + project.source.width % 2 : project.source.width,
+        height:project.sequence ? project.source.height + project.source.height % 2 : project.source.height}, job.media)) {
+        openEditor({id: job.id, filename: project.source.name, ...job.media, waveform: recovery.waveform, sequence_clips:job.sequence_clips});
         // Apply the document without flushing a half-restored recovery snapshot.
         projectSourceReady(project.source, {save: false});
         const submission = exportRules.recoverSubmission(recovery.exportSubmission, job);
@@ -254,23 +267,61 @@ async function locateProjectSource(project, recovery) {
     } catch { /* Expired sources can be selected again below. */ }
     if (!current()) return;
   }
-  showProjectMessage("Locate the original recording", `Choose “${project.source.name}” (${(project.source.size / 1048576).toFixed(1)} MB). The recording is not included in the project. Its contents will be checked before your edits are restored.`, () => $("projectSourceInput").click(), "Choose recording");
+  const locateText = project.sequence
+    ? `Select all ${project.sequence.clips.length} original clips in sequence order, starting with “${project.sequence.clips[0].name}”. They are not included in the project; FreeEdit checks each clip before rebuilding the sequence.`
+    : `Choose “${project.source.name}” (${(project.source.size / 1048576).toFixed(1)} MB). The recording is not included in the project. Its contents will be checked before your edits are restored.`;
+  showProjectMessage("Locate the original recording", locateText, () => $("projectSourceInput").click(), project.sequence ? "Choose clips" : "Choose recording");
 }
 
 $("projectSourceInput").onchange = async event => {
-  const file = event.target.files[0];
+  const selected = [...event.target.files];
   event.target.value = "";
-  if (!file || !projects.pending) return;
+  if (!selected.length || !projects.pending) return;
   const project = projects.pending;
   $("confirmProjectBtn").disabled = true;
   $("projectMessage").textContent = "Checking the recording’s contents…";
   try {
-    if (file.size !== project.source.size) throw new Error("This recording does not match the saved project. Choose the original file.");
-    const identity = await fingerprintSource(file);
-    if (identity.fingerprint !== project.source.fingerprint) throw new Error("This recording’s contents do not match. Choose the original file to avoid applying edits to the wrong recording.");
+    if (!project.sequence) {
+      const file = selected[0];
+      if (file.size !== project.source.size) throw new Error("This recording does not match the saved project. Choose the original file.");
+      const identity = await fingerprintSource(file);
+      if (identity.fingerprint !== project.source.fingerprint) throw new Error("This recording’s contents do not match. Choose the original file to avoid applying edits to the wrong recording.");
+      if (projects.pending !== project) return;
+      $("projectDialog").close(); upload(file, identity); return;
+    }
+    if (selected.length !== project.sequence.clips.length) throw new Error(`Select all ${project.sequence.clips.length} clips in the saved sequence.`);
+    const remaining = [...selected]; const ordered = [];
+    for (const expected of project.sequence.clips) {
+      let matchIndex = -1;
+      for (let index=0; index<remaining.length; index++) {
+        const candidate = remaining[index];
+        if (candidate.size !== expected.source.size) continue;
+        const identity = await fingerprintSource(candidate);
+        if (identity.fingerprint === expected.source.fingerprint) { matchIndex=index; ordered.push({file:candidate,identity}); break; }
+      }
+      if (matchIndex < 0) throw new Error(`Could not find the original clip “${expected.name}”.`);
+      remaining.splice(matchIndex,1);
+    }
     if (projects.pending !== project) return;
-    $("projectDialog").close();
-    upload(file, identity);
+    $("projectDialog").close(); projects.restoringSequence = true;
+    upload(ordered[0].file, ordered[0].identity, async body => {
+      let data = null;
+      for (let clipIndex=1; clipIndex<ordered.length; clipIndex++) {
+        const clip = ordered[clipIndex];
+        const response = await fetch(`/api/jobs/${body.id}/clips?filename=${encodeURIComponent(clip.file.name)}`, {method:"POST",headers:{"Content-Type":"application/octet-stream"},body:clip.file});
+        data = await response.json();
+        if (!response.ok) throw new Error(data.detail || `Could not restore ${clip.file.name}.`);
+        data.clips = data.clips.map((item,index)=>({...item,identity:ordered[index].identity}));
+      }
+      if (project.sequence.transitions?.some(item=>item.type === "crossfade")) {
+        const response = await fetch(`/api/jobs/${body.id}/clips/order`, {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({order:data.clips.map(item=>item.id),transitions:project.sequence.transitions})});
+        data = await response.json(); if (!response.ok) throw new Error(data.detail || "Could not restore clip transitions.");
+      }
+      projects.restoringSequence = false; projects.pending = null;
+      if (data) refreshSequenceSource(data);
+      projectSourceReady(projects.source || ordered[0].identity, {save:false});
+      applyProject(project); saveRecovery();
+    });
   } catch (error) {
     $("projectMessage").textContent = error.message;
   } finally {
@@ -281,6 +332,7 @@ $("projectSourceInput").onchange = async event => {
 function resetProject() {
   clearTimeout(projects.timer); projects.timer = null;
   projects.source = null; projects.signature = null; projects.savedSignature = null; projects.pending = null;
+  projects.restoringSequence = false;
   projects.recovery = null;
   ++projects.recoveryRevision; projects.pendingSignature = null;
   let clearRecovery = true;

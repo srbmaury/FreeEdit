@@ -1,0 +1,31 @@
+1
+00:00:00,000 --> 00:00:04,600
+This Apollo-era mirror still works.
+
+2
+00:00:04,600 --> 00:00:07,200
+Scientists send laser pulses from Earth.
+
+3
+00:00:07,200 --> 00:00:09,700
+A reflector sends the light back.
+
+4
+00:00:09,700 --> 00:00:13,900
+The round trip takes about 2.5 seconds.
+
+5
+00:00:13,900 --> 00:00:16,000
+The signal is incredibly faint.
+
+6
+00:00:16,000 --> 00:00:21,800
+In one NASA test, about 200 photons returned.
+
+7
+00:00:21,800 --> 00:00:25,800
+Timing the light measures distance to millimeters.
+
+8
+00:00:25,800 --> 00:00:27,000
+A tiny mirror. An astonishing measurement.

@@ -63,7 +63,7 @@ def category_for(method: str, path: str) -> str | None:
     if method != "POST":
         return "diagnostics" if method == "GET" and path == "/api/diagnostics" else None
     if path == "/api/upload" or (
-        path.startswith("/api/jobs/") and path.endswith("/presenter")
+        path.startswith("/api/jobs/") and path.endswith(("/presenter", "/clips"))
     ):
         return "upload"
     if path.startswith("/api/jobs/") and path.rsplit("/", 1)[-1] in {

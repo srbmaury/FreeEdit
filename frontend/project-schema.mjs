@@ -14,9 +14,29 @@ export function validateProjectDocument(value, {EditorModel, AnnotationModel}) {
       !finite(source.duration, 0.001, 1e8) || !finite(source.width, 0, 65536) || !finite(source.height, 0, 65536) ||
       typeof source.has_video !== "boolean" || typeof source.has_audio !== "boolean" || (!source.has_video && !source.has_audio)) fail();
   const settings = value.settings;
+  let timelineDuration = source?.duration;
+  let sequence = null;
+  if (value.sequence !== undefined) {
+    const clips = value.sequence?.clips;
+    if (!Array.isArray(clips) || clips.length < 2 || clips.length > 8 || !finite(value.sequence.duration, 0.001, 1e8)) fail();
+    const validated = clips.map((clip,index) => {
+      const identity = clip?.source;
+      if (!clip || typeof clip.name !== "string" || clip.name.length > 255 || !finite(clip.duration, 0.001, 1e8) ||
+          !identity || !finite(identity.size,1,Number.MAX_SAFE_INTEGER) || !Number.isInteger(identity.size) ||
+          typeof identity.name !== "string" || identity.name.length > 1024 || identity.algorithm !== "sha256-chunks-4m-v1" || !/^[a-f0-9]{64}$/.test(identity.fingerprint)) fail();
+      if (index === 0 && (identity.fingerprint !== source.fingerprint || identity.size !== source.size)) fail();
+      return {id:typeof clip.id === "string" ? clip.id : `clip-${index+1}`, name:clip.name, duration:clip.duration,
+        source:{name:identity.name,size:identity.size,fingerprint:identity.fingerprint,algorithm:identity.algorithm}};
+    });
+    const transitions = value.sequence.transitions === undefined ? validated.slice(1).map(()=>({type:"cut",duration:0})) : value.sequence.transitions;
+    if (!Array.isArray(transitions) || transitions.length !== validated.length - 1 || transitions.some((t,i)=>!t || !["cut","crossfade"].includes(t.type) || !finite(t.duration,0,Math.min(2,validated[i].duration,validated[i+1].duration)) || (t.type === "cut" && t.duration !== 0))) fail();
+    timelineDuration = validated.reduce((total,clip)=>total+clip.duration,0) - transitions.reduce((total,t)=>total+t.duration,0);
+    if (Math.abs(timelineDuration-value.sequence.duration) > .1) fail();
+    sequence = {duration:timelineDuration,transitions:transitions.map(t=>({type:t.type,duration:t.duration})),clips:validated};
+  }
   const framing = validateFraming(settings?.framing, source);
   const background = validateBackground(settings?.background, source);
-  const presenter = validatePresenterProject(settings?.presenter, source);
+  const presenter = validatePresenterProject(settings?.presenter, {...source,duration:timelineDuration});
   const reframe = settings?.reframe == null ? null : settings.reframe;
   if (reframe && (!source.has_video || !["original", "wide", "vertical", "square"].includes(reframe.aspect) ||
       ![reframe.zoom, reframe.focus_x, reframe.focus_y].every(Number.isFinite) ||
@@ -29,16 +49,16 @@ export function validateProjectDocument(value, {EditorModel, AnnotationModel}) {
   if (!Array.isArray(value.edits) || value.edits.length > 200) fail();
   const reframeEdits = [];
   const edits = value.edits.map(edit => {
-    if (!edit || !EditorModel.TIMELINE_TYPES.includes(edit.type) || !finite(edit.start, 0, source.duration) ||
-        !finite(edit.end, 0, source.duration + 0.05) || edit.end <= edit.start) fail();
-    const result = {type: edit.type, start: edit.start, end: Math.min(edit.end, source.duration)};
+    if (!edit || !EditorModel.TIMELINE_TYPES.includes(edit.type) || !finite(edit.start, 0, timelineDuration) ||
+        !finite(edit.end, 0, timelineDuration + 0.05) || edit.end <= edit.start) fail();
+    const result = {type: edit.type, start: edit.start, end: Math.min(edit.end, timelineDuration)};
     if (result.type === "audio") {
-      if (EditorModel.validateAudioRegion(edit,source.duration)) fail();
+      if (EditorModel.validateAudioRegion(edit,timelineDuration)) fail();
       Object.assign(result,{volume:edit.volume,fade:edit.fade});
     }
     if (result.type === "reframe") {
       const section = {...edit, start:result.start, end:result.end};
-      if (!source.has_video || EditorModel.validateReframe(section, source.duration, reframeEdits)) fail();
+      if (!source.has_video || EditorModel.validateReframe(section, timelineDuration, reframeEdits)) fail();
       Object.assign(result, {zoom:section.zoom,focus_x:section.focus_x,focus_y:section.focus_y,transition:section.transition});
       reframeEdits.push(result);
     }
@@ -52,7 +72,7 @@ export function validateProjectDocument(value, {EditorModel, AnnotationModel}) {
       Object.assign(result, {w: edit.w, h: edit.h, style: edit.style});
     }
     if (result.type === "annotation") {
-      if (!source.has_video || AnnotationModel.validate(edit, source.duration, source.width, source.height)) fail();
+      if (!source.has_video || AnnotationModel.validate(edit, timelineDuration, source.width, source.height)) fail();
       for(const key of ["kind","icon","shape","text","image","x","y","w","h","color","opacity","rotation","animation","transition"])result[key]=edit[key];
       if(edit.kind==="drawing"){
         if(edit.strokes)result.strokes=edit.strokes.map(s=>({points:s.points.map(p=>[...p]),strokeWidth:s.strokeWidth,color:s.color,opacity:s.opacity}));
@@ -72,7 +92,8 @@ export function validateProjectDocument(value, {EditorModel, AnnotationModel}) {
   return {format: "FreeEdit", version: 2,
     source: {name: source.name, size: source.size, fingerprint: source.fingerprint, algorithm: source.algorithm,
       duration: source.duration, width: source.width, height: source.height, has_video: source.has_video, has_audio: source.has_audio},
-    view: {playhead: finite(value.view?.playhead, 0, source.duration) ? value.view.playhead : 0,
+      ...(sequence ? {sequence} : {}),
+    view: {playhead: finite(value.view?.playhead, 0, timelineDuration) ? value.view.playhead : 0,
       zoom: [1, 2, 4, 8, 16].includes(value.view?.zoom) ? value.view.zoom : 1},
     edits, settings: {audio, presenter, background, framing, reframe, denoise: settings.denoise, strength: settings.strength, preset: settings.preset}};
 }

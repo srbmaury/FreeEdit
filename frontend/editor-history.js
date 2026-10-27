@@ -99,6 +99,7 @@ function setReview(reviewing) {
   show($("resultAudio"), reviewing && audioResult);
   $("editsPanel").inert = reviewing;
   show($("previewSwitch"), reviewing && !!S.resultSrc);
+  if (typeof renderSequenceClips === "function") renderSequenceClips();
   $("originalPreviewBtn").setAttribute("aria-pressed", String(S.compareOriginal));
   $("exportedPreviewBtn").setAttribute("aria-pressed", String(!S.compareOriginal));
   refreshExportState();

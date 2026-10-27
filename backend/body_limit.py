@@ -18,7 +18,7 @@ class ControlBodyLimit:
     async def __call__(self, scope, receive, send):
         path = scope.get("path", "")
         upload = path == "/api/upload" or (
-            path.startswith("/api/jobs/") and path.endswith("/presenter")
+            path.startswith("/api/jobs/") and path.endswith(("/presenter", "/clips"))
         )
         if (scope["type"] != "http" or scope.get("method") not in {"POST", "PUT", "PATCH"}
                 or not path.startswith("/api/") or upload):

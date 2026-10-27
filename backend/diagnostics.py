@@ -92,7 +92,9 @@ print(json.dumps({'missing':missing,'model':model}))
 
 def require_export_space(work: Path, duration: float, channels: int, background: bool = False):
     # Reserve room for decoded/clean WAV, output, and encoder overhead.
-    source = next(work.glob('source.*'))
+    source = work / 'sequence.mp4'
+    if not source.is_file():
+        source = next(work.glob('source.*'))
     required = max(256 * 1024**2, source.stat().st_size * 2 + int(duration * 48000 * max(1, channels) * 4))
     if background:
         required += int(duration * 1024**2)  # Conservative headroom for the streamed lossless mask.

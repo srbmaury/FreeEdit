@@ -1,6 +1,6 @@
 # FreeEdit
 
-**A free, open-source editor for screen recordings.** Clean up noise and pauses, add clear visual explanations, and export polished demos without learning a full video editor.
+**A free, open-source video editor for tutorials, demos, and social clips.** Shape a video on a visual timeline, add captions and graphics, clean up audio, and export a polished result.
 
 **Try it:** [freeedit.srbmaury.com](https://freeedit.srbmaury.com) · **Source license:** [MIT](LICENSE)
 
@@ -13,7 +13,7 @@
 - **Edit visually**: cut ranges, timed text, imported SRT captions, privacy masks, Reframe/zoom portions, and illustrated annotations (icons, arrows, shapes, callouts, or uploaded logos). Draw custom pen and highlighter strokes directly on the recording, and group strokes to move, resize and time them together. Add timed cursor spotlights and click highlights, and mute or change volume over selected audio regions.
 - **Highlight tutorial actions**: manually place timed cursor spotlights and fading click rings, then move, resize, or restyle them.
 - **Explain what matters**: pick a focus point in the video; choose original, wide, vertical or square aspect ratios.
-- **Combine two videos**: add a movable presenter inset, choose the main/presenter/mixed audio, and optionally process the presenter background.
+- **Build a main-video sequence**: arrange up to eight clips with matching dimensions, frame rate, and audio-track presence; add a movable presenter inset, choose the presenter/mixed audio, and optionally process the presenter background.
 - **Replace backgrounds** (optional): person-aware blur, solid color or an image, optionally restricted to a webcam area.
 - **Review accurately**: timeline selection, original/result comparisons, and short processed previews before exporting.
 - **Export** balanced, high-quality or smaller H.264 MP4, or audio-only WAV. Optional speech leveling and fades.
@@ -55,8 +55,8 @@ The [Dockerfile](Dockerfile) is the supported starting point for Linux/container
 
 ## Basic editing workflow
 
-1. **Upload** a supported video or audio file (e.g. MP4, MOV, WEBM, MKV, WAV or MP3). Some supported containers/codecs cannot play in every browser.
-2. Use the left task rail for **Videos, Audio, Pauses, Background, Reframe, Captions, Annotations, Draw, Cut, Text and Hide area**.
+1. **Open a video** (e.g. MP4, MOV, WEBM, MKV). Some supported containers/codecs cannot play in every browser. Audio-only files are supported for cleanup and export.
+2. Use the left task rail for **Clips, Trim, Text & masks, Subtitles, Reframe, Graphics, Draw, Audio, Cleanup and Background**.
 3. Use **Edits (V)** by the preview to select, move, resize and change edit properties. All timed edits use the original source timeline; cuts alter result timing.
 4. Choose a range in the waveform/ruler or mark boundaries with **I** and **O**. Review the range before applying cuts or zoom.
 5. Use **Export → Preview result** for a short fully processed sample, then export and download.
@@ -66,7 +66,7 @@ Keyboard essentials: `Space` play/pause, `←/→` step, `V` Select, `H` Hide, `
 
 ## Boundaries worth knowing
 
-FreeEdit focuses on screen-recording cleanup, **not unrestricted full-length film editing**. The local default upload limit is 1 GiB, with resource-dependent runtime. The editor allows up to 100 cuts, up to 100 text/privacy/annotation overlays together, and 20 non-overlapping Reframe portions. No automatic subtitle transcription, speed-ramping or arbitrary multi-clip sequencing is included.
+FreeEdit is a focused video editor rather than a general-purpose nonlinear editor. The local default upload limit is 1 GiB, with resource-dependent runtime. Main-video sequences support up to eight clips with matching dimensions, frame rate, and audio-track presence. The editor allows up to 100 cuts, up to 100 text/privacy/annotation overlays together, and 20 non-overlapping Reframe portions. Automatic subtitle transcription, speed-ramping, clip transitions and full color grading are not included.
 
 Temporary uploaded files and rendered jobs expire. Signed anonymous sessions protect access to the current browser's jobs, but **are not user accounts**. Public hosting requires sensible request limits, HTTPS, a trusted reverse proxy and sufficient disk. Review [operations](docs/OPERATIONS.md) and [security](docs/SECURITY.md).
 
