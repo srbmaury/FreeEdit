@@ -10,10 +10,12 @@ function recoveryTabId() {
 }
 
 const projects = {
-  key: "freeedit.recovery.v1", source: null, pending: null, recovery: null,
+  source: null, pending: null, recovery: null,
   timer: null, signature: null, savedSignature: null, writing: false,
+  recoveryRevision: 0, pendingSignature: null,
   tabId: recoveryTabId(), ownerKey: "freeedit.recovery.owner", conflict: false,
 };
+const recoveryStore = import("./recovery-store.mjs").then(module => module.createRecoveryStore());
 
 async function fingerprintSource(file) {
   const identity = await import("./source-identity.mjs");
@@ -112,20 +114,31 @@ function scheduleProjectSave() {
   projects.timer = setTimeout(() => { projects.timer = null; saveRecovery(); }, 500);
 }
 
-function saveRecovery() {
-  const project = projectDocument();
+async function saveRecovery() {
+  const project = structuredClone(projectDocument());
   if (!project) return;
   const exportSubmission = S.exportSubmission?.jobId === S.job.id ? S.exportSubmission : null;
   const resultPreviewSubmission = previewSubmission?.id === S.job.id ? previewSubmission : null;
   const signature = JSON.stringify({project, exportSubmission, previewSubmission: resultPreviewSubmission});
   if (!ownsRecovery()) return;
-  if (signature === projects.signature) return;
+  if (signature === projects.pendingSignature ||
+      (signature === projects.signature && projects.pendingSignature === null)) return;
+  const revision = ++projects.recoveryRevision;
+  const jobId = S.job.id;
+  projects.pendingSignature = signature;
   try {
-    localStorage.setItem(projects.key, JSON.stringify({project, exportSubmission, previewSubmission: resultPreviewSubmission, jobId: S.job.id, waveform: S.job.waveform, savedAt: new Date().toISOString()}));
+    const store = await recoveryStore;
+    if (revision !== projects.recoveryRevision || S.job?.id !== jobId || !ownsRecovery()) return;
+    await store.write({project, exportSubmission, previewSubmission: resultPreviewSubmission,
+      jobId, waveform: S.job.waveform, savedAt: new Date().toISOString()});
+    if (revision !== projects.recoveryRevision || S.job?.id !== jobId) return;
     projects.signature = signature;
     $("projectStatus").textContent = `Saved in this browser · ${new Date().toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})}` ;
   } catch {
-    $("projectStatus").textContent = "Browser recovery is unavailable. Use Save project to keep your edits.";
+    if (revision === projects.recoveryRevision && S.job?.id === jobId)
+      $("projectStatus").textContent = "Browser recovery is unavailable. Use Save project to keep your edits.";
+  } finally {
+    if (revision === projects.recoveryRevision) projects.pendingSignature = null;
   }
 }
 
@@ -267,13 +280,16 @@ function resetProject() {
   clearTimeout(projects.timer); projects.timer = null;
   projects.source = null; projects.signature = null; projects.savedSignature = null; projects.pending = null;
   projects.recovery = null;
+  ++projects.recoveryRevision; projects.pendingSignature = null;
+  let clearRecovery = true;
   try {
     const owner = JSON.parse(localStorage.getItem(projects.ownerKey) || "null");
-    if (!owner || owner.id === projects.tabId || Date.now() - owner.at >= 20000) {
-      localStorage.removeItem(projects.key);
+    clearRecovery = !owner || owner.id === projects.tabId || Date.now() - owner.at >= 20000;
+    if (clearRecovery) {
       localStorage.removeItem(projects.ownerKey);
     }
   } catch { /* No recovery was saved. */ }
+  if (clearRecovery) void recoveryStore.then(store => store.clear()).catch(() => {});
   show($("takeRecoveryBtn"), false);
   $("saveProjectBtn").disabled = true;
   $("projectStatus").textContent = "";
@@ -284,9 +300,8 @@ function resetProject() {
 // loads through its explicit import before any project is offered for resume.
 document.addEventListener("DOMContentLoaded", async () => {
   try {
-    const raw = localStorage.getItem(projects.key);
-    if (raw) {
-      const recovery = JSON.parse(raw);
+    const recovery = await (await recoveryStore).read();
+    if (recovery) {
       const project = await validateProject(recovery.project);
       if (S.job || S.pendingUpload || projects.pending) return;
       projects.recovery = {...recovery, project,

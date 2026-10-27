@@ -69,6 +69,13 @@ Undo/redo captures scene settings, timed edits and presenter placement together,
 then emits a document change when restored. Project import similarly creates a
 validated v2 document and applies it via the store.
 
+`history-model.js` owns a pure snapshot codec and retention policy. PNG data
+is kept in shared asset tables rather than repeated in each JSON snapshot.
+Undo and redo together retain at most 100 entries and 16 MiB of accounted
+UTF-16 document/asset payload; object overhead and the live document are outside
+that budget. Oldest steps are dropped first. Clearing either stack releases
+its unused assets without a separate global asset cache.
+
 ## Module map and load order
 
 Classic JavaScript script tags share a global lexical scope. FreeEdit keeps
@@ -92,6 +99,13 @@ Direct handler references registered before another module loads must be wrapped
 in lambdas to avoid early `ReferenceError` exceptions.
 
 ## Project schema v2
+
+Browser recovery uses `recovery-store.mjs`, a small IndexedDB adapter with
+serialized transactions and immutable queued snapshots. Project saves track
+revisions so stale completions cannot report a newer document as saved. Only
+the small tab-ownership lease uses localStorage; there is no legacy recovery
+migration. Failed transactions preserve the previous snapshot and prompt users
+to download a project file.
 
 Project files store `format: "FreeEdit", version: 2`, a cryptographic identity
 of the unchanged original recording, `edits`, scene settings, and a playhead
@@ -121,6 +135,10 @@ inspector and renderer, project validation, and its backend payload projection.
 The app remains a lightweight static application with no bundler or framework dependency. Native browser modules are introduced at independent boundaries:
 
 - `api-client.mjs` owns JSON transport, timeout defaults, caller cancellation signals, API error formatting and request references. The classic `api()` adapter delegates to it, preserving feature call sites while removing transport implementation from editor state.
+- `export-payload.mjs` owns the document-to-API projection. It receives plain
+  document/scene values plus explicit rasterization/model adapters, reads no DOM
+  or global state, and returns independent request values. Audio-only exports
+  skip visual rasterization. `editor-export.js` reads controls and submits jobs.
 - `scene-schema.mjs` owns background and presenter project rules, independent of the DOM. Project validation imports these directly. Live presenter validation uses the same rules, initialized before uploads can open an editor.
 - `source-identity.mjs` owns full-file chunk hashing without editor or storage dependencies; both main and presenter uploads use it.
 - `project-schema.mjs` validates and normalizes plain project data. It imports pure scene-validation rules and receives its editor-model dependency explicitly. It reads no DOM, browser storage or live editor state. `projects.js` owns file selection, recovery and downloads, and awaits schema validation before using imported data.
@@ -132,6 +150,19 @@ Module assets use a JavaScript MIME type and revalidation headers, including `.m
 This is an incremental migration. Feature adapters still share classic-script state and callbacks; the editor model is still explicitly injected into project validation during this transition. Scene rules now have direct module dependencies. Further slices should move these pure rules into modules, then separate shared state ownership and feature initialization. A single full-framework rewrite is not required.
 
 ## Media analysis boundary
+
+`backend/job_store.py` owns atomic job metadata, startup reconciliation and the
+exclusive single-process directory lease. `app.py` persists admission before
+worker dispatch, records meaningful transitions and periodic progress checkpoints,
+and restores job ownership on startup. Raw progress ticks avoid disk writes until
+the next 30-second bucket. Interrupted operations become retryable errors; only
+completed outputs are recovered. `sessions.py` stores the signing key on the same
+volume unless an explicit environment secret is provided.
+
+`body_limit.py` admits a bounded number of control requests through receipt,
+parsing and route completion, with byte and receive-time limits. Media uploads
+have separate streaming admission. Disk writes/flushes and upload probing use
+worker threads so the event loop can keep serving status and cancellation.
 
 `backend/waveform.py` reduces a PCM stream to a bounded envelope with fixed 64 KiB reads. It has no FFmpeg, process or disk dependencies. `pipeline.audio_waveform` owns decoder lifecycle, timeout, cancellation and error translation. Decoded waveform audio is no longer spooled to disk. Focused tests cover fragmented sample boundaries, partial bins, source-time padding and read-size bounds.
 
@@ -165,3 +196,9 @@ the source-resolution canvas and creates transparent raster assets for export.
 them before cuts, with time-based static, fade or slide settings. Asset imports
 are decoded before sending preview/export jobs. Project v2 includes annotation
 styles and compact image data as part of the edit document.
+
+Range previews retain complete annotation animation intervals on their local
+clock, including negative starts, so preview boundaries do not invent fade/slide
+entrances or exits. Fade evaluation uses a shifted nonnegative clock because
+FFmpeg rejects negative fade start times. Video cuts use half-open retained
+intervals, matching audio trimming and avoiding duplicate boundary timestamps.

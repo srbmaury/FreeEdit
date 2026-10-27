@@ -316,18 +316,24 @@ def build_video_edits(
         en = _enable(e, info.duration)
         if kind == "hide":
             style = e.get("style", "black")
-            if style == "black":
-                x, y = math.floor(e["x"] * scale), math.floor(e["y"] * scale)
-                w = min(W, math.ceil((e["x"] + e["w"]) * scale)) - x
-                h = min(H, math.ceil((e["y"] + e["h"]) * scale)) - y
-            else:
-                x, y = _even(e["x"] * scale), _even(e["y"] * scale)
-                w = _even(min(e["w"] * scale, W - x))
-                h = _even(min(e["h"] * scale, H - y))
-                if w < 4 or h < 4:
-                    continue
             if style not in HIDE_STYLES:
                 style = "blur"
+            if style == "black":
+                x = min(W - 1, math.floor(e["x"] * scale))
+                y = min(H - 1, math.floor(e["y"] * scale))
+                w = max(1, min(W, math.ceil((e["x"] + e["w"]) * scale)) - x)
+                h = max(1, min(H, math.ceil((e["y"] + e["h"]) * scale)) - y)
+            else:
+                # Expand outward to the chroma grid. Rounding the origin and
+                # size independently can leave part of a privacy region bare.
+                x = min(W - 2, 2 * math.floor(e["x"] * scale / 2))
+                y = min(H - 2, 2 * math.floor(e["y"] * scale / 2))
+                w = max(2, min(W, 2 * math.ceil((e["x"] + e["w"]) * scale / 2)) - x)
+                h = max(2, min(H, 2 * math.ceil((e["y"] + e["h"]) * scale / 2)) - y)
+                if w < 4 or h < 4:
+                    # Tiny patches cannot support these filters safely. Keep
+                    # the covered region opaque instead of silently exposing it.
+                    style = "black"
             if style == "black":
                 out = next_label()
                 parts.append(f"{cur}drawbox=x={x}:y={y}:w={w}:h={h}:color=black:t=fill:enable='{en}'{out}")
@@ -373,12 +379,18 @@ def build_video_edits(
                     fps = min(60, max(1, info.frame_rate))
                     # Never loop a PNG indefinitely: the overlay would feed
                     # FFmpeg unbounded frames and stall short previews.
-                    frames = max(1, int(math.ceil(e["end"] * fps)) + 2)
+                    frames = max(1, int(math.ceil(min(e["end"], info.duration) * fps)) + 2)
+                    # Preview annotations can begin before local time zero.
+                    # Evaluate fades on a nonnegative clock, then shift back;
+                    # FFmpeg's fade filter rejects negative start times.
+                    clock_offset = max(0, -e["start"])
                     parts.append(
                         f"{img}format=rgba,loop=loop={frames}:size=1:start=0,"
                         f"setpts=N/({fps:.3f}*TB),fps={fps:.3f},"
-                        f"fade=t=in:st={e['start']:.3f}:d={transition:.3f}:alpha=1,"
-                        f"fade=t=out:st={e['end']-transition:.3f}:d={transition:.3f}:alpha=1{animated}")
+                        f"setpts=PTS+{clock_offset:.6f}/TB,"
+                        f"fade=t=in:st={e['start']+clock_offset:.3f}:d={transition:.3f}:alpha=1,"
+                        f"fade=t=out:st={e['end']-transition+clock_offset:.3f}:d={transition:.3f}:alpha=1,"
+                        f"setpts=PTS-{clock_offset:.6f}/TB{animated}")
                     img = animated
                 xpos = str(x)
                 if animation == "slide" and transition > 0:
@@ -443,7 +455,10 @@ def build_cuts(
     Audio is small, so plain atrim + concat is fine there.
     """
     parts: list[str] = []
-    keep_expr = _sum_expression([f"between(t,{a:.3f},{b:.3f})" for a, b in keep])
+    # Match atrim's half-open intervals. Including the frame at a cut's start
+    # creates duplicate output timestamps and can shift subsequent video by a
+    # frame relative to audio and range previews.
+    keep_expr = _sum_expression([f"gte(t,{a:.3f})*lt(t,{b:.3f})" for a, b in keep])
     # STARTPTS drops any leading removed range; each later gap is subtracted
     # once a frame is past it
     shift = _sum_expression([

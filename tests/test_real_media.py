@@ -6,6 +6,8 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import math
+import struct
 from pathlib import Path
 from unittest.mock import patch
 
@@ -76,6 +78,36 @@ class RealMediaTests(unittest.TestCase):
         self.assertTrue(info.has_audio)
         self.assertAlmostEqual(info.duration,3.6,delta=.2)
 
+    def test_preview_audio_uses_full_export_fade_clock_after_cuts(self):
+        source=self.root/"tone.wav"
+        subprocess.run(["ffmpeg","-v","error","-y","-f","lavfi","-i",
+            "sine=frequency=440:sample_rate=48000:duration=4",str(source)],
+            check=True,capture_output=True)
+        settings=dict(denoise=False,atten_lim=None,preset="audio_only",edits=[],
+            cuts=[dict(start=1,end=1.5)],audio=dict(fade_in=.5,fade_out=.5))
+        full=self.root/"audio-full"; full.mkdir()
+        output=rendering.render(source,full,settings,lambda *_:None)
+
+        def rms(path,time):
+            raw=subprocess.run(["ffmpeg","-v","error","-ss",str(time),"-i",str(path),
+                "-t","0.05","-ac","1","-ar","48000","-f","s16le","-"],
+                check=True,capture_output=True).stdout
+            samples=struct.unpack('<'+'h'*(len(raw)//2),raw)
+            return math.sqrt(sum(value*value for value in samples)/len(samples))
+
+        steady=rms(output,1)
+        self.assertGreater(steady,1000)
+        self.assertLess(rms(output,.0625),steady*.35)
+        self.assertLess(rms(output,3.4),steady*.35)
+        for start in (0,2.5):
+            work=self.root/('audio-preview-'+str(start)); work.mkdir()
+            end=1 if start==0 else 4
+            sample,_=rendering.preview(source,None,work,settings,start,end,4,lambda *_:None)
+            for local_time in (.125,.625) if start==0 else (.125,1.25):
+                with self.subTest(start=start,time=local_time):
+                    full_time=start+local_time-(.5 if start>1 else 0)
+                    self.assertAlmostEqual(rms(sample,local_time),rms(output,full_time),delta=steady*.08)
+
 
     def test_irregular_frame_timing_with_cut_and_reframe(self):
         """Synthetic VFR-like clip simulates dropped screen-recording frames."""
@@ -140,6 +172,22 @@ class RealMediaTests(unittest.TestCase):
         self.assertTrue(media.has_video)
         self.assertTrue(media.has_audio)
         self.assertAlmostEqual(media.duration,4,delta=.25)
+
+    def test_background_replacement_uses_mask_for_color_planes(self):
+        work=self.root/'background-color'; work.mkdir()
+        mask=work/'person-mask.mkv'
+        subprocess.run(['ffmpeg','-v','error','-y','-f','lavfi','-i',
+            'color=black:size=160x90:rate=18:duration=4','-vf','format=gray',
+            '-c:v','ffv1','-threads','1',str(mask)],check=True,capture_output=True)
+        with patch('backend.background.create_mask',return_value=mask):
+            output=pipeline.process(self.source,work,denoise_audio=False,atten_lim=None,
+                edits=[],cuts=[],progress=lambda *_:None,
+                background=dict(mode='color',color='#00ff00'),preset='high')
+        raw=subprocess.run(['ffmpeg','-v','error','-i',str(output),'-frames:v','1',
+            '-pix_fmt','rgb24','-f','rawvideo','-'],check=True,capture_output=True).stdout
+        red,green,blue=raw[(40*160+80)*3:(40*160+80)*3+3]
+        self.assertGreater(green,220)
+        self.assertLess(max(red,blue),30)
 
 
 if __name__=="__main__":

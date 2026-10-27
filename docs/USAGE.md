@@ -4,11 +4,20 @@ FreeEdit is a focused screen-recording editor. It keeps edits relative to the **
 
 ## Typical workflow
 
+Privacy masks remain covered when export resolution is reduced. Regions too
+small for blur or pixelation use a solid cover. Always review the exported
+recording before sharing sensitive material.
+
 1. Upload a screen recording, webcam clip or audio file.
 2. Choose **Audio**, **Pauses**, **Cut**, **Text**, **Hide area**, **Reframe**, **Captions**, **Annotations**, **Background**, or **Videos** from the task rail.
 3. Use **Edits (V)** beside the preview to select and adjust existing edits. Drag timeline blocks to change their position or edges to change their duration. Changes can be undone.
 4. Use **Export → Preview result** to review the selected range, then export the complete result.
 5. Save a `.freeedit.json` project and keep both source recordings if you want to edit again later.
+
+The desktop timeline sits below the preview, beside the settings inspector.
+Effect tracks appear when they contain edits; pause suggestions appear after
+analysis. Undo and redo keep recent changes within a memory budget, so older
+steps can expire in large projects. Save a project file to keep a lasting copy.
 
 ### Cut, range selection and pauses
 

@@ -11,25 +11,12 @@ function textToPng(e) {
 }
 
 function buildPayload() {
-  const cuts = S.edits.filter((e) => e.type === "cut").map((e) => ({ start: e.start, end: e.end }));
-  const edits = S.edits.filter((e) => ["hide","text","annotation"].includes(e.type)).map((e) => {
-    const base = { type: e.type, start: e.start, end: e.end };
-    if (e.type === "hide") return { ...base, style: e.style, x: e.x, y: e.y, w: e.w, h: e.h };
-    if(e.type==="annotation")return annotationPayload(e);
-    return { ...base, x: Math.round(e.x), y: Math.round(e.y), image: textToPng(e) };
-  });
-  const strength = $("strength").value;
-  return {
-    audio: getAudioSettings(),
-    presenter: getPresenterSettings(),
-    reframe: S.job.has_video && $("exportPreset").value !== "audio_only" ? EditorModel.exportReframe(S.reframe, S.edits) : null,
-    background: $("exportPreset").value !== "audio_only" ? getBackgroundSettings() : null,
-    denoise: (S.job.has_audio || !!presenterProject()?.source.has_audio) && $("denoise").checked,
-    atten_lim: strength ? parseInt(strength, 10) : null,
-    preset: $("exportPreset").value,
-    edits: S.job.has_video && $("exportPreset").value !== "audio_only" ? edits : [],
-    cuts,
-  };
+  return exportPayloadRules.buildExportPayload({
+    job: S.job, edits: S.edits, audio: getAudioSettings(),
+    presenter: getPresenterSettings(), presenterHasAudio: !!presenterProject()?.source.has_audio,
+    reframe: S.reframe, background: getBackgroundSettings(),
+    denoise: $("denoise").checked, strength: $("strength").value, preset: $("exportPreset").value,
+  }, {exportReframe: EditorModel.exportReframe, textToPng, annotationPayload});
 }
 
 async function startExport() {

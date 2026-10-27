@@ -102,7 +102,11 @@ def filters(current, info, scale, settings, mask_input, image_input):
             parts.append(f"color=c={color}:s={w}x{h}:r=30:d={info.duration},format=yuv444p[bgreplacement]")
         else:
             parts.append(f"[{image_input}:v]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1,format=yuv444p[bgreplacement]")
-    parts += [f"[{mask_input}:v]scale={w}:{h},format=gray,negate[bgmask]",
+    # A gray-to-YUV conversion fills chroma with neutral 128, which would
+    # blend colors at 50% even where the mask is fully opaque. Copy confidence
+    # into every plane so luma and chroma use the same foreground weight.
+    parts += [f"[{mask_input}:v]scale={w}:{h},format=gray,negate,"
+              "mergeplanes=map0s=0:map0p=0:map1s=0:map1p=0:map2s=0:map2p=0:format=yuv444p[bgmask]",
               f"{foreground}[bgreplacement][bgmask]maskedmerge[bgcomposite]",
               f"[bgbase][bgcomposite]overlay={x}:{y}:eof_action=repeat:format=auto[bgresult]"]
     return parts, "[bgresult]"

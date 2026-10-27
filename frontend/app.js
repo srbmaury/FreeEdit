@@ -75,12 +75,7 @@ const MODE_HINTS = {
 
 // ---------- helpers ----------
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-const fmt = (t) => {
-  t = Math.max(0, t || 0);
-  const m = Math.floor(t / 60);
-  const s = (t - m * 60).toFixed(1).padStart(4, "0");
-  return `${m}:${s}`;
-};
+const fmt = freeeditFormatTime;
 const sourcePlayer = () => S.job?.has_video ? video : $("audio");
 const duration = () => S.job?.duration || video.duration || 0;
 const getEdit = (id) => S.edits.find((e) => e.id === id);
@@ -98,11 +93,12 @@ async function api(path, opts = {}) {
 const adaptersReady = document.readyState === "loading"
   ? new Promise(resolve => document.addEventListener("DOMContentLoaded", resolve, {once: true}))
   : Promise.resolve();
-let sceneRules, exportRules;
+let sceneRules, exportRules, exportPayloadRules;
 const editorReady = Promise.all([
   adaptersReady,
   import("./scene-schema.mjs").then(rules => { sceneRules = rules; }),
   import("./export-state.mjs").then(rules => { exportRules = rules; }),
+  import("./export-payload.mjs").then(rules => { exportPayloadRules = rules; }),
 ]);
 
 // ---------- upload ----------
@@ -269,7 +265,9 @@ function layoutStage() {
   const maxW = wrap.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
   // Use more of the workspace while preserving the recording's aspect ratio.
   // The timeline stays beneath the preview and never gets overlapped.
-  const maxH = Math.max(280, window.innerHeight * (window.innerWidth <= 850 ? 0.65 : 0.78));
+  const maxH = window.innerWidth <= 850
+    ? Math.max(180, window.innerHeight * 0.5)
+    : Math.max(180, window.innerHeight - 550);
   const { width: W, height: H } = S.job;
   const guide = typeof reframeGuideSection === "function" && reframeGuideSection();
   const shape = guide ? {w: W, h: H} : freeeditCropRect(W, H, {...S.reframe, zoom: 1});
@@ -296,7 +294,7 @@ video.addEventListener("timeupdate", () => { updateTransport(); if (video.paused
 video.addEventListener("play", () => { $("playBtn").textContent = "❚❚"; tick(); });
 video.addEventListener("pause", () => { S.auditionUntil = null; $("playBtn").textContent = "▶"; render(); });
 video.addEventListener("error", () => {
-  $("fileMeta").textContent += " · This browser can't preview this format. You can still process it, but you can't place edits here. Try Safari, or upload an MP4.";
+  $("fileMeta").textContent += " · This browser can't preview this source format. You can still export it. Use an H.264/AAC MP4 for browser playback and visual placement.";
 });
 
 // While playing, jump over removed parts so the preview matches the result

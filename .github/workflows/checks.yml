@@ -9,6 +9,18 @@ permissions:
   contents: read
 
 jobs:
+  docker-and-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the production Docker image
+        run: docker build -t freeedit:verify .
+      - name: Check installed dependencies and actual denoising
+        run: |
+          docker run --rm freeedit:verify python -m pip check
+          docker run --rm -v "$PWD/tests:/checks:ro" freeedit:verify python -m unittest discover -s /checks -p model_smoke.py -v
+          docker run --rm freeedit:verify python -m backend.preflight --verify-render
   python-and-ffmpeg:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -23,10 +35,8 @@ jobs:
           sudo apt-get install -y ffmpeg
           python -m pip install --upgrade pip
           python -m pip install -r requirements-web.lock
-      - name: Compile Python
-        run: python -m compileall -q backend tests
-      - name: Run Python integration and session tests
-        run: python -m unittest discover -s tests -v
+      - name: Check dependencies, Python, restart recovery and rendering
+        run: python -m scripts.check --suite python
 
   frontend:
     runs-on: ubuntu-latest
@@ -36,15 +46,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Check JavaScript syntax
-        run: |
-          for file in frontend/*.js frontend/*.mjs; do node --check "$file"; done
-      - name: Run frontend regression tests
-        run: node --test tests/*.cjs tests/test_*.mjs
+      - name: Check JavaScript syntax and frontend regressions
+        run: python3 -m scripts.check --suite frontend
 
   browser-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chrome, firefox, webkit]
+    env:
+      FREEEDIT_TEST_ENGINE: ${{ matrix.engine }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -59,7 +72,7 @@ jobs:
           sudo apt-get install -y ffmpeg
           python -m pip install -r requirements-web.lock
           npm install --no-save playwright@1.56.1
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps ${{ matrix.engine }}
       - name: Generate synthetic sample and start editor
         run: |
           ffmpeg -hide_banner -loglevel error -y -f lavfi -i "testsrc2=size=320x180:rate=24:duration=4" -f lavfi -i "sine=frequency=440:duration=4" -c:v libx264 -preset ultrafast -threads 1 -c:a aac -shortest /tmp/freeedit-ci-sample.mp4
@@ -70,8 +83,16 @@ jobs:
           done
           cat /tmp/freeedit-browser-server.log
           exit 1
-      - name: Upload, reframe, select and export in Chromium
+      - name: Upload, reframe, select and export
+        timeout-minutes: 6
         run: node tests/browser_smoke.mjs
       - name: Server diagnostics on failure
         if: failure()
         run: cat /tmp/freeedit-browser-server.log
+      - name: Browser diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failure-${{ matrix.engine }}
+          path: /tmp/freeedit-browser-artifacts/
+          retention-days: 7

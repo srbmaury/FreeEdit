@@ -9,7 +9,7 @@ import zlib
 from pathlib import Path
 
 from pydantic import ValidationError
-from backend import pipeline
+from backend import pipeline, rendering
 from backend.models import AnnotationEdit, ProcessRequest
 
 
@@ -41,6 +41,40 @@ class AnnotationValidationTests(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"),"FFmpeg required")
 class AnnotationVideoTests(unittest.TestCase):
+    def test_range_previews_preserve_animation_progress_with_cuts(self):
+        """Compare decoded pixels, including partial entrances and exits."""
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            source=root/"source.mp4"
+            subprocess.run(["ffmpeg","-v","error","-y","-f","lavfi","-i",
+                "color=black:size=160x90:rate=24:duration=4",
+                "-c:v","libx264","-threads","1",str(source)],check=True,capture_output=True)
+
+            def frame(path, time):
+                return subprocess.run(["ffmpeg","-v","error","-ss",str(time),"-i",str(path),
+                    "-frames:v","1","-pix_fmt","rgb24","-f","rawvideo","-"],
+                    check=True,capture_output=True).stdout
+
+            for animation in ("none", "fade", "slide"):
+                settings=dict(preset="high",denoise=False,atten_lim=None,
+                    cuts=[dict(start=.125,end=.25)],
+                    edits=[dict(type="annotation",start=.5,end=3.5,x=60,y=30,
+                        image=png_pixel(size=32),animation=animation,transition=.5)])
+                full=root/animation; full.mkdir()
+                output=rendering.render(source,full,settings,lambda *_:None)
+                for start in (.25, .75, 1.5, 3):
+                    preview=full/str(start); preview.mkdir()
+                    sample,_=rendering.preview(source,None,preview,settings,start,start+.5,4,lambda *_:None)
+                    for local_time in (.125, .375):
+                        with self.subTest(animation=animation,start=start,time=local_time):
+                            # The cut precedes every sampled source time.
+                            expected=frame(output,start+local_time-.125)
+                            actual=frame(sample,local_time)
+                            self.assertEqual(len(expected),160*90*3)
+                            self.assertEqual(len(actual),len(expected))
+                            error=sum(abs(a-b) for a,b in zip(actual,expected))/len(actual)
+                            self.assertLess(error,.8,"Preview must match the same exported source frame")
+
     def test_export_contains_annotation_pixels(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)

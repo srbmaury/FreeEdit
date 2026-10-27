@@ -90,7 +90,12 @@ button.primary, a.button.primary { background: var(--accent); color: var(--accen
   overflow: visible;
 }
 @media (min-width: 851px) {
+  /* Share the preview column with its timeline. A tall inspector must not
+     push playback and timeline controls below the desktop viewport. */
+  .workspace-rail { grid-row: 1 / span 2; }
+  .editor > .transport { grid-column: 2; grid-row: 2; }
   .editor > .side {
+    grid-row: 1 / span 2;
     position: sticky;
     top: 0;
     height: calc(100dvh - 72px);
