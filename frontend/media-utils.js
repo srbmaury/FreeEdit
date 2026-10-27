@@ -1,6 +1,13 @@
 "use strict";
 
 // Pure helpers shared by the browser and its Node regression tests.
+function freeeditFormatTime(time) {
+  const tenths = Number.isFinite(time) ? Math.round(Math.max(0, time) * 10) : 0;
+  const minutes = Math.floor(tenths / 600);
+  const seconds = ((tenths % 600) / 10).toFixed(1).padStart(4, "0");
+  return `${minutes}:${seconds}`;
+}
+
 function freeeditCropRect(width, height, settings) {
   const ratios = {wide: 16 / 9, vertical: 9 / 16, square: 1};
   if (!(width > 0 && height > 0)) throw new Error("Invalid video dimensions.");

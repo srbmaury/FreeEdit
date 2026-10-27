@@ -8,6 +8,14 @@ vm.runInContext(fs.readFileSync("frontend/media-utils.js", "utf8"), context);
 const crop = (w, h, s) => vm.runInContext(`freeeditCropRect(${w},${h},${JSON.stringify(s)})`, context);
 const parse = (s, d) => vm.runInContext("freeeditParseSrt(" + JSON.stringify(s) + "," + d + ")", context);
 
+test("time formatting carries rounded seconds into the next minute",()=>{
+  for(const [time,expected] of [[59.96,"1:00.0"],[599.997143,"10:00.0"],
+    [59.94,"0:59.9"],[8257.599,"137:37.6"],[-1,"0:00.0"],[Infinity,"0:00.0"]]) {
+    context.time=time;
+    assert.equal(vm.runInContext("freeeditFormatTime(time)",context),expected);
+  }
+});
+
 test("original aspect uses the full even-sized source", () => {
   assert.deepEqual(JSON.parse(JSON.stringify(crop(1920,1080,{aspect:"original",zoom:1,focus_x:.5,focus_y:.5}))), {x:0,y:0,w:1920,h:1080});
 });

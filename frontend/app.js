@@ -75,12 +75,7 @@ const MODE_HINTS = {
 
 // ---------- helpers ----------
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-const fmt = (t) => {
-  t = Math.max(0, t || 0);
-  const m = Math.floor(t / 60);
-  const s = (t - m * 60).toFixed(1).padStart(4, "0");
-  return `${m}:${s}`;
-};
+const fmt = freeeditFormatTime;
 const sourcePlayer = () => S.job?.has_video ? video : $("audio");
 const duration = () => S.job?.duration || video.duration || 0;
 const getEdit = (id) => S.edits.find((e) => e.id === id);
