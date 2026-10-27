@@ -83,23 +83,24 @@ function render() {
   drawPresenter(ctx);
 
   for (const e of S.edits) {
-    if (e.type !== "hide" && e.type !== "text") continue;
+    if (e.type !== "hide" && e.type !== "text" && e.type !== "annotation") continue;
     if (!isActive(e)) {
       if (e.type === "text") { const m = textMetrics(e); e.w = m.w; e.h = m.h; }
       continue;
     }
     if (e.type === "hide") paintHide(e);
-    else paintText(ctx, e, e.x, e.y);
+    else if (e.type==="text") paintText(ctx,e,e.x,e.y);
+    else paintAnnotation(ctx,e,e.x,e.y,video.currentTime);
   }
 
   const sel = getEdit(S.selected);
-  if (sel && (sel.type === "hide" || sel.type === "text")) {
+  if (sel && (sel.type === "hide" || sel.type === "text" || sel.type === "annotation")) {
     ctx.save();
     ctx.lineWidth = 2 * lw;
     ctx.setLineDash([6 * lw, 4 * lw]);
     ctx.strokeStyle = isActive(sel) ? "#5b8ff0" : "rgba(91,143,240,0.45)";
     ctx.strokeRect(sel.x, sel.y, sel.w, sel.h);
-    if (sel.type === "hide") {
+    if (sel.type === "hide" || sel.type === "annotation") {
       ctx.setLineDash([]);
       ctx.fillStyle = "#5b8ff0";
       const hs = 10 * lw;
@@ -160,17 +161,17 @@ function toSource(ev) {
 function hitTest(p) {
   const lw = S.job.width / canvas.getBoundingClientRect().width;
   const sel = getEdit(S.selected);
-  if (sel?.type === "hide") {
+  if (sel?.type === "hide" || sel?.type === "annotation") {
     const hs = 14 * lw;
     if (Math.abs(p.x - (sel.x + sel.w)) < hs && Math.abs(p.y - (sel.y + sel.h)) < hs) {
       return { edit: sel, part: "resize" };
     }
   }
   const inside = (e) => p.x >= e.x && p.x <= e.x + e.w && p.y >= e.y && p.y <= e.y + e.h;
-  if (sel && (sel.type === "hide" || sel.type === "text") && inside(sel)) return { edit: sel, part: "move" };
+  if (sel && (sel.type === "hide" || sel.type === "text" || sel.type === "annotation") && inside(sel)) return { edit: sel, part: "move" };
   for (let i = S.edits.length - 1; i >= 0; i--) {
     const e = S.edits[i];
-    if ((e.type === "hide" || e.type === "text") && isActive(e) && inside(e)) return { edit: e, part: "move" };
+    if ((e.type === "hide" || e.type === "text" || e.type === "annotation") && isActive(e) && inside(e)) return { edit: e, part: "move" };
   }
   return null;
 }
@@ -180,6 +181,14 @@ canvas.addEventListener("pointerdown", (ev) => {
   canvas.setPointerCapture(ev.pointerId);
   if (S.mode === "hide" || S.mode === "background") {
     S.drag = { background: S.mode === "background", kind: "new", x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+    return;
+  }
+  if (S.mode === "annotation") {
+    const e = placeAnnotationAt(p.x, p.y);
+    if (!e) return;
+    ev.preventDefault();
+    setMode("select");
+    select(e.id);
     return;
   }
   if (S.mode === "text") {
@@ -195,7 +204,18 @@ canvas.addEventListener("pointerdown", (ev) => {
   }
   const hit = hitTest(p);
   if (hit) checkpoint();
-  if (!hit) { select(null); return; }
+  if (!hit) {
+    // Reposition a selected annotation with one click on the recording,
+    // matching the same click-to-place gesture used for newly picked icons.
+    const selected=getEdit(S.selected);
+    if(selected?.type==="annotation"){
+      positionExistingAnnotationAt(selected,p.x,p.y);
+      ev.preventDefault();
+      return;
+    }
+    select(null);
+    return;
+  }
   select(hit.edit.id);
   S.drag = hit.part === "resize"
     ? { kind: "resize", edit: hit.edit }
@@ -219,7 +239,7 @@ canvas.addEventListener("pointermove", (ev) => {
   } else if (d.kind === "move") {
     d.edit.x = Math.round(clamp(p.x - d.dx, -d.edit.w / 2, W - d.edit.w / 2));
     d.edit.y = Math.round(clamp(p.y - d.dy, -d.edit.h / 2, H - d.edit.h / 2));
-    if (d.edit.type === "hide") {
+    if (d.edit.type === "hide" || d.edit.type === "annotation") {
       d.edit.x = clamp(d.edit.x, 0, W - d.edit.w);
       d.edit.y = clamp(d.edit.y, 0, H - d.edit.h);
     }

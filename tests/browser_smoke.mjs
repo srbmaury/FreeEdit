@@ -58,6 +58,151 @@ try {
   assert.match(list,/Sample caption/);
   assert.equal(await page.locator("#zoomTrack .timeline-block.zoom").count(),1);
 
+  // Edits must use the full inspector height, with one scroll container.
+  // Regression for the old 42vh inner list limit that hid edit properties.
+  const desktopLayout=await page.evaluate(()=>{
+    const side=document.querySelector(".editor > .side");
+    const edits=document.getElementById("editsList");
+    const listStyle=getComputedStyle(edits);
+    const sideStyle=getComputedStyle(side);
+    const filler=document.createElement("div");
+    filler.style.height="1400px";
+    filler.setAttribute("aria-hidden","true");
+    edits.append(filler);
+    const parentCanScroll=side.scrollHeight>side.clientHeight+100;
+    filler.scrollIntoView({block:"end"});
+    const sidebarScrolled=side.scrollTop>100;
+    filler.remove();
+    side.scrollTop=0;
+    return {listMaxHeight:listStyle.maxHeight,listOverflow:listStyle.overflowY,
+      sideOverflow:sideStyle.overflowY,sideHeight:side.clientHeight,
+      parentCanScroll,sidebarScrolled,viewportHeight:innerHeight};
+  });
+  assert.equal(desktopLayout.listMaxHeight,"none");
+  assert.equal(desktopLayout.listOverflow,"visible");
+  assert.equal(desktopLayout.sideOverflow,"auto");
+  assert.ok(desktopLayout.sideHeight >= desktopLayout.viewportHeight*.75,
+    "Edits inspector must fill the available desktop viewport");
+  assert.ok(desktopLayout.parentCanScroll && desktopLayout.sidebarScrolled,
+    "Long edits scroll the inspector rather than a 42vh nested list");
+
+  await page.setViewportSize({width:390,height:780});
+  const mobileLayout=await page.evaluate(()=>{
+    const side=document.querySelector(".editor > .side");
+    const edits=document.getElementById("editsList");
+    return {listMaxHeight:getComputedStyle(edits).maxHeight,
+      listOverflow:getComputedStyle(edits).overflowY,
+      sideOverflow:getComputedStyle(side).overflowY};
+  });
+  assert.equal(mobileLayout.listMaxHeight,"none");
+  assert.equal(mobileLayout.listOverflow,"visible");
+  assert.equal(mobileLayout.sideOverflow,"visible");
+  await page.setViewportSize({width:1440,height:900});
+
+  // A visual tile arms click-to-place; one click on the actual preview must
+  // create a visible icon at the clicked source coordinates.
+  await page.locator(".workspace-rail button").filter({hasText:"Annotations"}).click();
+  assert.equal(await page.locator("#annotationTypePicker .annotation-choice").count(),5);
+  assert.equal(await page.locator("#annotationIconPicker .annotation-choice").count(),6);
+  await page.locator('#annotationIconPicker [data-choice-value="star"]').click();
+  assert.equal(await page.evaluate(()=>S.mode),"annotation");
+  const overlay=page.locator("#overlay");
+  const size=await overlay.boundingBox();
+  assert.ok(size && size.width>20 && size.height>20);
+  await overlay.click({position:{x:size.width*.72,y:size.height*.40}});
+  const iconPlaced=await page.evaluate(()=>{
+    const e=S.edits.find(edit=>edit.type==="annotation"&&edit.kind==="icon");
+    if(!e)return null;
+    // Canvas backing pixels include display scaling and devicePixelRatio.
+    const px=Math.min(canvas.width-1,Math.floor((e.x+e.w/2)*canvas.width/S.job.width));
+    const py=Math.min(canvas.height-1,Math.floor((e.y+e.h/2)*canvas.height/S.job.height));
+    const pixel=ctx.getImageData(px,py,1,1).data;
+    return {id:e.id,icon:e.icon,visible:isActive(e),x:e.x,y:e.y,alpha:pixel[3]};
+  });
+  assert.ok(iconPlaced && iconPlaced.visible, "Clicked icon must be visible at the playhead");
+  assert.equal(iconPlaced.icon,"star");
+  assert.ok(iconPlaced.alpha>0,"Icon must draw into the video overlay");
+  assert.equal(await page.locator("#annotationTrack .timeline-block.annotation").count(),1);
+
+  // Clicking an empty point with an existing annotation selected repositions
+  // that annotation instead of silently deselecting or hiding it.
+  await overlay.click({position:{x:size.width*.10,y:size.height*.80}});
+  const movedIcon=await page.evaluate(id=>{
+    const e=getEdit(id);
+    return e&&{x:e.x,y:e.y,selected:S.selected===id,active:isActive(e)};
+  },iconPlaced.id);
+  assert.ok(movedIcon?.selected && movedIcon?.active,"Selected annotation stays visible after reposition");
+  assert.ok(movedIcon.x!==iconPlaced.x||movedIcon.y!==iconPlaced.y,"Click repositions the selected annotation");
+
+  await page.locator('#editsList [data-annotation-choices="icon"] [data-choice-value="check"]').first().click();
+  assert.equal(await page.evaluate(()=>S.edits.find(e=>e.type==="annotation").icon),"check");
+  // Switching None -> Fade -> Slide -> Fade must change the existing
+  // annotation, not just the defaults for the next one. The inspector must
+  // indicate the selected style and preview a representative animation frame.
+  const starCard=page.locator('#editsList .card[data-id="'+iconPlaced.id+'"]');
+  const chooseAnimation=async(style)=>{
+    await starCard.locator('.annotation-inspector-animation [data-choice-value="'+style+'"]').click();
+    await page.waitForFunction(({id,style})=>{
+      const edit=getEdit(id);
+      return edit?.animation===style &&
+        Math.abs(sourcePlayer().currentTime-AnnotationModel.previewTime(edit))<.08;
+    },{id:iconPlaced.id,style});
+    assert.equal(await starCard.locator(
+      '.annotation-inspector-animation [data-choice-value="'+style+'"]'
+    ).getAttribute("aria-pressed"),"true");
+  };
+  await chooseAnimation("fade");
+  const fadeVisual=await page.evaluate(id=>{
+    const edit=getEdit(id);
+    return AnnotationModel.animationState(edit,sourcePlayer().currentTime);
+  },iconPlaced.id);
+  assert.ok(fadeVisual.alpha>.1&&fadeVisual.alpha<.9,"Fade preview must show partial transparency");
+  await chooseAnimation("slide");
+  const slideVisual=await page.evaluate(id=>{
+    const edit=getEdit(id);
+    return AnnotationModel.animationState(edit,sourcePlayer().currentTime);
+  },iconPlaced.id);
+  assert.equal(slideVisual.alpha,1);
+  assert.ok(slideVisual.dx<0,"Slide preview must show actual movement");
+  await chooseAnimation("fade");
+  assert.equal(await page.evaluate(id=>getEdit(id)?.animation,iconPlaced.id),"fade");
+  // Selecting the saved edit from Edits should seek to a fully visible frame.
+  await starCard.locator(".card-title").click();
+  await page.waitForFunction(id=>{
+    const edit=getEdit(id);
+    return edit && Math.abs(sourcePlayer().currentTime-AnnotationModel.visibleTime(edit))<.08 &&
+      AnnotationModel.animationState(edit,sourcePlayer().currentTime).alpha>.9;
+  },iconPlaced.id);
+
+  // Upload is a primary action, not buried under a dropdown. The uploaded
+  // image becomes the next click-placement tool and remains in project JSON.
+  await page.locator(".workspace-rail button").filter({hasText:"Annotations"}).click();
+  const logoBase64=await page.evaluate(()=>{
+    const c=document.createElement("canvas");c.width=64;c.height=32;
+    const p=c.getContext("2d");p.fillStyle="#27b984";p.fillRect(0,0,64,32);
+    p.fillStyle="#fff";p.fillRect(10,9,44,14);
+    return c.toDataURL("image/png").split(",")[1];
+  });
+  const [chooser]=await Promise.all([
+    page.waitForEvent("filechooser"),
+    page.locator("#annotationUploadBtn").click()
+  ]);
+  await chooser.setFiles({name:"demo-logo.png",mimeType:"image/png",
+    buffer:Buffer.from(logoBase64,"base64")});
+  await page.locator("#annotationUploadBtn.has-upload").waitFor();
+  assert.equal(await page.evaluate(()=>S.mode),"annotation");
+  const size2=await overlay.boundingBox();
+  await overlay.click({position:{x:size2.width*.33,y:size2.height*.62}});
+  const logoPlaced=await page.evaluate(()=>{
+    const e=S.edits.find(edit=>edit.type==="annotation"&&edit.kind==="image");
+    return e && {id:e.id,visible:isActive(e),image:e.image};
+  });
+  assert.ok(logoPlaced?.visible, "Uploaded logo must appear immediately after the video click");
+  assert.ok(logoPlaced.image.startsWith("data:image/png;base64,"));
+  assert.equal(await page.locator("#annotationTrack .timeline-block.annotation").count(),2);
+  await page.locator('#editsList .card[data-id="'+logoPlaced.id+'"] .annotation-image-preview').waitFor();
+  assert.ok(await page.locator('#editsList .card[data-id="'+logoPlaced.id+'"] .annotation-image-preview').isVisible());
+
   // V2 projects store all timed edits together; no separate reframe sections
   // remain in scene settings. Round-trip through the actual validator.
   const [download]=await Promise.all([
@@ -66,7 +211,7 @@ try {
   ]);
   const document=JSON.parse(await readFile(await download.path(),"utf8"));
   assert.equal(document.version,2);
-  for(const type of ["cut","hide","text","reframe"]) {
+  for(const type of ["cut","hide","text","reframe","annotation"]) {
     assert.ok(document.edits.some(edit=>edit.type===type),"Missing "+type);
   }
   assert.ok(!("sections" in (document.settings.reframe||{})));

@@ -4,7 +4,7 @@ import {validateBackground, validatePresenterProject} from "./scene-schema.mjs";
 // this module does not read the DOM, browser storage, or editor state.
 const projectPresets = ["balanced", "small", "high", "audio_only"];
 
-export function validateProjectDocument(value, {EditorModel}) {
+export function validateProjectDocument(value, {EditorModel, AnnotationModel}) {
   const fail = () => { throw new Error("This project contains invalid or unsupported settings."); };
   if (value?.format !== "FreeEdit" || value.version !== 2) throw new Error("This project format is not supported. Use a FreeEdit version 2 project.");
   const source = value.source;
@@ -45,6 +45,10 @@ export function validateProjectDocument(value, {EditorModel}) {
       if (!["black", "blur", "pixelate"].includes(edit.style) || !finite(edit.w, 4, source.width) || !finite(edit.h, 4, source.height) ||
           edit.x < 0 || edit.y < 0 || edit.x + edit.w > source.width || edit.y + edit.h > source.height) fail();
       Object.assign(result, {w: edit.w, h: edit.h, style: edit.style});
+    }
+    if (result.type === "annotation") {
+      if (!source.has_video || AnnotationModel.validate(edit, source.duration, source.width, source.height)) fail();
+      for(const key of ["kind","icon","shape","text","image","x","y","w","h","color","opacity","rotation","animation","transition"])result[key]=edit[key];
     }
     if (result.type === "text") {
       if (typeof edit.text !== "string" || edit.text.length > 10000 || !finite(edit.fontSize, 8, 400) ||

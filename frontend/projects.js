@@ -33,7 +33,7 @@ function projectDocument() {
 
 async function validateProject(value) {
   const {validateProjectDocument} = await import("./project-schema.mjs");
-  return validateProjectDocument(value, {EditorModel});
+  return validateProjectDocument(value, {EditorModel, AnnotationModel});
 }
 
 function projectEditSignature(project) {

@@ -10,7 +10,7 @@
 
 - **Reduce background noise** with [DeepFilterNet3](https://github.com/Rikorose/DeepFilterNet), with a short audio comparison.
 - **Find and shorten pauses**: review quiet portions before making cuts.
-- **Edit visually**: cut ranges, timed text, imported SRT captions, privacy masks, and Reframe/zoom portions.
+- **Edit visually**: cut ranges, timed text, imported SRT captions, privacy masks, Reframe/zoom portions, and illustrated annotations (icons, arrows, shapes, callouts, or uploaded logos).
 - **Explain what matters**: pick a focus point in the video; choose original, wide, vertical or square aspect ratios.
 - **Combine two videos**: add a movable presenter inset, choose the main/presenter/mixed audio, and optionally process the presenter background.
 - **Replace backgrounds** (optional): person-aware blur, solid color or an image, optionally restricted to a webcam area.
@@ -55,7 +55,7 @@ The [Dockerfile](Dockerfile) is the supported starting point for Linux/container
 ## Basic editing workflow
 
 1. **Upload** a supported video or audio file (e.g. MP4, MOV, WEBM, MKV, WAV or MP3). Some supported containers/codecs cannot play in every browser.
-2. Use the left task rail for **Videos, Audio, Pauses, Background, Reframe, Captions, Cut, Text and Hide area**.
+2. Use the left task rail for **Videos, Audio, Pauses, Background, Reframe, Captions, Annotations, Cut, Text and Hide area**.
 3. Use **Edits (V)** by the preview to select, move, resize and change edit properties. All timed edits use the original source timeline; cuts alter result timing.
 4. Choose a range in the waveform/ruler or mark boundaries with **I** and **O**. Review the range before applying cuts or zoom.
 5. Use **Export → Preview result** for a short fully processed sample, then export and download.
@@ -65,7 +65,7 @@ Keyboard essentials: `Space` play/pause, `←/→` step, `V` Select, `H` Hide, `
 
 ## Boundaries worth knowing
 
-FreeEdit focuses on screen-recording cleanup, **not unrestricted full-length film editing**. The local default upload limit is 1 GiB, with resource-dependent runtime. The editor allows up to 100 cuts, up to 100 text/privacy overlays together, and 20 non-overlapping Reframe portions. No automatic subtitle transcription, speed-ramping or arbitrary multi-clip sequencing is included.
+FreeEdit focuses on screen-recording cleanup, **not unrestricted full-length film editing**. The local default upload limit is 1 GiB, with resource-dependent runtime. The editor allows up to 100 cuts, up to 100 text/privacy/annotation overlays together, and 20 non-overlapping Reframe portions. No automatic subtitle transcription, speed-ramping or arbitrary multi-clip sequencing is included.
 
 Temporary uploaded files and rendered jobs expire. Signed anonymous sessions protect access to the current browser's jobs, but **are not user accounts**. Public hosting requires sensible request limits, HTTPS, a trusted reverse proxy and sufficient disk. Review [operations](docs/OPERATIONS.md) and [security](docs/SECURITY.md).
 
@@ -82,7 +82,7 @@ setup-background.sh      Optional person-segmentation environment
 Dockerfile / render.yaml Container and hosted deployment configuration
 ```
 
-A common edit model keeps cut, mask, caption/text and Reframe timelines consistent. The frontend is split into focused editor modules; the export adapter converts settings into validated FFmpeg requests. Learn more in [architecture](docs/ARCHITECTURE.md).
+A common edit model keeps cut, mask, caption/text, annotations and Reframe timelines consistent. The frontend is split into focused editor modules; the export adapter converts settings into validated FFmpeg requests. Learn more in [architecture](docs/ARCHITECTURE.md).
 
 ## Development and quality checks
 

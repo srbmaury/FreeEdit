@@ -5,6 +5,7 @@ const timelineRows = [
   {type: "cut", track: "cutTrack", label: "cutLabel"},
   {type: "hide", track: "maskTrack", label: "maskLabel"},
   {type: "text", track: "textTrack", label: "textLabel"},
+  {type: "annotation", track: "annotationTrack", label: "annotationLabel"},
 ];
 
 function resetTimeline() {
@@ -59,7 +60,7 @@ function renderTimeline() {
       block.setAttribute("aria-pressed", String(edit.id === S.selected));
       const label = document.createElement("span");
       label.className = "block-label";
-      label.textContent = edit.type === "text" ? edit.text || "Text" : edit.type === "hide" ? "Mask" : "Cut";
+      label.textContent = edit.type === "text" ? edit.text || "Text" : edit.type === "hide" ? "Mask" : edit.type === "annotation" ? "Annotation" : "Cut";
       block.append(label);
       for (const edge of ["l", "r"]) {
         const handle = document.createElement("span");
@@ -70,7 +71,8 @@ function renderTimeline() {
       block.onpointerdown = event => startTimelineDrag(event, edit);
       block.onclick = event => {
         select(edit.id);
-        sourcePlayer().currentTime = edit.start;
+        sourcePlayer().currentTime = edit.type === "annotation"
+          ? AnnotationModel.visibleTime(edit) : edit.start;
         if (event.detail === 0) {
           document.querySelector(`[data-edit-id="${edit.id}"]`)?.focus({preventScroll: true});
         }

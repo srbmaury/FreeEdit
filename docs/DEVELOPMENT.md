@@ -90,6 +90,7 @@ Use **⋯ → About FreeEdit** to compare the server revision, start time and so
 - `backend/df_worker.py` and `backend/background_worker.py`: optional ML subprocesses.
 - `frontend/editor-model.js`: typed timeline edits and pure selectors.
 - `frontend/editor-edits.js`, `editor-render.js`, `editor-history.js`, `editor-export.js`: editing/UI/export responsibilities.
+- `frontend/annotation-model.js` and `annotations.js`: validated annotation styles, visual picker, canvas placement and rasterized export.
 - `frontend/projects.js`: project persistence and source reconciliation.
 - `tests/`: self-contained regression checks; prefer realistic synthetic FFmpeg fixtures over static source assertions.
 
