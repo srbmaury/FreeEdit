@@ -101,7 +101,7 @@ function renderReframeSections(){
     const remove=document.createElement("button");
     remove.type="button";remove.textContent="Remove";
     remove.onclick=()=>deleteEdit(section.id);
-    row.append(label,editButton,remove);list.append(row);
+    row.append(label,editButton,remove,editActionButtons(section));list.append(row);
   }
   if(!sections.length)list.textContent="No timed portions. Whole-video settings apply throughout.";
 }
@@ -205,7 +205,7 @@ function renderZoomSelectList(){
     button.setAttribute("aria-pressed",String(S.selected===edit.id));
     button.textContent=cardTitle(edit);
     button.onclick=()=>selectZoom(edit.id);
-    row.append(button);list.append(row);
+    row.append(button,editActionButtons(edit));list.append(row);
   }
   [...list.children].sort((a,b)=>Number(a.dataset.start||0)-Number(b.dataset.start||0))
     .forEach(child=>list.append(child));
@@ -314,6 +314,7 @@ const reframeCtx=reframePreview.getContext("2d",{alpha:false});
 function reframeGuideSection() {
   if (!S.job?.has_video || !video.paused || S.reviewing) return null;
   if ($("workspace-reframe") && !$("workspace-reframe").hidden) {
+    if ($("canvasFramePanel").open) return null;
     if ($("reframeWholeGroup").open) return S.reframe;
     if (!$("reframePortionGroup").open) return null;
     return {zoom: Number($("reframeSectionZoom").value),
@@ -322,7 +323,7 @@ function reframeGuideSection() {
   return selectedReframe() && !$("workspace-edits")?.hidden &&
     !$("selectedZoomPanel").classList.contains("hidden") ? selectedReframe() : null;
 }
-for (const id of ["reframeWholeGroup", "reframePortionGroup"]) $(id).addEventListener("toggle", layoutStage);
+for (const id of ["reframeWholeGroup", "reframePortionGroup", "canvasFramePanel"]) $(id).addEventListener("toggle", layoutStage);
 for (const event of ["play", "pause"]) video.addEventListener(event, layoutStage);
 function updateReframePreview(rect){
   if(!S.job?.has_video||!rect||video.readyState<2){
@@ -359,6 +360,13 @@ function updateReframePreview(rect){
       reframeCtx.setLineDash([]);
       reframePreview.hidden = false;
       return;
+    }
+    if(S.framing){
+      paintCanvasFrame(reframeCtx,reframePreview.width,reframePreview.height,g=>{
+        reframeCtx.drawImage(video,rect.x,rect.y,rect.w,rect.h,g.x,g.y,g.iw,g.ih);
+        reframeCtx.drawImage(canvas,rect.x*canvas.width/S.job.width,rect.y*canvas.height/S.job.height,rect.w*canvas.width/S.job.width,rect.h*canvas.height/S.job.height,g.x,g.y,g.iw,g.ih);
+      });
+      reframePreview.hidden=false;return;
     }
     reframeCtx.drawImage(video,rect.x,rect.y,rect.w,rect.h,0,0,reframePreview.width,reframePreview.height);
     reframeCtx.drawImage(canvas,rect.x*canvas.width/S.job.width,rect.y*canvas.height/S.job.height,rect.w*canvas.width/S.job.width,rect.h*canvas.height/S.job.height,0,0,reframePreview.width,reframePreview.height);

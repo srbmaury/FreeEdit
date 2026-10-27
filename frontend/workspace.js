@@ -17,6 +17,7 @@
     Videos: '<rect x="2" y="4" width="16" height="14" rx="2"/><path d="m18 9 4-3v10l-4-3"/><rect x="10" y="12" width="6" height="4" rx="1"/>',
     Audio: '<path d="m11 5-6 4H2v6h3l6 4Z"/><path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>',
     Pauses: '<path d="M3 10v4m4-8v12m5-15v18m5-15v12m4-8v4"/>',
+    Draw: '<path d="m4 20 4-1L20 7l-3-3L5 16l-1 4z M14 7l3 3"/>',
     Annotations: '<circle cx="12" cy="12" r="9"/><path d="M8 12h8m-4-4v8"/>',
     Reframe: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M10 4v16"/>',
     Captions: '<rect x="2" y="4" width="20" height="16" rx="3"/><path d="M6 11h5m2 0h5M6 15h8m2 0h2"/>',
@@ -27,7 +28,7 @@
     Export: '<path d="M12 16V3m-5 5 5-5 5 5M4 15v6h16v-6"/>'
   };
   const panes = {};
-  for (const [name, node] of [["videos", byId("videosPanel")], ["cut", byId("cutDraftPanel")], ["edits", edits], ["audio", noise], ["pauses", pauses], ["background", byId("backgroundPanel")], ["reframe", byId("reframePanel")], ["annotations", byId("annotationsPanel")], ["captions", byId("captionsPanel")], ["export", exportPanel]]) {
+  for (const [name, node] of [["videos", byId("videosPanel")], ["cut", byId("cutDraftPanel")], ["edits", edits], ["audio", noise], ["pauses", pauses], ["background", byId("backgroundPanel")], ["reframe", byId("reframePanel")], ["annotations", byId("annotationsPanel")], ["draw", byId("drawingPanel")], ["captions", byId("captionsPanel")], ["export", exportPanel]]) {
     const pane = document.createElement("section");
     pane.id = `workspace-${name}`;
     pane.className = "workspace-pane";
@@ -40,7 +41,7 @@
   editor.prepend(rail);
   const tasks = [
     ["videos", "Videos"], ["audio", "Audio"], ["pauses", "Pauses"],
-    ["background", "Background"], ["reframe", "Reframe"], ["annotations", "Annotations"], ["captions", "Captions"], ["cut", "Cut", "cut"], ["edits", "Text", "text"], ["edits", "Hide area", "hide"],
+    ["background", "Background"], ["reframe", "Reframe"], ["annotations", "Annotations"], ["draw", "Draw", "draw"], ["captions", "Captions"], ["cut", "Cut", "cut"], ["edits", "Text", "text"], ["edits", "Hide area", "hide"],
     ["export", "Export"]
   ];
   let current = "edits";
@@ -72,6 +73,7 @@
     button.onclick = () => {
       if (!S.job) return;
       if (S.reviewing && pane !== "export") setReview(false);
+      if(S.mode==="draw"&&pane!=="draw")setMode("select");
       if (mode === "cut") { addCut(); return; }
       if (mode) setMode(mode);
       activate(pane, mode);
@@ -143,10 +145,11 @@
   const heading = document.createElement("div");
   heading.className = "inspector-heading"; heading.textContent = "Edit settings";
   side.prepend(heading);
-  const labels = {videos: "Videos", cut: "Cut", edits: "Your edits", audio: "Audio", pauses: "Pauses", background: "Background", reframe: "Reframe", annotations: "Annotations", captions: "Captions", export: "Export"};
+  const labels = {videos: "Videos", cut: "Cut", edits: "Your edits", audio: "Audio", pauses: "Pauses", background: "Background", reframe: "Reframe", annotations: "Annotations", draw: "Draw", captions: "Captions", export: "Export"};
   const syncHeading = () => { heading.textContent = current === "edits" && S.selected != null ? "Edit properties" : labels[current]; };
   window.addEventListener("freeedit:workspace", event => {
     const reason = event.detail;
+    if (reason === "audio-regions") activate("audio");
     if (reason === "videos") activate("videos");
     if (reason === "cut") {
       const length = Math.min(3, duration() / 4);
@@ -169,6 +172,7 @@
     }
     if (reason === "mode") {
       if (S.mode === "background") activate("background");
+      else if (S.mode === "draw") activate("draw", "draw");
       else if (S.mode === "annotation") activate("annotations");
       // Select is a preview tool, not a task. Keep the Videos inspector visible
       // while positioning the presenter, and preserve other active inspectors.
@@ -178,7 +182,7 @@
     if (reason === "export") activate("export");
     if (reason === "open") {
       for (const button of rail.querySelectorAll("button")) {
-        const visual = button.dataset.mode === "hide" || button.dataset.mode === "text" || ["background", "videos", "reframe", "captions", "annotations"].includes(button.dataset.pane);
+        const visual = button.dataset.mode === "hide" || button.dataset.mode === "text" || ["background", "videos", "reframe", "captions", "annotations", "draw"].includes(button.dataset.pane);
         button.disabled = visual && !S.job.has_video ||
           ["audio", "pauses"].includes(button.dataset.pane) && !S.job.has_audio;
       }

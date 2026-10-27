@@ -21,9 +21,9 @@ const document=[
  {id:3,type:"reframe",start:2,end:3,zoom:1.8,focus_x:.5,focus_y:.5,transition:.3}
 ];
 
-test("one timeline document contains all four edit types",()=>{
+test("one timeline document contains all supported edit types",()=>{
   const types=evaluate("EditorModel.TIMELINE_TYPES");
-  assert.deepEqual(Array.from(types),["cut","hide","text","reframe","annotation"]);
+  assert.deepEqual(Array.from(types),["cut","hide","text","reframe","annotation","audio"]);
   assert.deepEqual(Array.from(evaluate("EditorModel.sorted("+JSON.stringify(document)+")"),e=>e.id),[1,3,2]);
   assert.equal(evaluate("EditorModel.byType("+JSON.stringify(document)+",'reframe').length"),1);
 });

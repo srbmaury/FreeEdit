@@ -8,7 +8,7 @@ function audioHistorySnapshot() {
 }
 function snapshot() {
   return HistoryModel.capture({edits: S.edits, background: S.background, presenter: presenterProject(),
-    reframe: S.reframe, ...audioHistorySnapshot()}, [...S.undo, ...S.redo]);
+    framing: S.framing, reframe: S.reframe, ...audioHistorySnapshot()}, [...S.undo, ...S.redo]);
 }
 function audioSettingsChanged() {
   if (S.job && audioHistoryState) {
@@ -25,6 +25,7 @@ function checkpoint(current = snapshot()) {
   HistoryModel.push(S.undo, current);
 }
 function restoreHistory(redo = false) {
+  if(S.drag?.kind==="drawing")S.drag=null;
   const from = redo ? S.redo : S.undo, to = redo ? S.undo : S.redo;
   const current = snapshot();
   while (from.length && HistoryModel.same(from.at(-1), current)) from.pop();
@@ -38,6 +39,7 @@ function restoreHistory(redo = false) {
   editorStore.dispatch("history:restore", state => {
     state.edits = restored.edits;
     state.background = restored.background;
+    state.framing = restored.framing || null;
     state.reframe = restored.reframe || {...EditorModel.DEFAULT_REFRAME};
     state.selected = null;
   });
@@ -48,7 +50,7 @@ function restoreHistory(redo = false) {
 $("undoBtn").onclick = () => restoreHistory();
 $("redoBtn").onclick = () => restoreHistory(true);
 function editSignature() {
-  return JSON.stringify({ audio: getAudioSettings(), edits: S.edits.map(EditorModel.editableProperties), presenter: presenterProject(), background: getBackgroundSettings(), reframe: EditorModel.exportReframe(S.reframe, S.edits), denoise: $("denoise").checked, strength: $("strength").value, preset: $("exportPreset").value });
+  return JSON.stringify({ audio: getAudioSettings(), edits: S.edits.map(EditorModel.editableProperties), presenter: presenterProject(), background: getBackgroundSettings(), framing: S.framing, reframe: EditorModel.exportReframe(S.reframe, S.edits), denoise: $("denoise").checked, strength: $("strength").value, preset: $("exportPreset").value });
 }
 function refreshExportState() {
   if (!S.job) return;
@@ -71,6 +73,7 @@ function refreshExportState() {
     `${cuts} ${cuts === 1 ? "cut" : "cuts"}`,
     `${masks} ${masks === 1 ? "mask" : "masks"}`,
     `Reframe ${reframe}`,
+    `${S.edits.filter(e=>e.type==="audio").length} audio regions`,
     `Noise reduction ${$("denoise").checked ? "on" : "off"}`,
   ];
   if (getBackgroundSettings() && $("exportPreset").value !== "audio_only") summary.push(`Background ${S.background.mode}`);
@@ -125,6 +128,7 @@ function setBusy(operation) {
   $("backgroundMode").disabled = !!operation;
   $("videosPanel").inert = !!operation;
   $("silenceReview").inert = !!operation;
+  $("audioRegionControls").inert = !!operation;
   $("audioFinishControls").inert = !!operation || getPresenterSettings()?.sound === "muted";
   $("compositionPreviewPlayer").pause();
   if (operation) $("backgroundPreviewPlayer").pause();

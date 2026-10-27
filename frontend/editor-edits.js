@@ -16,6 +16,11 @@ $("placeEditBtn").onclick = () => {
 };
 
 function setMode(mode) {
+  if(S.drag?.kind==="drawing")S.drag=null;
+  if(mode==="draw" && S.job?.has_video){
+    if(S.reviewing)setReview(false);
+    sourcePlayer().pause();
+  }
   S.mode = mode;
   window.dispatchEvent(new CustomEvent("freeedit:workspace", { detail: "mode" }));
   $("drawCameraAreaBtn").setAttribute("aria-pressed", String(mode === "background"));
@@ -26,7 +31,7 @@ function setMode(mode) {
     b.setAttribute("aria-pressed", String(b.dataset.mode === mode));
   });
   $("modeHint").textContent = MODE_HINTS[mode];
-  canvas.className = (mode === "hide" || mode === "background") ? "crosshair" : mode === "text" ? "text" : mode === "annotation" ? "annotation-place" : "";
+  canvas.className = (mode === "hide" || mode === "background" || mode === "draw") ? "crosshair" : mode === "text" ? "text" : mode === "annotation" ? "annotation-place" : "";
 }
 function chooseSelectTool() {
   if (S.reviewing) setReview(false);
@@ -81,6 +86,46 @@ function addEdit(props) {
   return e;
 }
 
+let copiedEditStyle = null;
+function duplicateEdit(id = S.selected) {
+  const original = getEdit(id);
+  if (!original) return;
+  const copy = structuredClone(original);
+  if (copy.type === "reframe") {
+    const length = copy.end - copy.start;
+    copy.start = copy.end; copy.end = +(copy.start + length).toFixed(4);
+    const error = EditorModel.validateReframe(copy, duration(), S.edits);
+    if (error) {showProjectMessage("Cannot duplicate Reframe", "A duplicate needs a free interval of the same length immediately after this section.", null, "OK"); return;}
+  }
+  if (!admitEdits([copy])) return;
+  commitEdit("edit:duplicate", state => {copy.id = state.nextId++; state.edits.push(copy); state.selected = copy.id;});
+}
+function copyEditStyle(id = S.selected) {
+  copiedEditStyle = EditorModel.styleProperties(getEdit(id));
+  renderList();
+}
+function pasteEditStyle(id = S.selected) {
+  const edit = getEdit(id), next = edit && EditorModel.pastedStyle(edit, copiedEditStyle);
+  if (!next) return;
+  const error = next.type === "audio" ? EditorModel.validateAudioRegion(next,duration()) : next.type === "annotation" ? AnnotationModel.validate(next, duration(), S.job.width, S.job.height)
+    : next.type === "reframe" ? EditorModel.validateReframe(next, duration(), S.edits, id) : null;
+  if (error) {showProjectMessage("Cannot paste style", error, null, "OK"); return;}
+  commitEdit("edit:paste-style", () => Object.assign(edit, next));
+}
+function editActionButtons(edit) {
+  const row = document.createElement("div"); row.className = "edit-actions";
+  for (const [label, action, disabled] of [["Duplicate", duplicateEdit, false],
+    ["Copy style", copyEditStyle, !Object.keys(EditorModel.styleProperties(edit).properties).length],
+    ["Paste style", pasteEditStyle, !EditorModel.pastedStyle(edit, copiedEditStyle)]]) {
+    const button = document.createElement("button"); button.type = "button"; button.className = "mini";
+    button.textContent = label; button.disabled = disabled;
+    button.title = label === "Duplicate" ? "Duplicate edit (Cmd/Ctrl+D)" : label === "Copy style"
+      ? "Copy appearance (Cmd/Ctrl+Shift+C)" : "Paste compatible appearance (Cmd/Ctrl+Shift+V). Drawing groups require matching stroke counts.";
+    button.onclick = event => {event.stopPropagation(); action(edit.id);}; row.append(button);
+  }
+  return row;
+}
+
 function deleteEdit(id) {
   if (!getEdit(id)) return;
   commitEdit("edit:delete", state => {
@@ -112,8 +157,9 @@ function select(id) {
 
 function cardTitle(e) {
   const range = `${fmt(e.start)}–${fmt(e.end)}`;
+  if (e.type === "audio") return `${e.volume===0?"Mute":Math.round(e.volume*100)+"% volume"} · ${range}`;
   if (e.type === "cut") return `${range} (${(e.end - e.start).toFixed(1)}s)`;
-  if (e.type === "annotation") return `${e.kind === "callout" ? e.text : e.kind} · ${range}`;
+  if (e.type === "annotation") return `${e.kind==="drawing"&&Array.isArray(e.strokes) ? "Drawing group ("+e.strokes.length+" strokes)" : e.kind === "spotlight" ? "Cursor spotlight" : e.kind === "click" ? "Click highlight" : e.kind === "callout" ? e.text : e.kind} · ${range}`;
   if (e.type === "reframe") return `Reframe ${e.zoom.toFixed(2)}× · ${range}`;
   if (e.type === "text") return `${(e.text || "").split("\n")[0]} · ${range}`;
   return `${{ blur: "Blur", pixelate: "Pixelate", black: "Solid cover" }[e.style]} · ${range}`;
@@ -128,7 +174,7 @@ function renderList() {
   renderTimeline();
 
   for (const e of EditorModel.sorted(S.edits).filter(e=>e.type!=="reframe")) {
-    const tpl = $({ hide: "hideCardTpl", text: "textCardTpl", cut: "cutCardTpl", annotation: "annotationCardTpl" }[e.type]).content.cloneNode(true);
+    const tpl = $({ hide: "hideCardTpl", text: "textCardTpl", cut: "cutCardTpl", audio: "audioRegionCardTpl", annotation: "annotationCardTpl" }[e.type]).content.cloneNode(true);
     const card = tpl.querySelector(".card");
     card.dataset.id = e.id;
     card.dataset.start = e.start;
@@ -146,9 +192,9 @@ function renderList() {
     card.querySelectorAll("[data-k]").forEach((input) => {
       const k = input.dataset.k;
       if (input.type === "checkbox") input.checked = !!e[k];
-      else input.value = e[k];
+      else input.value = k === "volume" ? e[k]*100 : e[k];
       input.addEventListener("focus", checkpoint);
-      if (input.type === "number") input.addEventListener("change", () => { input.value = e[k]; });
+      if (input.type === "number") input.addEventListener("change", () => { input.value = k === "volume" ? e[k]*100 : e[k]; });
       input.addEventListener("input", () => {
         let v = input.type === "checkbox" ? input.checked : input.value;
         if (input.type === "number" || input.type === "range") {
@@ -159,9 +205,10 @@ function renderList() {
             if (k === "w" || k === "h") v = clamp(Math.round(v), 8, axis - e[k === "w" ? "x" : "y"]);
             else v = clamp(Math.round(v), 0, axis - (e.type === "hide" ? e[k === "x" ? "w" : "h"] : 1));
           }
+          if (k === "volume") v /= 100;
           if (k === "fontSize") v = clamp(Math.round(v), 8, 400);
           if (e.type === "annotation") {
-            if (k === "opacity") v = clamp(v, .1, 1);
+            if (k === "opacity") v = clamp(v, e.kind==="drawing"?0:.1, 1);
             if (k === "transition") v = clamp(v, 0, 1.5);
             if (k === "rotation") v = clamp(v, -180, 180);
             if (k === "w" || k === "h") v = clamp(v, 16, 4096);
@@ -169,6 +216,7 @@ function renderList() {
           if (k === "start") v = clamp(v, 0, e.end);
           if (k === "end") v = clamp(v, e.start, duration());
         }
+        if(e.type==="audio" && EditorModel.validateAudioRegion({...e,[k]:v},duration())){input.value=k==="volume"?e[k]*100:e[k];return;}
         if(e.type==="annotation" && AnnotationModel.validate({...e,[k]:v},duration(),S.job.width,S.job.height)){input.value=e[k];return;}
         commitEdit("edit:property", () => { e[k] = v; }, false);
         title.textContent = cardTitle(e);
@@ -176,6 +224,34 @@ function renderList() {
     });
 
     if(e.type==="annotation"){
+      if(["spotlight","click"].includes(e.kind)){
+        card.querySelector(".badge").textContent=e.kind==="spotlight"?"Spotlight":"Click";
+        const label=card.querySelector('[data-k="opacity"]').closest("label").querySelector("span");
+        if(label && e.kind==="spotlight")label.textContent="Background dimming";
+      }
+      const grouped=e.kind==="drawing"&&DrawingModel.isGroup(e);
+      card.querySelector(".drawing-group-inspector").hidden=!grouped;
+      if(grouped){
+        card.querySelector(".drawing-group-summary").textContent=e.strokes.length+" strokes move, resize and share timing as one drawing. Ungroup to edit individual colors and widths.";
+        card.querySelector(".drawing-ungroup-btn").onclick=()=>ungroupDrawing(e);
+      }
+      card.querySelector('[data-k="color"]').closest("label").hidden=grouped;
+      if(e.kind==="drawing")card.querySelector('[data-k="opacity"]').min="0";
+      card.querySelector(".drawing-stroke-field").hidden=e.kind!=="drawing"||grouped;
+      if(e.kind==="drawing"&&!grouped){
+        const widthInput=card.querySelector(".drawing-stroke-input");
+        widthInput.value=+(e.strokeWidth*Math.min(e.w,e.h)).toFixed(2);
+        widthInput.max=Math.min(e.w,e.h);
+        widthInput.addEventListener("focus",checkpoint);
+        widthInput.onchange=()=>{
+          const pixels=widthInput.valueAsNumber;
+          const strokeWidth=pixels/Math.min(e.w,e.h);
+          if(pixels<1||AnnotationModel.validate({...e,strokeWidth},duration(),S.job.width,S.job.height)){
+            widthInput.value=+(e.strokeWidth*Math.min(e.w,e.h)).toFixed(2);return;
+          }
+          commitEdit("edit:property",()=>{e.strokeWidth=strokeWidth;},false);
+        };
+      }
       const imageField=card.querySelector(".annotation-image-field");
       imageField.hidden=e.kind!=="image";
       const calloutField=card.querySelector(".annotation-callout-field");
@@ -196,9 +272,11 @@ function renderList() {
     card.querySelectorAll("[data-now]").forEach((btn) => {
       btn.onclick = (ev) => {
         ev.preventDefault();
-        checkpoint();
         const k = btn.dataset.now;
         const t = +sourcePlayer().currentTime.toFixed(2);
+        const next = {...e,[k]:k==="start"?Math.min(t,e.end):Math.max(t,e.start)};
+        if(e.type==="audio" && EditorModel.validateAudioRegion(next,duration()))return;
+        checkpoint();
         if (k === "start") { e.start = Math.min(t, e.end); }
         else { e.end = Math.max(t, e.start); }
         syncCard(e);
@@ -209,6 +287,7 @@ function renderList() {
       card.querySelector(".del").textContent = "Delete cut";
       card.querySelector(".del").setAttribute("aria-label", "Delete cut");
     }
+    card.append(editActionButtons(e));
     card.querySelector(".del").onclick = (ev) => { ev.stopPropagation(); deleteEdit(e.id); };
     card.addEventListener("pointerdown", () => {
       if (S.selected === e.id) return;
@@ -226,11 +305,16 @@ document.addEventListener("keydown", (ev) => {
   if (ev.target.closest("input, textarea, select")) return;
   if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "z") { ev.preventDefault(); restoreHistory(ev.shiftKey); return; }
   if (S.reviewing) return;
+  if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "d") {ev.preventDefault(); duplicateEdit(); return;}
+  if ((ev.metaKey || ev.ctrlKey) && ev.shiftKey && ["c", "v"].includes(ev.key.toLowerCase())) {
+    ev.preventDefault(); ev.key.toLowerCase() === "c" ? copyEditStyle() : pasteEditStyle(); return;
+  }
   if (ev.key === " " && ev.target.closest("button, a")) return;
   if (ev.key === " ") { ev.preventDefault(); sourcePlayer().paused ? sourcePlayer().play() : sourcePlayer().pause(); }
   else if ((ev.key === "Delete" || ev.key === "Backspace") && S.selected) { ev.preventDefault(); deleteEdit(S.selected); }
   else if (ev.key === "Escape") { select(null); setMode("select"); }
   else if (ev.key.toLowerCase() === "v" && S.job.has_video) chooseSelectTool();
+  else if (ev.key.toLowerCase() === "d" && S.job.has_video) setMode("draw");
   else if (ev.key === "h" && S.job.has_video) setMode("hide");
   else if (ev.key === "t" && S.job.has_video) setMode("text");
   else if (ev.key === "x") addCut();

@@ -91,3 +91,16 @@ test("canvas resize keeps annotations valid for project loading",()=>{
  handlers.pointermove({x:0,y:0});
  assert.equal(vm.runInContext("edit.w",context),8);
 });
+
+test('cursor effects share annotation timing and use bounded full-canvas spotlight assets',()=>{
+ for(const kind of ['spotlight','click']) {
+   const edit=call(`AnnotationModel.defaultEdit('${kind}',1920,1080,1,3)`);
+   assert.equal(call(`AnnotationModel.validate(${JSON.stringify(edit)},4,1920,1080)`),null);
+   assert.equal(edit.animation,'fade');assert.equal(edit.w,edit.h);
+   if(kind==='spotlight') {
+     const bounds=call(`AnnotationModel.rasterBounds(${JSON.stringify(edit)},1920,1080)`);
+     assert.equal(bounds.x,0);assert.equal(bounds.w,1920);assert.equal(bounds.h,1080);
+     assert.match(call(`AnnotationModel.validate(${JSON.stringify({...edit,animation:'slide'})},4,1920,1080)`),/Fade or None/);
+   } else assert.ok(edit.w<1920*.2);
+ }
+});

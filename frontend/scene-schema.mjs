@@ -45,3 +45,14 @@ export function validatePresenterProject(value, main) {
   return {source: {...source}, settings: {box: {...b}, offset:s.offset, trim_start:s.trim_start, trim_end:s.trim_end,
     main_volume:s.main_volume, presenter_volume:s.presenter_volume, sound:s.sound, effect:s.effect}};
 }
+
+export function validateFraming(value, source) {
+  if(value == null)return null;
+  const fail=()=>{throw new Error("The project's canvas framing is invalid.");};
+  if(!source.has_video || !["original","wide","vertical","square"].includes(value.aspect) ||
+    ![value.padding,value.radius,value.shadow].every(Number.isFinite) ||
+    value.padding<0 || value.padding>25 || value.radius<0 || value.radius>25 || value.shadow<0 || value.shadow>10 ||
+    !/^#[a-f\d]{6}$/i.test(value.color))fail();
+  if(value.image != null)validateBackground({mode:"image",blur:16,color:value.color,image:value.image},source);
+  return {aspect:value.aspect,padding:value.padding,radius:value.radius,shadow:value.shadow,color:value.color,image:value.image || null};
+}

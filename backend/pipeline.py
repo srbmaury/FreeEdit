@@ -361,7 +361,10 @@ def build_video_edits(
             img_path.write_bytes(base64.b64decode(png.split(",", 1)[1]))
             images.append(img_path)
             img = f"[IMG{len(images) - 1}]"
-            if scale < 1:
+            if kind == "annotation" and e.get("canvas_size"):
+                parts.append(f"{img}scale={W}:{H}[t{i}]")
+                img = f"[t{i}]"
+            elif scale < 1:
                 parts.append(f"{img}scale=iw*{scale:.5f}:-1[t{i}]")
                 img = f"[t{i}]"
             out = next_label()
@@ -564,6 +567,27 @@ def detect_silence(source: Path, duration: float, threshold_db: float, min_durat
             "range": {"start": start, "end": end}}
 
 
+def audio_regions_filter(regions: list[dict]) -> str:
+    """Sample-accurate envelopes on the original clock; overlapping gains multiply."""
+    if not regions:
+        return "anull"
+    factors = []
+    for region in regions:
+        start, end, volume = region["start"], region["end"], region["volume"]
+        fade = min(region.get("fade", .05), (end-start)/2)
+        envelope = (f"min(1,max(0,(t-({start:.9f}))/{fade:.12g}))*"
+                    f"min(1,max(0,({end:.9f}-t)/{fade:.12g}))" if fade > 0 else "1")
+        factors.append(f"if(between(t,{start:.9f},{end:.9f}),1+({volume:.9f}-1)*({envelope}),1)")
+    def product(items):
+        if len(items)==1:return items[0]
+        middle=len(items)//2
+        return f"({product(items[:middle])}*{product(items[middle:])})"
+    result = f"aeval=exprs='val(ch)*min(2,max(0,{product(factors)}))':channel_layout=same"
+    if any(region["volume"]>1 for region in regions):
+        result += ",alimiter=limit=0.95:level=0:latency=1"
+    return result
+
+
 def audio_finish(settings: dict | None, duration: float, offset: float = 0) -> str:
     """Apply restrained dynamic leveling, then fades on the retained output clock."""
     settings = settings or {}
@@ -593,8 +617,10 @@ def process(
     preset: str = "balanced",
     background: dict | None = None,
     preserve_resolution: bool = False,
+    framing: dict | None = None,
     reframe: dict | None = None,
     audio: dict | None = None,
+    audio_regions: list[dict] | None = None,
     audio_offset: float = 0,
     audio_duration: float | None = None,
 ) -> Path:
@@ -612,16 +638,25 @@ def process(
 
     keep = kept_ranges(cuts, info.duration)
     retained_duration = sum(b - a for a, b in keep) if keep else info.duration
-    finish_audio = audio_finish(audio, audio_duration or retained_duration, audio_offset)
+    # Level before regional adjustments so compression cannot undo a quiet
+    # region. Global fades remain on the retained output clock, after cuts.
+    region_audio = "anull"
+    finish_settings = audio
+    if audio_regions:
+        region_audio = audio_finish({"level_speech":(audio or {}).get("level_speech",False)},info.duration) + "," + audio_regions_filter(audio_regions)
+        finish_settings = {**(audio or {}),"level_speech":False}
+    finish_audio = audio_finish(finish_settings, audio_duration or retained_duration, audio_offset)
     if not info.has_video or preset == "audio_only":
         out = work / "output.wav"
         args = ["-i", str(clean_wav or source), "-vn"]
         if keep:
-            audio_parts, alabel = build_audio_cuts("[0:a:0]", keep)
+            audio_parts = [f"[0:a:0]asetpts=PTS-STARTPTS,{region_audio}[regionalaudio]"] if audio_regions else []
+            cut_parts, alabel = build_audio_cuts("[regionalaudio]" if audio_regions else "[0:a:0]", keep)
+            audio_parts += cut_parts
             audio_parts.append(f"{alabel}{finish_audio}[finishedaudio]")
             args += ["-filter_complex", ";".join(audio_parts), "-map", "[finishedaudio]"]
         else:
-            args += ["-map", "0:a:0", "-af", finish_audio]
+            args += ["-map", "0:a:0", "-af", ("asetpts=PTS-STARTPTS,"+region_audio+"," if audio_regions else "")+finish_audio]
         args += ["-ar", "48000", "-c:a", "pcm_s16le", str(out)]
         _run_ffmpeg(args, sum(b - a for a, b in keep) if keep else info.duration, "Exporting audio", progress)
         return out
@@ -654,6 +689,10 @@ def process(
         args += ["-i", str(img)]
     audio_in = "[1:a]" if clean_wav else ("[0:a]" if info.has_audio else None)
 
+    if audio_in and audio_regions:
+        parts.append(f"{audio_in}asetpts=PTS-STARTPTS,{region_audio}[regionalaudio]")
+        audio_in = "[regionalaudio]"
+
     # Reframe before cutting: zoom keyframes use the original recording's
     # timestamps, just like text, masks and the editor's timeline.
     if reframe:
@@ -666,6 +705,16 @@ def process(
             x, y, w, h = reframe_geometry(_even(info.width * scale), _even(info.height * scale), reframe)
             parts.append(f"{vlabel}crop={w}:{h}:{x}:{y}[reframed]")
             vlabel = "[reframed]"
+
+    if framing:
+        from .canvas_frame import build_frame
+        fw, fh = _even(info.width * scale), _even(info.height * scale)
+        if reframe:
+            _, _, fw, fh = reframe_geometry(fw, fh, {**reframe, "zoom": 1 if reframe.get("sections") else reframe["zoom"]})
+        frame_parts, vlabel, frame_images = build_frame(vlabel, fw, fh, framing, work, img_offset + len(images))
+        parts += frame_parts
+        for image in frame_images:
+            args += ["-loop", "1", "-framerate", str(info.frame_rate), "-i", str(image)]
 
     out_duration = info.duration
     alabel = None

@@ -4,13 +4,15 @@
 // all have the same identity and original-source [start, end] interval.
 // Whole-video reframe, background and presenter remain scene-level settings.
 const EditorModel = (() => {
-  const TIMELINE_TYPES = Object.freeze(["cut", "hide", "text", "reframe", "annotation"]);
+  const TIMELINE_TYPES = Object.freeze(["cut", "hide", "text", "reframe", "annotation", "audio"]);
   const DEFAULT_REFRAME = Object.freeze({aspect: "original", zoom: 1, focus_x: .5, focus_y: .5});
 
   function limitError(edits) {
+    if (edits.filter(edit => edit.type === "annotation" && edit.kind === "spotlight").length > 8) return "Keep at most 8 cursor spotlights. Remove a spotlight before adding another.";
+    if (edits.filter(edit => edit.type === "audio").length > 50) return "Keep at most 50 audio regions.";
     if (edits.length > 200) return "Keep at most 200 edits in a project.";
     if (edits.filter(edit => edit.type === "cut").length > 100) return "Keep at most 100 cuts. Remove a cut before adding another.";
-    if (edits.filter(edit => edit.type === "hide" || edit.type === "text" || edit.type === "annotation").length > 100) return "Keep at most 100 masks, text and annotations.";
+    if (edits.reduce((count,edit)=>count+(["hide","text","annotation"].includes(edit.type) ? (edit.kind==="drawing" && Array.isArray(edit.strokes) ? edit.strokes.length : 1) : 0),0) > 100) return "Keep at most 100 masks, text and annotations.";
     if (edits.filter(edit => edit.type === "reframe").length > 20) return "Keep at most 20 timed Reframe edits.";
     return null;
   }
@@ -66,8 +68,28 @@ const EditorModel = (() => {
     }
     return properties;
   }
+  function validateAudioRegion(edit, duration) {
+    return !edit || !Number.isFinite(duration) || duration<=0 || ![edit.start,edit.end,edit.volume,edit.fade].every(Number.isFinite) ||
+      edit.start<0 || edit.end>duration+.005 || edit.end<=edit.start ||
+      edit.volume<0 || edit.volume>2 || edit.fade<0 || edit.fade>.25
+      ? "Choose a valid audio range, volume from 0 to 200%, and boundary fade from 0 to 0.25 seconds." : null;
+  }
+  function styleProperties(edit) {
+    if (!edit) return null;
+    const fields = edit.type === "audio" ? ["volume", "fade"] : edit.type === "text" ? ["fontSize", "color", "font", "bg", "bold"]
+      : edit.type === "hide" ? ["style"]
+      : edit.type === "reframe" ? ["zoom", "transition"]
+      : edit.type === "annotation" ? ["color", "opacity", "rotation", "animation", "transition", "strokeWidth"] : [];
+    return {type: edit.type, kind: edit.kind, strokeStyles: Array.isArray(edit.strokes) ? edit.strokes.map(({color,opacity,strokeWidth}) => ({color,opacity,strokeWidth})) : null, properties: Object.fromEntries(fields.filter(k => k in edit).map(k => [k, structuredClone(edit[k])]))};
+  }
+  function pastedStyle(edit, style) {
+    if (!style || edit.type !== style.type || edit.kind !== style.kind || !Object.keys(style.properties).length || !!style.strokeStyles !== Array.isArray(edit.strokes) || style.strokeStyles && style.strokeStyles.length !== edit.strokes.length) return null;
+    const result = {...structuredClone(edit), ...structuredClone(style.properties)};
+    if (style.strokeStyles) result.strokes.forEach((stroke, i) => Object.assign(stroke, style.strokeStyles[i]));
+    return result;
+  }
   return Object.freeze({TIMELINE_TYPES, DEFAULT_REFRAME, limitError, isTimedEdit, sorted, byType,
-    sections, exportReframe, validateReframe, cutRanges, editableProperties});
+    validateAudioRegion, styleProperties, pastedStyle, sections, exportReframe, validateReframe, cutRanges, editableProperties});
 })();
 
 // One mutation path for document edits. Frontend modules never need to know

@@ -23,3 +23,14 @@ test('presenter validation rejects unknown sound policy and invalid trim', async
   value.settings.trim_end=10;value.settings.sound='unknown';
   assert.throws(() => validatePresenterProject(value,main), /Invalid presenter/);
 });
+
+test('canvas settings are bounded, video-only and backward compatible', async()=>{
+  const {validateFraming}=await import('../frontend/scene-schema.mjs');
+  const source={has_video:true,width:320,height:180};
+  const frame={aspect:'square',padding:8,radius:3,shadow:3,color:'#123456',image:null};
+  assert.deepEqual(validateFraming(frame,source),frame);
+  assert.equal(validateFraming(undefined,source),null);
+  for(const change of [{padding:26},{radius:-1},{shadow:NaN},{aspect:'unknown'},{image:'invalid'}])
+    assert.throws(()=>validateFraming({...frame,...change},source),/invalid/);
+  assert.throws(()=>validateFraming(frame,{has_video:false}),/invalid/);
+});

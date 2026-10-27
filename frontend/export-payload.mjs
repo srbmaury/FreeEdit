@@ -1,6 +1,6 @@
 // Pure document -> API projection. No DOM, global editor state or media players.
 export function buildExportPayload(document, adapters) {
-  const {job, edits, audio, presenter, presenterHasAudio, reframe, background,
+  const {job, edits, audio, presenter, presenterHasAudio, reframe, background, framing,
     denoise, strength, preset} = document;
   const videoOutput = job.has_video && preset !== "audio_only";
   const visual = videoOutput ? edits.filter(e => ["hide", "text", "annotation"].includes(e.type)).map(e => {
@@ -11,7 +11,9 @@ export function buildExportPayload(document, adapters) {
   }) : [];
   return {
     audio: structuredClone(audio),
+    ...(edits.some(e=>e.type==="audio") ? {audio_regions:edits.filter(e=>e.type==="audio").map(({start,end,volume,fade})=>({start,end,volume,fade}))} : {}),
     presenter: structuredClone(presenter),
+    ...(framing && videoOutput ? {framing: structuredClone(framing)} : {}),
     reframe: videoOutput ? structuredClone(adapters.exportReframe(reframe, edits)) : null,
     background: preset !== "audio_only" ? structuredClone(background) : null,
     denoise: !!((job.has_audio || presenterHasAudio) && denoise),

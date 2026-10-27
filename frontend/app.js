@@ -26,6 +26,7 @@ const S = {
   reviewLoop: null,
   background: null,
   reframe: null,
+  framing: null,
 };
 
 const editorStore = createEditorStore(S);
@@ -37,7 +38,7 @@ editorStore.subscribe(({reason}) => {
   if (!S.job) return;
   // Never replace the user's focused text/number input while typing.
   // A lightweight mutation only invalidates timeline, canvas and export.
-  if (reason === "edit:property" || reason === "edit:drag") {
+  if (reason === "edit:property" || reason === "edit:drag" || reason === "scene:framing") {
     renderTimeline();
   } else if (reason === "edit:update-reframe" ||
              reason === "scene:reframe" || reason === "scene:reset-reframe") {
@@ -69,6 +70,7 @@ const MODE_HINTS = {
   select: "Select an edit to adjust it.",
   hide: "Drag over the part of the video you want to hide.",
   text: "Click where the text should go.",
+  draw: "Drag to draw on the video. Use the drawing panel to change tools; Esc finishes drawing.",
   annotation: "Click the video to place your selected annotation. Press Esc to cancel.",
   background: "Drag a rectangle around the camera inset. Press Escape to cancel.",
 };
@@ -205,6 +207,8 @@ function openEditor(job) {
   resetVideos();
   S.exportSignature = null; S.exportSubmission = null; S.reviewing = false;
   S.reframe = {...EditorModel.DEFAULT_REFRAME};
+  S.framing = null;
+  if (typeof syncCanvasControls === "function") syncCanvasControls();
   if (typeof syncReframeControls === "function") syncReframeControls();
   S.operation = null; S.suggestions = [];
   resetTimeline();
@@ -270,7 +274,8 @@ function layoutStage() {
     : Math.max(180, window.innerHeight - 550);
   const { width: W, height: H } = S.job;
   const guide = typeof reframeGuideSection === "function" && reframeGuideSection();
-  const shape = guide ? {w: W, h: H} : freeeditCropRect(W, H, {...S.reframe, zoom: 1});
+  let shape = guide ? {w: W, h: H} : freeeditCropRect(W, H, {...S.reframe, zoom: 1});
+  if (!guide && S.framing) shape = CanvasModel.geometry(shape.w, shape.h, S.framing);
   const scale = Math.min(maxW / shape.w, maxH / shape.h);
   const dw = Math.round(shape.w * scale), dh = Math.round(shape.h * scale);
   const stage = $("stage");

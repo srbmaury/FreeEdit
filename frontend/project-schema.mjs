@@ -1,4 +1,4 @@
-import {validateBackground, validatePresenterProject} from "./scene-schema.mjs";
+import {validateBackground, validatePresenterProject, validateFraming} from "./scene-schema.mjs";
 
 // Pure project-file validation. Editor/scene rules are explicit dependencies;
 // this module does not read the DOM, browser storage, or editor state.
@@ -14,6 +14,7 @@ export function validateProjectDocument(value, {EditorModel, AnnotationModel}) {
       !finite(source.duration, 0.001, 1e8) || !finite(source.width, 0, 65536) || !finite(source.height, 0, 65536) ||
       typeof source.has_video !== "boolean" || typeof source.has_audio !== "boolean" || (!source.has_video && !source.has_audio)) fail();
   const settings = value.settings;
+  const framing = validateFraming(settings?.framing, source);
   const background = validateBackground(settings?.background, source);
   const presenter = validatePresenterProject(settings?.presenter, source);
   const reframe = settings?.reframe == null ? null : settings.reframe;
@@ -31,6 +32,10 @@ export function validateProjectDocument(value, {EditorModel, AnnotationModel}) {
     if (!edit || !EditorModel.TIMELINE_TYPES.includes(edit.type) || !finite(edit.start, 0, source.duration) ||
         !finite(edit.end, 0, source.duration + 0.05) || edit.end <= edit.start) fail();
     const result = {type: edit.type, start: edit.start, end: Math.min(edit.end, source.duration)};
+    if (result.type === "audio") {
+      if (EditorModel.validateAudioRegion(edit,source.duration)) fail();
+      Object.assign(result,{volume:edit.volume,fade:edit.fade});
+    }
     if (result.type === "reframe") {
       const section = {...edit, start:result.start, end:result.end};
       if (!source.has_video || EditorModel.validateReframe(section, source.duration, reframeEdits)) fail();
@@ -49,6 +54,11 @@ export function validateProjectDocument(value, {EditorModel, AnnotationModel}) {
     if (result.type === "annotation") {
       if (!source.has_video || AnnotationModel.validate(edit, source.duration, source.width, source.height)) fail();
       for(const key of ["kind","icon","shape","text","image","x","y","w","h","color","opacity","rotation","animation","transition"])result[key]=edit[key];
+      if(edit.kind==="drawing"){
+        if(edit.strokes)result.strokes=edit.strokes.map(s=>({points:s.points.map(p=>[...p]),strokeWidth:s.strokeWidth,color:s.color,opacity:s.opacity}));
+        else {result.points=edit.points.map(p=>[...p]);result.strokeWidth=edit.strokeWidth;}
+        if(edit.animationShift!==undefined)result.animationShift=edit.animationShift;
+      }
     }
     if (result.type === "text") {
       if (typeof edit.text !== "string" || edit.text.length > 10000 || !finite(edit.fontSize, 8, 400) ||
@@ -64,5 +74,5 @@ export function validateProjectDocument(value, {EditorModel, AnnotationModel}) {
       duration: source.duration, width: source.width, height: source.height, has_video: source.has_video, has_audio: source.has_audio},
     view: {playhead: finite(value.view?.playhead, 0, source.duration) ? value.view.playhead : 0,
       zoom: [1, 2, 4, 8, 16].includes(value.view?.zoom) ? value.view.zoom : 1},
-    edits, settings: {audio, presenter, background, reframe, denoise: settings.denoise, strength: settings.strength, preset: settings.preset}};
+    edits, settings: {audio, presenter, background, framing, reframe, denoise: settings.denoise, strength: settings.strength, preset: settings.preset}};
 }

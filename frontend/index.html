@@ -143,6 +143,7 @@
               <div class="timeline-label-spacer"></div>
               <div id="waveformLabel" class="timeline-label waveform-label">Audio</div>
               <div id="pauseLabel" class="timeline-label">Pauses</div>
+              <div id="audioRegionLabel" class="timeline-label">Volume</div>
               <div id="cutLabel" class="timeline-label">Cuts</div>
               <div id="maskLabel" class="timeline-label">Masks</div>
               <div id="textLabel" class="timeline-label">Text</div><div id="annotationLabel" class="timeline-label">Notes</div><div id="zoomLabelTrack" class="timeline-label">Zoom</div>
@@ -159,6 +160,7 @@
                   <span id="waveformStatus" class="waveform-status"></span>
                 </div>
                 <div id="pauseTrack" class="timeline-track" aria-label="Suggested pauses"></div>
+                <div id="audioRegionTrack" class="timeline-track" aria-label="Audio mute and volume regions"></div>
                 <div id="cutTrack" class="timeline-track" aria-label="Cuts"></div>
                 <div id="maskTrack" class="timeline-track" aria-label="Masks"></div>
                 <div id="textTrack" class="timeline-track" aria-label="Text overlays"></div><div id="annotationTrack" class="timeline-track" aria-label="Annotations"></div><div id="zoomTrack" class="timeline-track" aria-label="Zoom sections"></div>
@@ -203,11 +205,42 @@
           </div>
           <p id="compositionStatus" class="small" role="status">Preview three seconds from the playhead, including your sound choice. Main background effects, cuts, text, and privacy masks are applied in the full export.</p>
         </section>
+        <section id="drawingPanel" class="panel">
+          <h3>Draw on your recording</h3>
+          <p class="small">Drag on the video to draw. Each stroke is a timed edit you can move, resize or delete in Edits.</p>
+          <div class="drawing-tools" role="group" aria-label="Drawing tool">
+            <button type="button" data-drawing-tool="pen" aria-pressed="true">Pen</button>
+            <button type="button" data-drawing-tool="highlighter" aria-pressed="false">Highlighter</button>
+            <button type="button" data-drawing-tool="eraser" aria-pressed="false">Erase stroke</button>
+          </div>
+          <div class="grid2">
+            <label class="field"><span>Color</span><input id="drawingColor" type="color" value="#ef4444"></label>
+            <label class="field"><span>Width (video pixels)</span><input id="drawingWidth" type="number" min="1" max="80" step="1" value="6"></label>
+            <label class="field"><span>Opacity</span><input id="drawingOpacity" type="range" min=".1" max="1" step=".05" value="1"></label>
+          </div>
+          <div class="grid2">
+            <label class="field"><span>Start (seconds)</span><input id="drawingStart" type="number" min="0" step=".1" value="0"></label>
+            <label class="field"><span>End (seconds)</span><input id="drawingEnd" type="number" min="0" step=".1" value="3"></label>
+          </div>
+          <div class="drawing-actions">
+            <button type="button" id="drawingClearBtn">Clear drawings in this range</button>
+            <button type="button" id="drawingDoneBtn" class="primary">Done drawing</button>
+          </div>
+          <p class="small">Use Undo / Redo for individual strokes. Erase removes whole strokes visible at the playhead.</p>
+          <section class="drawing-group-section" aria-label="Group drawings">
+            <h4>Drawing groups</h4>
+            <p class="small">Choose strokes below and group them to move, resize and time them together. Grouping gives them one shared time range and animation.</p>
+            <div id="drawingGroupChoices" class="drawing-group-choices"></div>
+            <button type="button" id="drawingGroupBtn" disabled>Group selected strokes</button>
+          </section>
+          <p id="drawingMessage" class="small" role="status" aria-live="polite"></p>
+        </section>
         <section id="annotationsPanel" class="panel">
           <h2 class="section-title">Annotations</h2>
           <p class="small">Choose a visual annotation, then place it on your recording. Edit its style, position and timing from Edits.</p>
           <div class="annotation-picker-section">
             <span class="annotation-picker-heading">What would you like to add?</span>
+            <p class="small">Cursor spotlight and click highlights are placed manually. Click the recorded pointer or action, then adjust size and timing in Edits. Spotlight dims the area outside its oval; click highlights mark individual clicks.</p>
             <div id="annotationTypePicker" class="annotation-tiles annotation-type-tiles" role="group" aria-label="Annotation type"></div>
           </div>
           <div id="annotationIconSection" class="annotation-picker-section">
@@ -269,6 +302,20 @@
           </div></details>
           <div id="reframeSections" aria-label="Zoom sections"></div>
           <p id="reframeStatus" role="status" class="small"></p>
+          <details id="canvasFramePanel" name="reframe-scope">
+            <summary>Canvas background and framing</summary>
+            <label><input id="canvasEnabled" type="checkbox"> Enable canvas framing</label>
+            <div id="canvasFrameControls" hidden>
+              <label>Canvas aspect <select id="canvasAspect"><option value="original">Match Reframe</option><option value="wide">16:9</option><option value="vertical">9:16</option><option value="square">Square</option></select></label>
+              <label>Padding (%) <input id="canvasPadding" type="number" min="0" max="25" step="1" value="8"></label>
+              <label>Corner radius (%) <input id="canvasRadius" type="number" min="0" max="25" step="1" value="3"></label>
+              <label>Shadow (%) <input id="canvasShadow" type="number" min="0" max="10" step="1" value="3"></label>
+              <label>Background color <input id="canvasColor" type="color" value="#243047"></label>
+              <label>Background image <input id="canvasImage" type="file" accept="image/*"></label>
+              <button id="canvasImageRemove" type="button" class="ghost">Remove background image</button>
+            </div>
+            <p id="canvasStatus" class="hint" role="status">Frames the recording and all overlays after Reframe. Background images fill the canvas.</p>
+          </details>
           <button id="reframeReset" type="button" class="ghost">Reset crop and sections</button>
         </section>
         <section id="captionsPanel" class="panel">
@@ -352,7 +399,7 @@
                 <option value="10">Gentle</option>
               </select>
             </label>
-            <p class="small">Start with Natural sound. Preview up to 10 seconds from the playhead before exporting. The sample ignores cuts and visual edits.</p>
+            <p class="small">Start with Natural sound. Preview up to 10 seconds from the playhead before exporting. The noise sample ignores cuts, volume regions and visual edits.</p>
             <details id="audioFinishControls">
               <summary>Speech volume and fades</summary>
               <label class="check"><input id="levelSpeech" type="checkbox" /> Level speech volume</label>
@@ -372,6 +419,26 @@
             </div>
           </div>
           <p id="noAudio" class="small hidden">This file has no audio track.</p>
+          <section id="audioRegionsPanel">
+            <h3>Mute and volume regions</h3>
+            <p class="small">Adjust a passage in the selected sound mix, including presenter audio. Source playback stays original; use Hear edited audio to check the result. Regions apply to the selected mix, including presenter audio.</p>
+            <div id="audioRegionControls">
+              <div class="grid2">
+                <label class="field"><span>From (seconds)</span><input id="audioRegionStart" type="number" min="0" step=".01" value="0"></label>
+                <label class="field"><span>To (seconds)</span><input id="audioRegionEnd" type="number" min="0" step=".01" value="1"></label>
+                <label class="field"><span>Volume (%)</span><input id="audioRegionVolume" type="number" min="0" max="200" step="5" value="50"></label>
+                <label class="field"><span>Boundary fade (seconds)</span><input id="audioRegionFade" type="number" min="0" max=".25" step=".01" value=".05"></label>
+              </div>
+              <div class="edit-actions">
+                <button id="audioRegionUseRange" type="button" class="mini">Use selection or playhead</button>
+                <button id="addMuteRegion" type="button">Mute range</button>
+                <button id="addVolumeRegion" type="button">Add volume region</button>
+                <button id="audioRegionPreview" type="button" class="ghost">Hear edited audio</button>
+              </div>
+            </div>
+            <p class="small">Short fades ease in and out of each region. Overlapping volumes multiply, with total gain capped at 200%; mute wins. Boosts use a limiter to avoid clipping.</p>
+            <p id="audioRegionStatus" class="small" role="status" aria-live="polite"></p>
+          </section>
         </div>
 
         <div id="silencePanel" class="panel">
@@ -478,6 +545,8 @@
         <span class="annotation-picker-heading">Shape</span>
         <div class="annotation-tiles annotation-icon-tiles annotation-card-choices" data-annotation-choices="shape" role="group" aria-label="Change annotation shape"></div>
       </div>
+      <div class="drawing-group-inspector" hidden><p class="small drawing-group-summary"></p><button type="button" class="drawing-ungroup-btn">Ungroup drawing</button></div>
+      <label class="field drawing-stroke-field" hidden><span>Stroke width (video pixels)</span><input class="drawing-stroke-input" type="number" min="1" step=".5" aria-label="Drawing stroke width"></label>
       <div class="annotation-image-field">
         <span class="annotation-picker-heading">Your image / logo</span>
         <img class="annotation-image-preview" alt="Selected image overlay preview">
@@ -496,6 +565,17 @@
         <label class="field"><span>Width</span><input data-k="w" type="number" min="16" step="1"></label>
         <label class="field"><span>Height</span><input data-k="h" type="number" min="16" step="1"></label>
       </div></details>
+      <div class="times"></div>
+    </div>
+  </template>
+  <template id="audioRegionCardTpl">
+    <div class="card">
+      <div class="card-head"><span class="badge audio">Audio</span><button class="card-title" type="button" aria-expanded="false"></button><button class="del" title="Delete audio region" aria-label="Delete audio region">✕</button></div>
+      <div class="grid2">
+        <label class="field"><span>Volume (%)</span><input data-k="volume" type="number" min="0" max="200" step="5"></label>
+        <label class="field"><span>Boundary fade (seconds)</span><input data-k="fade" type="number" min="0" max=".25" step=".01"></label>
+      </div>
+      <p class="small">Applies to the selected sound mix. Hear the change with Preview result.</p>
       <div class="times"></div>
     </div>
   </template>
@@ -606,6 +686,8 @@
   <script src="ui.js"></script>
   <script src="media-utils.js"></script>
   <script src="editor-model.js"></script>
+  <script src="canvas-model.js"></script>
+  <script src="drawing-model.js"></script>
   <script src="annotation-model.js"></script>
   <script src="history-model.js"></script>
   <script src="app.js"></script>
@@ -623,7 +705,10 @@
   <script src="workspace.js"></script>
   <script src="reframe-captions.js"></script>
   <script src="annotations.js"></script>
+  <script src="drawing.js"></script>
   <script src="range-selection.js"></script>
+  <script src="canvas-frame.js"></script>
   <script src="result-preview.js"></script>
+  <script src="audio-regions.js"></script>
 </body>
 </html>

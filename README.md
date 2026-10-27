@@ -10,7 +10,8 @@
 
 - **Reduce background noise** with [DeepFilterNet3](https://github.com/Rikorose/DeepFilterNet), with a short audio comparison.
 - **Find and shorten pauses**: review quiet portions before making cuts.
-- **Edit visually**: cut ranges, timed text, imported SRT captions, privacy masks, Reframe/zoom portions, and illustrated annotations (icons, arrows, shapes, callouts, or uploaded logos).
+- **Edit visually**: cut ranges, timed text, imported SRT captions, privacy masks, Reframe/zoom portions, and illustrated annotations (icons, arrows, shapes, callouts, or uploaded logos). Draw custom pen and highlighter strokes directly on the recording, and group strokes to move, resize and time them together. Add timed cursor spotlights and click highlights, and mute or change volume over selected audio regions.
+- **Highlight tutorial actions**: manually place timed cursor spotlights and fading click rings, then move, resize, or restyle them.
 - **Explain what matters**: pick a focus point in the video; choose original, wide, vertical or square aspect ratios.
 - **Combine two videos**: add a movable presenter inset, choose the main/presenter/mixed audio, and optionally process the presenter background.
 - **Replace backgrounds** (optional): person-aware blur, solid color or an image, optionally restricted to a webcam area.
@@ -55,13 +56,13 @@ The [Dockerfile](Dockerfile) is the supported starting point for Linux/container
 ## Basic editing workflow
 
 1. **Upload** a supported video or audio file (e.g. MP4, MOV, WEBM, MKV, WAV or MP3). Some supported containers/codecs cannot play in every browser.
-2. Use the left task rail for **Videos, Audio, Pauses, Background, Reframe, Captions, Annotations, Cut, Text and Hide area**.
+2. Use the left task rail for **Videos, Audio, Pauses, Background, Reframe, Captions, Annotations, Draw, Cut, Text and Hide area**.
 3. Use **Edits (V)** by the preview to select, move, resize and change edit properties. All timed edits use the original source timeline; cuts alter result timing.
 4. Choose a range in the waveform/ruler or mark boundaries with **I** and **O**. Review the range before applying cuts or zoom.
 5. Use **Export → Preview result** for a short fully processed sample, then export and download.
 6. Save a `.freeedit.json` project to continue later. **Keep the original recording(s)**: they are not included in the project file.
 
-Keyboard essentials: `Space` play/pause, `←/→` step, `V` Select, `H` Hide, `T` Text, `X` Cut, `Esc` cancel, `Ctrl/Cmd+Z` undo.
+Keyboard essentials: `Space` play/pause, `←/→` step, `V` Select, `H` Hide, `T` Text, `X` Cut, `D` Draw, `Esc` cancel, `Ctrl/Cmd+Z` undo.
 
 ## Boundaries worth knowing
 
