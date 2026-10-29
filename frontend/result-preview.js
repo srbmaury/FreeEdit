@@ -86,7 +86,7 @@ function resultPreviewDone(sample) {
   resultSample = {...sample, signature:pendingResultSample.signature, id:S.job.id};
   pendingResultSample = null;
   $("resultPreviewStatus").textContent = `Preview ready · ${fmt(sample.start)}–${fmt(sample.end)} of original timing.`;
-  const outputLength = sample.ranges.reduce((total, [a, b]) => total + b - a, 0);
+  const outputLength = sample.ranges.reduce((total, [a, b, rate=1]) => total + (b - a)/rate, 0);
   const settingsNote = resultSample.signature === editSignature() ? "Export settings"
     : resultSample.signature ? "Edits changed since preview" : "Preview settings could not be verified";
   $("resultPreviewDescription").textContent = `${fmt(sample.start)}–${fmt(sample.end)} source · ${fmt(outputLength)} result · ${settingsNote}`;
@@ -107,18 +107,18 @@ function switchResultRange(original, preserve = true) {
     if (rangeOriginal) sourceTime = player.currentTime;
     else {
       let elapsed = 0;
-      for (const [a,b] of resultSample.ranges) {
-        sourceTime = Math.min(b, a + Math.max(0, player.currentTime - elapsed));
-        if (player.currentTime <= elapsed + b - a) break;
-        elapsed += b-a;
+      for (const [a,b,rate=1] of resultSample.ranges) {
+        sourceTime = Math.min(b, a + Math.max(0, player.currentTime - elapsed)*rate);
+        if (player.currentTime <= elapsed + (b - a)/rate) break;
+        elapsed += (b-a)/rate;
       }
     }
   }
   let target = sourceTime;
   if (!original) {
     target = 0;
-    for (const [a,b] of resultSample.ranges) {
-      target += clamp(sourceTime-a, 0, b-a);
+    for (const [a,b,rate=1] of resultSample.ranges) {
+      target += clamp(sourceTime-a, 0, b-a)/rate;
       if (sourceTime < b) break;
     }
   }

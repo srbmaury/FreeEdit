@@ -23,7 +23,7 @@ const document=[
 
 test("one timeline document contains all supported edit types",()=>{
   const types=evaluate("EditorModel.TIMELINE_TYPES");
-  assert.deepEqual(Array.from(types),["cut","hide","text","reframe","annotation","audio"]);
+  assert.deepEqual(Array.from(types),["cut","hide","text","reframe","annotation","audio","speed"]);
   assert.deepEqual(Array.from(evaluate("EditorModel.sorted("+JSON.stringify(document)+")"),e=>e.id),[1,3,2]);
   assert.equal(evaluate("EditorModel.byType("+JSON.stringify(document)+",'reframe').length"),1);
 });

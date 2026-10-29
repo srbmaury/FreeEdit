@@ -41,8 +41,8 @@ function renderSequenceTransitions(locked = false) {
     const transition = sequenceTransitions[i] || {type:"cut",duration:0}; select.value=transition.type;
     const duration = document.createElement("input"); duration.type="number"; duration.min="0.1"; duration.max="2"; duration.step="0.1"; duration.value=String(transition.duration || 0.5); duration.setAttribute("aria-label",`Crossfade duration between clips ${i+1} and ${i+2}`);
     const update = () => { duration.disabled = locked || select.value === "cut"; };
-    select.disabled=locked; select.onchange=()=>{ sequenceTransitions[i]={type:select.value,duration:select.value==="crossfade"?Number(duration.value):0}; update(); rebuildSequence(sequenceClips.map(c=>c.id)); };
-    duration.onchange=()=>{ sequenceTransitions[i]={type:select.value,duration:Number(duration.value)}; rebuildSequence(sequenceClips.map(c=>c.id)); };
+    select.disabled=locked; select.onchange=()=>{ const next=structuredClone(sequenceTransitions); next[i]={type:select.value,duration:select.value==="crossfade"?Number(duration.value):0}; rebuildSequence(sequenceClips.map(c=>c.id),next); };
+    duration.onchange=()=>{ const next=structuredClone(sequenceTransitions); next[i]={type:select.value,duration:Number(duration.value)}; rebuildSequence(sequenceClips.map(c=>c.id),next); };
     label.append(select); row.append(label,duration); host.append(row); update();
   }
 }
@@ -71,23 +71,24 @@ function refreshSequenceSource(data) {
   renderSequenceClips(); renderTimeline(); renderWaveform(); refreshExportState();
 }
 
-async function rebuildSequence(order) {
+async function rebuildSequence(order, transitions = sequenceTransitions) {
   if (sequenceBusy || !S.job) return;
   sequenceBusy = true; renderSequenceClips(); $("sequenceStatus").textContent = "Updating clip sequence…";
   try {
-    const result = await api(`/api/jobs/${S.job.id}/clips/order`, {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({order,transitions:sequenceTransitions})});
+    const result = await api(`/api/jobs/${S.job.id}/clips/order`, {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({order,transitions})});
+    sequenceTransitions = structuredClone(transitions);
     refreshSequenceSource(result); $("sequenceStatus").textContent = "Sequence updated. Timeline edits use the new clip order.";
   } catch (error) { $("sequenceStatus").textContent = error.message; }
   finally { sequenceBusy = false; renderSequenceClips(); }
 }
 function changeSequenceOrder(from, to) {
   const next = [...sequenceClips]; [next[from], next[to]] = [next[to], next[from]];
-  sequenceTransitions = next.slice(1).map((_,i)=>sequenceTransitions[Math.min(i,sequenceTransitions.length-1)] || {type:"cut",duration:0}); rebuildSequence(next.map(clip => clip.id));
+  const transitions = next.slice(1).map((_,i)=>sequenceTransitions[Math.min(i,sequenceTransitions.length-1)] || {type:"cut",duration:0}); rebuildSequence(next.map(clip => clip.id), transitions);
 }
 function removeSequenceClip(index) {
   const next = sequenceClips.filter((_, i) => i !== index);
-  sequenceTransitions = next.slice(1).map((_,i)=>sequenceTransitions[i] || {type:"cut",duration:0});
-  const remainingDuration = sequenceDuration(next);
+  const transitions = next.slice(1).map((_,i)=>sequenceTransitions[i] || {type:"cut",duration:0});
+  const remainingDuration = sequenceDuration(next) - transitions.reduce((sum,t)=>sum+t.duration,0);
   if (S.edits.some(edit => edit.end > remainingDuration + .005)) {
     $("sequenceStatus").textContent = "This clip cannot be removed because existing edits extend past the shortened sequence. Remove or shorten those edits first.";
     return;
@@ -97,7 +98,7 @@ function removeSequenceClip(index) {
     $("sequenceStatus").textContent = "This clip cannot be removed because the presenter inset extends past the shortened sequence. Adjust or remove the presenter first.";
     return;
   }
-  rebuildSequence(next.map(clip => clip.id));
+  rebuildSequence(next.map(clip => clip.id), transitions);
 }
 
 $("addSequenceClipBtn").onclick = () => $("sequenceClipInput").click();

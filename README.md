@@ -12,6 +12,7 @@
 - **Find and shorten pauses**: review quiet portions before making cuts.
 - **Edit visually**: cut ranges, timed text, imported SRT captions, privacy masks, Reframe/zoom portions, and illustrated annotations (icons, arrows, shapes, callouts, or uploaded logos). Draw custom pen and highlighter strokes directly on the recording, and group strokes to move, resize and time them together. Add timed cursor spotlights and click highlights, and mute or change volume over selected audio regions.
 - **Highlight tutorial actions**: manually place timed cursor spotlights and fading click rings, then move, resize, or restyle them.
+- **Adjust range speed**: open Speed, set From/To times, and apply 0.25×–4× speed, with preserved audio pitch, editable Speed blocks, and matching result previews and exports.
 - **Explain what matters**: pick a focus point in the video; choose original, wide, vertical or square aspect ratios.
 - **Build a main-video sequence**: arrange up to eight clips with matching dimensions, frame rate, and audio-track presence; add a movable presenter inset, choose the presenter/mixed audio, and optionally process the presenter background.
 - **Replace backgrounds** (optional): person-aware blur, solid color or an image, optionally restricted to a webcam area.

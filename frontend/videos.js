@@ -120,6 +120,7 @@ function drawPresenter(context) {
   const s=presenter.settings,t=video.currentTime-s.offset;
   if(t<0 || t>=s.trim_end-s.trim_start) {presenterVideo.pause();return;}
   const target=s.trim_start+t;
+  if(presenterVideo.playbackRate!==video.playbackRate)presenterVideo.playbackRate=video.playbackRate;
   if(presenterVideo.readyState>=1 && Math.abs(presenterVideo.currentTime-target)>.15 && !presenterVideo.seeking)presenterVideo.currentTime=target;
   if(!video.paused && presenterVideo.paused)presenterVideo.play().catch(()=>{});
   if(video.paused)presenterVideo.pause();

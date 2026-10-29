@@ -1,0 +1,57 @@
+import assert from 'node:assert/strict';
+import {chromium,firefox,webkit} from 'playwright';
+const engine=process.env.FREEEDIT_TEST_ENGINE || 'chrome';
+const browser=await ({chrome:chromium,firefox,webkit}[engine]).launch({headless:true,...(engine==='chrome'?{channel:'chrome'}:{})});
+const page=await browser.newPage({viewport:{width:1440,height:1000}});
+const errors=[];page.on('pageerror',e=>errors.push(e.message));
+try {
+ await page.goto(process.env.FREEEDIT_TEST_URL || 'http://127.0.0.1:8765/');
+ await page.locator('#fileInput').setInputFiles('/tmp/freeedit-ci-sample.mp4');
+ await page.locator('#editorView:not(.hidden)').waitFor();
+ await page.waitForFunction(()=>video.readyState>=2);
+ await page.locator('.workspace-rail button').filter({hasText:/^Speed$/}).click();
+ assert.equal(await page.locator('#speedEnd').inputValue(),'4');
+ await page.evaluate(()=>{video.currentTime=.5;});
+ await page.locator('#speedStartNow').click();
+ assert.equal(Number(await page.locator('#speedStart').inputValue()),.5);
+ await page.evaluate(()=>{rangeSelection.range={start:1,end:3};displayRangeSelection();});
+ await page.locator('[data-action="speed"]').click();
+ assert.equal(await page.locator('#speedStart').inputValue(),'1.000');
+ assert.equal(await page.locator('#speedEnd').inputValue(),'3.000');
+ await page.evaluate(()=>clearRangeSelection());
+ await page.locator('#speedStart').fill('1');
+ await page.locator('#speedEnd').fill('3');
+ await page.locator('#addSpeedRange').click();
+ assert.equal(await page.evaluate(()=>S.edits[0].rate),2);
+ assert.match(await page.locator('#speedTrack').innerText(),/2×/);
+ await page.evaluate(()=>{video.currentTime=1.5;});
+ await page.waitForFunction(()=>video.playbackRate===2);
+ await page.evaluate(()=>{video.currentTime=3.5;});
+ await page.waitForFunction(()=>video.playbackRate===1);
+ await page.locator('#speedTrack .timeline-block').click();
+ await page.locator('.card.selected [data-k="rate"]').fill('0.5');
+ assert.equal(await page.evaluate(()=>S.edits[0].rate),.5);
+ await page.locator('.card.selected [data-k="rate"]').press('Tab');
+ await page.locator('#undoBtn').click();
+ assert.equal(await page.evaluate(()=>S.edits[0].rate),2);
+ await page.locator('#redoBtn').click();
+ assert.equal(await page.evaluate(()=>S.edits[0].rate),.5);
+ await page.evaluate(async()=>{const project=await validateProject(projectDocument());applyProject(project);});
+ assert.equal(await page.evaluate(()=>S.edits[0].rate),.5);
+ // Render a preview crossing both speed boundaries.
+ await page.evaluate(()=>{rangeSelection.range={start:0,end:4};$('denoise').checked=false;$('resultPreviewBtn').click();});
+ await page.locator('#resultPreviewDialog[open]').waitFor({timeout:60000});
+ await page.waitForFunction(()=>$('rangePreviewVideo').readyState>=1);
+ assert.ok(Math.abs(await page.locator('#rangePreviewVideo').evaluate(v=>v.duration)-6)<.12);
+ await page.locator('#resultPreviewDialog button').filter({hasText:'Back to editing'}).click();
+ await page.evaluate(()=>startExport());
+ await page.waitForFunction(()=>S.resultSrc && !S.operation,null,{timeout:60000});
+ assert.equal(await page.evaluate(()=>S.submittedRanges.reduce((s,[a,b,r=1])=>s+(b-a)/r,0)),6);
+ // Actual second-clip upload exercises the previously broken API path.
+ await page.evaluate(()=>setReview(false));
+ await page.locator('#sequenceClipInput').setInputFiles('/tmp/freeedit-ci-sample.mp4');
+ await page.waitForFunction(()=>sequenceClips.length===2,null,{timeout:60000});
+ assert.equal(await page.evaluate(()=>sequenceTransitions.length),1);
+ assert.deepEqual(errors,[]);
+ console.log('Browser speed, undo/redo, persistence, preview/export and sequence append passed.');
+}finally{await browser.close();}

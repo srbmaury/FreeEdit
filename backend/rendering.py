@@ -28,7 +28,7 @@ def render(source: Path, work: Path, settings: dict, progress, presenter: Path |
         return pipeline.process(source, work, denoise_audio=settings["denoise"], atten_lim=settings["atten_lim"],
             preset=settings["preset"], edits=settings["edits"], cuts=settings["cuts"], progress=progress,
             background=settings.get("background") if not settings.get("presenter") else None,
-            audio_regions=settings.get("audio_regions"), framing=settings.get("framing"), reframe=settings.get("reframe"), audio=settings.get("audio"),
+            speed_regions=settings.get("speed_regions"), audio_regions=settings.get("audio_regions"), framing=settings.get("framing"), reframe=settings.get("reframe"), audio=settings.get("audio"),
             audio_offset=audio_offset, audio_duration=audio_duration)
     finally:
         shutil.rmtree(composition_work, ignore_errors=True)
@@ -68,6 +68,8 @@ def preview(source: Path, presenter: Path | None, work: Path, settings: dict,
                 "end": (edit["end"] if animated else min(end, edit["end"])) - start})
     local["audio_regions"] = [{**region,"start":region["start"]-start,"end":region["end"]-start}
         for region in settings.get("audio_regions", [])]
+    local["speed_regions"] = [{**r,"start":max(start,r["start"])-start,"end":min(end,r["end"])-start}
+        for r in settings.get("speed_regions", []) if r["end"] > start and r["start"] < end]
     if local.get("reframe"):
         # Keep complete section lengths, including negative local starts, so
         # clipping a preview never restarts or shortens a zoom transition.
@@ -82,11 +84,13 @@ def preview(source: Path, presenter: Path | None, work: Path, settings: dict,
             # No presenter frames in this interval; preserve its audio policy.
             other["offset"] = end - start + 1
             other["trim_start"] = other["trim_end"] - .001
-    offset = sum(max(0, min(b, start) - a) for a, b in keep if a < start)
+    segments = pipeline.speed_segments(keep, settings.get("speed_regions", []))
+    offset = sum(max(0, min(b, start)-a)/rate for a,b,rate in segments if a < start)
+    output_duration = sum((b-a)/rate for a,b,rate in segments)
     try:
-        output = render(sample, work, local, progress, presenter, offset, sum(b - a for a, b in keep))
+        output = render(sample, work, local, progress, presenter, offset, output_duration)
     finally:
         sample.unlink(missing_ok=True)
         (work / "raw.wav").unlink(missing_ok=True)
         shutil.rmtree(work / "denoised", ignore_errors=True)
-    return output, ranges
+    return output, pipeline.speed_segments(ranges, settings.get("speed_regions", [])) if settings.get("speed_regions") else ranges

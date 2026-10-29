@@ -23,13 +23,14 @@
     Reframe: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M10 4v16"/>',
     Captions: '<rect x="2" y="4" width="20" height="16" rx="3"/><path d="M6 11h5m2 0h5M6 15h8m2 0h2"/>',
     Background: '<rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="12" cy="9" r="3"/><path d="M6 20v-2a6 6 0 0 1 12 0v2"/>',
+    Speed: '<path d="M4 17a9 9 0 1 1 16 0M12 13l5-6"/><circle cx="12" cy="13" r="2"/>',
     Cut: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="m8 8 13 13M8 16 21 3"/>',
     Text: '<path d="M4 6V3h16v3M12 3v18m-4 0h8"/>',
     'Hide area': '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="m4 18 16-12M3 12l9-7m0 14 9-7"/>',
     Export: '<path d="M12 16V3m-5 5 5-5 5 5M4 15v6h16v-6"/>'
   };
   const panes = {};
-  for (const [name, node] of [["videos", byId("videosPanel")], ["cut", byId("cutDraftPanel")], ["edits", edits], ["audio", noise], ["pauses", pauses], ["background", byId("backgroundPanel")], ["reframe", byId("reframePanel")], ["annotations", byId("annotationsPanel")], ["draw", byId("drawingPanel")], ["captions", byId("captionsPanel")], ["export", exportPanel]]) {
+  for (const [name, node] of [["videos", byId("videosPanel")], ["cut", byId("cutDraftPanel")], ["speed", byId("speedPanel")], ["edits", edits], ["audio", noise], ["pauses", pauses], ["background", byId("backgroundPanel")], ["reframe", byId("reframePanel")], ["annotations", byId("annotationsPanel")], ["draw", byId("drawingPanel")], ["captions", byId("captionsPanel")], ["export", exportPanel]]) {
     const pane = document.createElement("section");
     pane.id = `workspace-${name}`;
     pane.className = "workspace-pane";
@@ -42,7 +43,7 @@
   editor.prepend(rail);
   const tasks = [
     ["videos", "Videos"], ["audio", "Audio"], ["pauses", "Pauses"],
-    ["background", "Background"], ["reframe", "Reframe"], ["annotations", "Annotations"], ["draw", "Draw", "draw"], ["captions", "Captions"], ["cut", "Cut", "cut"], ["edits", "Text", "text"], ["edits", "Hide area", "hide"],
+    ["background", "Background"], ["reframe", "Reframe"], ["annotations", "Annotations"], ["draw", "Draw", "draw"], ["captions", "Captions"], ["cut", "Cut", "cut"], ["speed", "Speed"], ["edits", "Text", "text"], ["edits", "Hide area", "hide"],
     ["export", "Export"]
   ];
   let current = "edits";
@@ -147,10 +148,11 @@
   const heading = document.createElement("div");
   heading.className = "inspector-heading"; heading.textContent = "Edit settings";
   side.prepend(heading);
-  const labels = {videos: "Videos", cut: "Cut", edits: "Your edits", audio: "Audio", pauses: "Pauses", background: "Background", reframe: "Reframe", annotations: "Annotations", draw: "Draw", captions: "Captions", export: "Export"};
+  const labels = {videos: "Videos", cut: "Cut", speed: "Speed", edits: "Your edits", audio: "Audio", pauses: "Pauses", background: "Background", reframe: "Reframe", annotations: "Annotations", draw: "Draw", captions: "Captions", export: "Export"};
   const syncHeading = () => { heading.textContent = current === "edits" && S.selected != null ? "Edit properties" : labels[current]; };
   window.addEventListener("freeedit:workspace", event => {
     const reason = event.detail;
+    if (reason === "speed-settings") activate("speed");
     if (reason === "audio-regions") activate("audio");
     if (reason === "videos") activate("videos");
     if (reason === "cut") {

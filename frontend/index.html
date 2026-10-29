@@ -145,6 +145,7 @@
               <div id="waveformLabel" class="timeline-label waveform-label">Audio</div>
               <div id="pauseLabel" class="timeline-label">Pauses</div>
               <div id="audioRegionLabel" class="timeline-label">Volume</div>
+              <div id="speedLabel" class="timeline-label">Speed</div>
               <div id="cutLabel" class="timeline-label">Cuts</div>
               <div id="maskLabel" class="timeline-label">Masks</div>
               <div id="textLabel" class="timeline-label">Text</div><div id="annotationLabel" class="timeline-label">Notes</div><div id="zoomLabelTrack" class="timeline-label">Zoom</div>
@@ -162,6 +163,7 @@
                 </div>
                 <div id="pauseTrack" class="timeline-track" aria-label="Suggested pauses"></div>
                 <div id="audioRegionTrack" class="timeline-track" aria-label="Audio mute and volume regions"></div>
+                <div id="speedTrack" class="timeline-track" aria-label="Speed ranges"></div>
                 <div id="cutTrack" class="timeline-track" aria-label="Cuts"></div>
                 <div id="maskTrack" class="timeline-track" aria-label="Masks"></div>
                 <div id="textTrack" class="timeline-track" aria-label="Text overlays"></div><div id="annotationTrack" class="timeline-track" aria-label="Annotations"></div><div id="zoomTrack" class="timeline-track" aria-label="Zoom sections"></div>
@@ -333,6 +335,16 @@
           <button id="captionImportBtn" type="button">Import SRT subtitles…</button>
           <input id="captionInput" type="file" accept=".srt,text/plain" hidden>
           <p id="captionStatus" class="small" role="status"></p>
+        </section>
+        <section id="speedPanel" class="panel">
+          <h2>Change speed</h2>
+          <p class="small">Choose the start and end on the original recording. Audio pitch is preserved.</p>
+          <label class="field"><span>From (seconds)</span><div class="with-btn"><input id="speedStart" type="number" min="0" step=".01" value="0"><button id="speedStartNow" type="button" class="mini">Use playhead</button></div></label>
+          <label class="field"><span>To (seconds)</span><div class="with-btn"><input id="speedEnd" type="number" min="0" step=".01" value="1"><button id="speedEndNow" type="button" class="mini">Use playhead</button></div></label>
+          <label class="field"><span>Speed multiplier</span><input id="speedRate" type="number" min=".25" max="4" step=".25" value="2"></label>
+          <div class="row"><button id="speedUseRange" type="button" class="mini">Use timeline selection</button><button id="addSpeedRange" type="button">Apply speed</button></div>
+          <p class="small">0.5× plays slower; 2× plays faster. Select a Speed block later to change its timing or multiplier.</p>
+          <p id="speedStatus" class="small" role="status" aria-live="polite"></p>
         </section>
         <section id="cutDraftPanel" class="panel">
           <h2 class="section-title">Remove a section</h2>
@@ -577,6 +589,12 @@
       <div class="times"></div>
     </div>
   </template>
+  <template id="speedCardTpl">
+    <div class="card"><div class="card-head"><span class="badge">Speed</span><button class="card-title" type="button" aria-expanded="false"></button><button class="del" aria-label="Delete speed range">✕</button></div>
+      <label class="field"><span>Speed multiplier</span><input data-k="rate" type="number" min=".25" max="4" step=".25"></label>
+      <p class="small">Audio pitch is preserved. Times refer to the original recording.</p><div class="times"></div>
+    </div>
+  </template>
   <template id="audioRegionCardTpl">
     <div class="card">
       <div class="card-head"><span class="badge audio">Audio</span><button class="card-title" type="button" aria-expanded="false"></button><button class="del" title="Delete audio region" aria-label="Delete audio region">✕</button></div>
@@ -720,5 +738,6 @@
   <script src="canvas-frame.js"></script>
   <script src="result-preview.js"></script>
   <script src="audio-regions.js"></script>
+  <script src="speed-regions.js"></script>
 </body>
 </html>

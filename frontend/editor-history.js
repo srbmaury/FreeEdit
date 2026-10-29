@@ -60,7 +60,6 @@ function refreshExportState() {
   if (typeof refreshResultPreview === "function") refreshResultPreview();
   $("undoBtn").disabled = !S.undo.length;
   $("redoBtn").disabled = !S.redo.length;
-  const removed = cutRanges().reduce((sum, [a, b]) => sum + b - a, 0);
   $("noisePreviewBtn").disabled = !!S.operation || !!getPresenterSettings();
   $("noisePreviewBtn").title = getPresenterSettings() ? "The noise sample uses the main recording. Export to hear noise reduction on the combined sound." : "";
   const cuts = S.edits.filter(e => e.type === "cut").length;
@@ -69,11 +68,12 @@ function refreshExportState() {
   const reframe = portions ? `${portions} ${portions === 1 ? "portion" : "portions"}`
     : S.reframe && (S.reframe.aspect !== "original" || S.reframe.zoom > 1.001) ? "whole video" : "off";
   const summary = [
-    `${fmt(Math.max(0, duration() - removed))} output`,
+    `${fmt(keptRangesForExport().reduce((sum,[a,b,rate=1])=>sum+(b-a)/rate,0))} output`,
     `${cuts} ${cuts === 1 ? "cut" : "cuts"}`,
     `${masks} ${masks === 1 ? "mask" : "masks"}`,
     `Reframe ${reframe}`,
     `${S.edits.filter(e=>e.type==="audio").length} audio regions`,
+    `${S.edits.filter(e=>e.type==="speed").length} speed ranges`,
     `Noise reduction ${$("denoise").checked ? "on" : "off"}`,
   ];
   if (getBackgroundSettings() && $("exportPreset").value !== "audio_only") summary.push(`Background ${S.background.mode}`);
@@ -108,7 +108,7 @@ $("backToEditBtn").onclick = () => setReview(false);
 $("reviewBtn").onclick = () => setReview(true);
 // Mirror the renderer's retained intervals, including its tiny-fragment rules.
 function keptRangesForExport() {
-  return exportRules.retainedRanges(duration(), cutRanges());
+  return exportRules.speedRanges(exportRules.retainedRanges(duration(), cutRanges()), S.edits);
 }
 function mapComparisonTime(t, fromOriginal) {
   return exportRules.comparisonTime(S.submittedRanges, t, fromOriginal);

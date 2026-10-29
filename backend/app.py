@@ -308,7 +308,7 @@ async def add_sequence_clip(job_id: str, request: Request, filename: str):
         source.replace(destination)
         clips.append({"id": clip_id, "name": filename[:255], "file": destination.name, "duration": uploaded["duration"]})
         try:
-            transitions = copy.deepcopy(job.get("sequence_transitions") or [{"type":"cut","duration":0} for _ in clips[1:]])
+            transitions = copy.deepcopy(job.get("sequence_transitions") or [{"type":"cut","duration":0} for _ in clips[1:-1]])
             transitions.append({"type":"cut","duration":0})
             media = await anyio.to_thread.run_sync(clip_sequence.rebuild, JOBS_DIR / job_id, clips, transitions)
         except pipeline.PipelineError as exc:
@@ -484,7 +484,11 @@ def _run(job_id: str, req: ProcessRequest, previous: dict) -> None:
     _update(job_id, status="processing", stage="Starting", progress=None, error=None, error_code=None, output=None)
     try:
         source = _working_source(job_id)
-        require_export_space(work, previous["media"]["duration"], previous["media"]["audio_channels"], background=bool(req.background))
+        source_duration = previous["media"]["duration"]
+        keep = pipeline.kept_ranges([c.model_dump() for c in req.cuts], source_duration) or [(0, source_duration)]
+        segments = pipeline.speed_segments(keep, [r.model_dump() for r in req.speed_regions])
+        output_duration = sum((b-a)/rate for a,b,rate in segments)
+        require_export_space(work, max(source_duration, output_duration), previous["media"]["audio_channels"], background=bool(req.background))
         for stale in [*work.glob("output.*"), *work.glob("text_*.png"), work / "raw.wav"]:
             stale.unlink(missing_ok=True)
         shutil.rmtree(work / "denoised", ignore_errors=True)

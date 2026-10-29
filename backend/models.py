@@ -168,6 +168,10 @@ class AudioRegion(TimeRange):
     fade: float = Field(default=.05, ge=0, le=.25)
 
 
+class SpeedRegion(TimeRange):
+    rate: float = Field(ge=.25, le=4)
+
+
 class AudioSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     level_speech: bool = False
@@ -197,6 +201,7 @@ class ProcessRequest(BaseModel):
     reframe: ReframeSettings | None = None
     framing: FramingSettings | None = None
     audio: AudioSettings = Field(default_factory=AudioSettings)
+    speed_regions: list[SpeedRegion] = Field(default_factory=list, max_length=20)
     audio_regions: list[AudioRegion] = Field(default_factory=list, max_length=50)
     denoise: bool = True
     atten_lim: int | None = Field(default=None, ge=0, le=100)
@@ -244,7 +249,10 @@ class ProcessRequest(BaseModel):
             raise HTTPException(422, "This recording has no audio to export.")
         if self.audio_regions and not media["has_audio"] and (not self.presenter or self.presenter.sound == "muted"):
             raise HTTPException(422, "Audio regions require an audio track.")
-        for item in [*self.edits, *self.cuts, *self.audio_regions]:
+        ordered = sorted(self.speed_regions, key=lambda r: r.start)
+        if any(a.end > b.start for a, b in zip(ordered, ordered[1:])):
+            raise HTTPException(422, "Speed regions cannot overlap.")
+        for item in [*self.edits, *self.cuts, *self.audio_regions, *self.speed_regions]:
             if item.end > media["duration"] + 0.05:
                 raise HTTPException(422, "Edit extends beyond the recording.")
             item.end = min(item.end, media["duration"])

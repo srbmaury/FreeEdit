@@ -11,6 +11,7 @@ export function buildExportPayload(document, adapters) {
   }) : [];
   return {
     audio: structuredClone(audio),
+    ...(edits.some(e=>e.type==="speed") ? {speed_regions:edits.filter(e=>e.type==="speed").map(({start,end,rate})=>({start,end,rate}))} : {}),
     ...(edits.some(e=>e.type==="audio") ? {audio_regions:edits.filter(e=>e.type==="audio").map(({start,end,volume,fade})=>({start,end,volume,fade}))} : {}),
     presenter: structuredClone(presenter),
     ...(framing && videoOutput ? {framing: structuredClone(framing)} : {}),

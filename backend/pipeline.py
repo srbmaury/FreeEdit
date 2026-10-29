@@ -476,6 +476,45 @@ def build_cuts(
     return parts + audio_parts, "[vcut]", audio_out
 
 
+def speed_segments(keep, regions):
+    """Return retained source intervals and their playback rates."""
+    segments = []
+    for a, b in keep:
+        boundaries = sorted({a, b, *[t for r in regions for t in (r["start"], r["end"]) if a < t < b]})
+        for start, end in zip(boundaries, boundaries[1:]):
+            rate = next((r["rate"] for r in regions if r["start"] <= start < r["end"]), 1)
+            segments.append((start, end, rate))
+    return segments
+
+
+def build_speed(vlabel, alabel, segments):
+    """Retime a cut-closed stream; video streams without split-frame queues."""
+    parts = []
+    cursor = 0
+    shifts = []
+    for a, b, rate in segments:
+        length = b - a
+        shifts.append(f"min(max(T-{cursor:.9f},0),{length:.9f})*{1 / rate - 1:.9f}")
+        cursor += length
+    if vlabel:
+        parts.append(f"{vlabel}setpts='(T+({_sum_expression(shifts)}))/TB'[speedv]")
+    if alabel:
+        inputs = [f"[speedin{i}]" for i in range(len(segments))]
+        if len(inputs) > 1:
+            parts.append(f"{alabel}asplit={len(inputs)}{''.join(inputs)}")
+        else:
+            inputs = [alabel]
+        cursor = 0
+        for i, (a, b, rate) in enumerate(segments):
+            length = b - a
+            # atempo preserves speech pitch. Chain factors below its 0.5 minimum.
+            tempo = f"atempo=0.5,atempo={rate * 2:.9f}" if rate < .5 else f"atempo={rate:.9f}"
+            parts.append(f"{inputs[i]}atrim=start={cursor:.9f}:end={cursor + length:.9f},asetpts=PTS-STARTPTS,{tempo}[speeda{i}]")
+            cursor += length
+        parts.append(f"{''.join(f'[speeda{i}]' for i in range(len(segments)))}concat=n={len(segments)}:v=0:a=1[speedaudio]")
+    return parts, "[speedv]" if vlabel else None, "[speedaudio]" if alabel else None
+
+
 def build_audio_cuts(alabel: str, keep: list[tuple[float, float]]) -> tuple[list[str], str]:
     k = len(keep)
     parts = []
@@ -621,6 +660,7 @@ def process(
     reframe: dict | None = None,
     audio: dict | None = None,
     audio_regions: list[dict] | None = None,
+    speed_regions: list[dict] | None = None,
     audio_offset: float = 0,
     audio_duration: float | None = None,
 ) -> Path:
@@ -637,7 +677,8 @@ def process(
         clean_wav = denoise(raw, work / "denoised", atten_lim, info.duration)
 
     keep = kept_ranges(cuts, info.duration)
-    retained_duration = sum(b - a for a, b in keep) if keep else info.duration
+    segments = speed_segments(keep or [(0, info.duration)], speed_regions or [])
+    retained_duration = sum((b-a)/rate for a,b,rate in segments)
     # Level before regional adjustments so compression cannot undo a quiet
     # region. Global fades remain on the retained output clock, after cuts.
     region_audio = "anull"
@@ -649,16 +690,19 @@ def process(
     if not info.has_video or preset == "audio_only":
         out = work / "output.wav"
         args = ["-i", str(clean_wav or source), "-vn"]
-        if keep:
+        if keep or speed_regions:
             audio_parts = [f"[0:a:0]asetpts=PTS-STARTPTS,{region_audio}[regionalaudio]"] if audio_regions else []
-            cut_parts, alabel = build_audio_cuts("[regionalaudio]" if audio_regions else "[0:a:0]", keep)
+            cut_parts, alabel = build_audio_cuts("[regionalaudio]" if audio_regions else "[0:a:0]", keep or [(0,info.duration)])
             audio_parts += cut_parts
+            if speed_regions:
+                speed_parts, _, alabel = build_speed(None, alabel, segments)
+                audio_parts += speed_parts
             audio_parts.append(f"{alabel}{finish_audio}[finishedaudio]")
             args += ["-filter_complex", ";".join(audio_parts), "-map", "[finishedaudio]"]
         else:
             args += ["-map", "0:a:0", "-af", ("asetpts=PTS-STARTPTS,"+region_audio+"," if audio_regions else "")+finish_audio]
         args += ["-ar", "48000", "-c:a", "pcm_s16le", str(out)]
-        _run_ffmpeg(args, sum(b - a for a, b in keep) if keep else info.duration, "Exporting audio", progress)
+        _run_ffmpeg(args, retained_duration, "Exporting audio", progress)
         return out
 
     settings = EXPORT_PRESETS[preset]
@@ -722,6 +766,10 @@ def process(
         cut_parts, vlabel, alabel = build_cuts(vlabel, audio_in, keep)
         parts += cut_parts
         out_duration = sum(b - a for a, b in keep)
+    if speed_regions:
+        speed_parts, vlabel, alabel = build_speed(vlabel, alabel or audio_in, segments)
+        parts += speed_parts
+        out_duration = retained_duration
     # Every video preset produces compatible H.264 MP4 with even dimensions.
     parts.append(f"{vlabel}scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p[vout]")
     if audio_in:

@@ -48,10 +48,15 @@ export function validateProjectDocument(value, {EditorModel, AnnotationModel}) {
   if ((settings.preset === "audio_only" && !source.has_audio && !presenter?.source.has_audio) || (source.has_video && (!source.width || !source.height))) fail();
   if (!Array.isArray(value.edits) || value.edits.length > 200) fail();
   const reframeEdits = [];
+  const speedEdits = [];
   const edits = value.edits.map(edit => {
     if (!edit || !EditorModel.TIMELINE_TYPES.includes(edit.type) || !finite(edit.start, 0, timelineDuration) ||
         !finite(edit.end, 0, timelineDuration + 0.05) || edit.end <= edit.start) fail();
     const result = {type: edit.type, start: edit.start, end: Math.min(edit.end, timelineDuration)};
+    if (result.type === "speed") {
+      if (EditorModel.validateSpeed(edit,timelineDuration,speedEdits)) fail();
+      result.rate=edit.rate; speedEdits.push(result);
+    }
     if (result.type === "audio") {
       if (EditorModel.validateAudioRegion(edit,timelineDuration)) fail();
       Object.assign(result,{volume:edit.volume,fade:edit.fade});

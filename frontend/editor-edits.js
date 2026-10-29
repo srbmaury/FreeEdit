@@ -91,6 +91,11 @@ function duplicateEdit(id = S.selected) {
   const original = getEdit(id);
   if (!original) return;
   const copy = structuredClone(original);
+  if (copy.type === "speed") {
+    const length=copy.end-copy.start; copy.start=copy.end; copy.end=copy.start+length;
+    const error=EditorModel.validateSpeed(copy,duration(),S.edits);
+    if(error){showProjectMessage("Cannot duplicate speed range",error,null,"OK");return;}
+  }
   if (copy.type === "reframe") {
     const length = copy.end - copy.start;
     copy.start = copy.end; copy.end = +(copy.start + length).toFixed(4);
@@ -157,6 +162,7 @@ function select(id) {
 
 function cardTitle(e) {
   const range = `${fmt(e.start)}–${fmt(e.end)}`;
+  if (e.type === "speed") return `${e.rate}× speed · ${range}`;
   if (e.type === "audio") return `${e.volume===0?"Mute":Math.round(e.volume*100)+"% volume"} · ${range}`;
   if (e.type === "cut") return `${range} (${(e.end - e.start).toFixed(1)}s)`;
   if (e.type === "annotation") return `${e.kind==="drawing"&&Array.isArray(e.strokes) ? "Drawing group ("+e.strokes.length+" strokes)" : e.kind === "spotlight" ? "Cursor spotlight" : e.kind === "click" ? "Click highlight" : e.kind === "callout" ? e.text : e.kind} · ${range}`;
@@ -174,7 +180,7 @@ function renderList() {
   renderTimeline();
 
   for (const e of EditorModel.sorted(S.edits).filter(e=>e.type!=="reframe")) {
-    const tpl = $({ hide: "hideCardTpl", text: "textCardTpl", cut: "cutCardTpl", audio: "audioRegionCardTpl", annotation: "annotationCardTpl" }[e.type]).content.cloneNode(true);
+    const tpl = $({ hide: "hideCardTpl", text: "textCardTpl", cut: "cutCardTpl", speed: "speedCardTpl", audio: "audioRegionCardTpl", annotation: "annotationCardTpl" }[e.type]).content.cloneNode(true);
     const card = tpl.querySelector(".card");
     card.dataset.id = e.id;
     card.dataset.start = e.start;
@@ -216,6 +222,7 @@ function renderList() {
           if (k === "start") v = clamp(v, 0, e.end);
           if (k === "end") v = clamp(v, e.start, duration());
         }
+        if(e.type==="speed" && EditorModel.validateSpeed({...e,[k]:v},duration(),S.edits,e.id)){input.value=e[k];return;}
         if(e.type==="audio" && EditorModel.validateAudioRegion({...e,[k]:v},duration())){input.value=k==="volume"?e[k]*100:e[k];return;}
         if(e.type==="annotation" && AnnotationModel.validate({...e,[k]:v},duration(),S.job.width,S.job.height)){input.value=e[k];return;}
         commitEdit("edit:property", () => { e[k] = v; }, false);
@@ -275,6 +282,7 @@ function renderList() {
         const k = btn.dataset.now;
         const t = +sourcePlayer().currentTime.toFixed(2);
         const next = {...e,[k]:k==="start"?Math.min(t,e.end):Math.max(t,e.start)};
+        if(e.type==="speed" && EditorModel.validateSpeed(next,duration(),S.edits,e.id))return;
         if(e.type==="audio" && EditorModel.validateAudioRegion(next,duration()))return;
         checkpoint();
         if (k === "start") { e.start = Math.min(t, e.end); }

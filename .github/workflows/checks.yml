@@ -90,6 +90,7 @@ jobs:
           node tests/browser_features.mjs
           node tests/browser_cursor.mjs
           node tests/browser_audio_regions.mjs
+          node tests/browser_speed.mjs
       - name: Server diagnostics on failure
         if: failure()
         run: cat /tmp/freeedit-browser-server.log

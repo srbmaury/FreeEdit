@@ -390,3 +390,5 @@ button.primary, a.button.primary { background: var(--accent); color: var(--accen
 
 .timeline-block.audio, .badge.audio { background: #0e7490; color: #fff; }
 #audioRegionsPanel { margin-top: 22px; border-top: 1px solid var(--border); padding-top: 16px; }
+
+.timeline-block.speed { background: #165e68; border-color: #53c7d5; }

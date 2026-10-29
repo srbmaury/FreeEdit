@@ -317,6 +317,7 @@ function skipCuts() {
 }
 
 function tick() {
+  updatePlaybackSpeed();
   if (S.reviewLoop) {
     const loop = S.reviewLoop;
     if (sourcePlayer().currentTime >= loop.end) sourcePlayer().currentTime = loop.start;
@@ -343,7 +344,7 @@ function updateTransport() {
   const d = duration();
   const removed = cutRanges().reduce((sum, [a, b]) => sum + (b - a), 0);
   $("timeLabel").innerHTML = `${fmt(sourcePlayer().currentTime)} / ${fmt(d)}` +
-    (removed > 0 ? `<br><span class="final-len">Final ${fmt(d - removed)}</span>` : "");
+    (removed > 0 || S.edits.some(e=>e.type==="speed") ? `<br><span class="final-len">Final ${fmt(keptRangesForExport().reduce((sum,[a,b,rate=1])=>sum+(b-a)/rate,0))}</span>` : "");
   if (document.activeElement !== $("scrubber")) {
     $("scrubber").value = d ? (sourcePlayer().currentTime / d) * 1000 : 0;
   }

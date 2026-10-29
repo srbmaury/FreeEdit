@@ -4,12 +4,13 @@
 // all have the same identity and original-source [start, end] interval.
 // Whole-video reframe, background and presenter remain scene-level settings.
 const EditorModel = (() => {
-  const TIMELINE_TYPES = Object.freeze(["cut", "hide", "text", "reframe", "annotation", "audio"]);
+  const TIMELINE_TYPES = Object.freeze(["cut", "hide", "text", "reframe", "annotation", "audio", "speed"]);
   const DEFAULT_REFRAME = Object.freeze({aspect: "original", zoom: 1, focus_x: .5, focus_y: .5});
 
   function limitError(edits) {
     if (edits.filter(edit => edit.type === "annotation" && edit.kind === "spotlight").length > 8) return "Keep at most 8 cursor spotlights. Remove a spotlight before adding another.";
     if (edits.filter(edit => edit.type === "audio").length > 50) return "Keep at most 50 audio regions.";
+    if (edits.filter(e=>e.type==="speed").length > 20) return "Keep at most 20 speed regions.";
     if (edits.length > 200) return "Keep at most 200 edits in a project.";
     if (edits.filter(edit => edit.type === "cut").length > 100) return "Keep at most 100 cuts. Remove a cut before adding another.";
     if (edits.reduce((count,edit)=>count+(["hide","text","annotation"].includes(edit.type) ? (edit.kind==="drawing" && Array.isArray(edit.strokes) ? edit.strokes.length : 1) : 0),0) > 100) return "Keep at most 100 masks, text and annotations.";
@@ -74,6 +75,11 @@ const EditorModel = (() => {
       edit.volume<0 || edit.volume>2 || edit.fade<0 || edit.fade>.25
       ? "Choose a valid audio range, volume from 0 to 200%, and boundary fade from 0 to 0.25 seconds." : null;
   }
+  function validateSpeed(edit, duration, edits = [], ignoreId = null) {
+    if (!edit || ![edit.start,edit.end,edit.rate].every(Number.isFinite) || edit.start<0 || edit.end>duration+.005 || edit.end<=edit.start || edit.rate<.25 || edit.rate>4) return "Choose a valid range and speed from 0.25× to 4×.";
+    if (edits.some(e=>e.type==="speed" && e.id!==ignoreId && edit.start<e.end && edit.end>e.start)) return "Speed regions cannot overlap.";
+    return null;
+  }
   function styleProperties(edit) {
     if (!edit) return null;
     const fields = edit.type === "audio" ? ["volume", "fade"] : edit.type === "text" ? ["fontSize", "color", "font", "bg", "bold"]
@@ -89,7 +95,7 @@ const EditorModel = (() => {
     return result;
   }
   return Object.freeze({TIMELINE_TYPES, DEFAULT_REFRAME, limitError, isTimedEdit, sorted, byType,
-    validateAudioRegion, styleProperties, pastedStyle, sections, exportReframe, validateReframe, cutRanges, editableProperties});
+    validateSpeed, validateAudioRegion, styleProperties, pastedStyle, sections, exportReframe, validateReframe, cutRanges, editableProperties});
 })();
 
 // One mutation path for document edits. Frontend modules never need to know

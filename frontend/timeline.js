@@ -2,6 +2,7 @@
 
 const timeline = {zoom: 1, dragging: null};
 const timelineRows = [
+  {type: "speed", track: "speedTrack", label: "speedLabel"},
   {type: "audio", track: "audioRegionTrack", label: "audioRegionLabel"},
   {type: "cut", track: "cutTrack", label: "cutLabel"},
   {type: "hide", track: "maskTrack", label: "maskLabel"},
@@ -40,7 +41,7 @@ function renderTimeline() {
   for (const row of timelineRows) {
     const track = $(row.track);
     track.replaceChildren();
-    const visible = row.type === "cut" || (row.type === "audio" && S.edits.some(edit=>edit.type==="audio")) ||
+    const visible = row.type === "cut" || (["audio","speed"].includes(row.type) && S.edits.some(edit=>edit.type===row.type)) ||
       (S.job.has_video && S.edits.some(edit => edit.type === row.type));
     show(track, visible); show($(row.label), visible);
     if (!visible) continue;
@@ -62,7 +63,7 @@ function renderTimeline() {
       block.setAttribute("aria-pressed", String(edit.id === S.selected));
       const label = document.createElement("span");
       label.className = "block-label";
-      label.textContent = edit.type === "audio" ? (edit.volume===0?"Mute":Math.round(edit.volume*100)+"% volume") : edit.type === "text" ? edit.text || "Text" : edit.type === "hide" ? "Mask" : edit.type === "annotation" ? (edit.kind === "drawing" ? (edit.strokes ? "Drawing group" : "Drawing") : edit.kind === "spotlight" ? "Spotlight" : edit.kind === "click" ? "Click highlight" : "Annotation") : "Cut";
+      label.textContent = edit.type === "speed" ? `${edit.rate}×` : edit.type === "audio" ? (edit.volume===0?"Mute":Math.round(edit.volume*100)+"% volume") : edit.type === "text" ? edit.text || "Text" : edit.type === "hide" ? "Mask" : edit.type === "annotation" ? (edit.kind === "drawing" ? (edit.strokes ? "Drawing group" : "Drawing") : edit.kind === "spotlight" ? "Spotlight" : edit.kind === "click" ? "Click highlight" : "Annotation") : "Cut";
       block.append(label);
       for (const edge of ["l", "r"]) {
         const handle = document.createElement("span");
@@ -164,6 +165,7 @@ function startTimelineDrag(event, edit) {
     if (next.pointerId !== event.pointerId) return;
     if (!moved && Math.abs(next.clientX - x) < 3) return;
     if (!moved) { checkpoint(); moved = true; }
+    const previous = {start:edit.start,end:edit.end};
     const dt = (next.clientX - x) / width * duration();
     const minLength = Math.min(0.1, end - start);
     if (part === "start") edit.start = +clamp(start + dt, 0, end - minLength).toFixed(3);
@@ -173,6 +175,7 @@ function startTimelineDrag(event, edit) {
       edit.start = +(start + shift).toFixed(3);
       edit.end = +(end + shift).toFixed(3);
     }
+    if(edit.type==="speed" && EditorModel.validateSpeed(edit,duration(),S.edits,edit.id)){Object.assign(edit,previous);return;}
     positionTimelineBlock(block, edit);
     sourcePlayer().currentTime = part === "end" ? edit.end : edit.start;
     syncCard(edit);

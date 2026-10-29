@@ -4,11 +4,11 @@ export function recoverSubmission(submission, job) {
   if (!submission || submission.jobId !== job.id || submission.submissionId !== job.export_submission_id ||
       typeof submission.submissionId !== "string" || !submission.submissionId ||
       typeof submission.signature !== "string" || !submission.signature ||
-      !Array.isArray(submission.ranges) || !submission.ranges.length || submission.ranges.length > 101) return null;
+      !Array.isArray(submission.ranges) || !submission.ranges.length || submission.ranges.length > 141) return null;
   let previousEnd = -1;
   for (const range of submission.ranges) {
-    if (!Array.isArray(range) || range.length !== 2 || !range.every(Number.isFinite) ||
-        range[0] < 0 || range[0] < previousEnd || range[1] <= range[0] || range[1] > job.media.duration + .05) return null;
+    if (!Array.isArray(range) || ![2,3].includes(range.length) || !range.every(Number.isFinite) ||
+        (range.length===3 && (range[2]<.25 || range[2]>4)) || range[0] < 0 || range[0] < previousEnd || range[1] <= range[0] || range[1] > job.media.duration + .05) return null;
     previousEnd = range[1];
   }
   return {jobId: submission.jobId, submissionId: submission.submissionId,
@@ -29,10 +29,10 @@ export function retainedRanges(duration, mergedCuts) {
 
 export function comparisonTime(ranges, time, fromOriginal) {
   let elapsed = 0;
-  for (const [start, end] of ranges) {
-    if (fromOriginal && time < end) return elapsed + Math.max(0, time - start);
-    if (!fromOriginal && time < elapsed + end - start) return start + time - elapsed;
-    elapsed += end - start;
+  for (const [start, end, rate=1] of ranges) {
+    if (fromOriginal && time < end) return elapsed + Math.max(0, time - start)/rate;
+    if (!fromOriginal && time < elapsed + (end - start)/rate) return start + (time - elapsed)*rate;
+    elapsed += (end - start)/rate;
   }
   return fromOriginal ? elapsed : (ranges.at(-1)?.[1] || 0);
 }
@@ -43,4 +43,13 @@ export function recoverPreviewSubmission(submission, job) {
       submission.submissionId !== job.result_preview_submission_id ||
       typeof submission.signature !== "string") return null;
   return {id: submission.id, submissionId: submission.submissionId, signature: submission.signature};
+}
+
+export function speedRanges(ranges, edits) {
+  const speeds=edits.filter(e=>e.type==="speed");
+  if(!speeds.length)return ranges;
+  return ranges.flatMap(([a,b])=>{
+    const points=[...new Set([a,b,...speeds.flatMap(e=>[e.start,e.end]).filter(t=>t>a && t<b)])].sort((x,y)=>x-y);
+    return points.slice(0,-1).map((start,i)=>[start,points[i+1],speeds.find(e=>e.start<=start && start<e.end)?.rate ?? 1]);
+  });
 }

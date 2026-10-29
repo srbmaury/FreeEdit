@@ -26,7 +26,7 @@ function displayRangeSelection() {
 function clearRangeSelection() {
   rangeSelection.range = null; displayRangeSelection();
 }
-for (const [action, label] of [["cut", "Cut range"], ["reframe", "Reframe range"], ["audio", "Set volume"], ["preview", "Play range"], ["clear", "Clear"]]) {
+for (const [action, label] of [["cut", "Cut range"], ["reframe", "Reframe range"], ["audio", "Set volume"], ["speed", "Set speed"], ["preview", "Play range"], ["clear", "Clear"]]) {
   const button = document.createElement("button");
   button.type = "button"; button.className = "mini"; button.dataset.action = action; button.textContent = label;
   button.onclick = () => {
@@ -36,6 +36,12 @@ for (const [action, label] of [["cut", "Cut range"], ["reframe", "Reframe range"
     if (action === "preview") {
       sourcePlayer().currentTime = range.start; S.auditionUntil = range.end;
       sourcePlayer().play().catch(() => { S.auditionUntil = null; }); return;
+    }
+    if (action === "speed") {
+      useSpeedSelection();
+      window.dispatchEvent(new CustomEvent("freeedit:workspace", {detail:"speed-settings"}));
+      requestAnimationFrame(() => $("speedRate").focus());
+      return;
     }
     if (action === "audio") {
       $("audioRegionStart").value = range.start.toFixed(3);
