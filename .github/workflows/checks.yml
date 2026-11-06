@@ -73,7 +73,9 @@ jobs:
           sudo apt-get install -y ffmpeg
           python -m pip install -r requirements-web.lock
           npm install --no-save playwright@1.56.1
-          npx playwright install --with-deps ${{ matrix.engine }}
+          if [[ "$FREEEDIT_TEST_ENGINE" != chrome ]] || ! command -v google-chrome >/dev/null; then
+            npx playwright install --with-deps "$FREEEDIT_TEST_ENGINE"
+          fi
       - name: Generate synthetic sample and start editor
         run: |
           ffmpeg -hide_banner -loglevel error -y -f lavfi -i "testsrc2=size=320x180:rate=24:duration=4" -f lavfi -i "sine=frequency=440:duration=4" -c:v libx264 -preset ultrafast -threads 1 -c:a aac -shortest /tmp/freeedit-ci-sample.mp4
