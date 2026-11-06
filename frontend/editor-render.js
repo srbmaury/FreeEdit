@@ -11,6 +11,12 @@ function textMetrics(e) {
 }
 const textFont = (e) => `${e.bold ? 700 : 400} ${e.fontSize}px ${FONTS[e.font] || FONTS.sans}`;
 
+function overlayBounds(e) {
+  if(!e.motion)return e;
+  const {dx,dy,zoom}=EditorModel.motionAt(e.motion,e.start,e.end,video.currentTime);
+  return {x:e.x+dx+(1-zoom)*e.w/2,y:e.y+dy+(1-zoom)*e.h/2,w:e.w*zoom,h:e.h*zoom,zoom};
+}
+
 // Shared by the live preview and the PNG export, so what you see is what renders
 function paintText(c, e, ox, oy) {
   const m = textMetrics(e);
@@ -89,24 +95,39 @@ function render() {
       continue;
     }
     if (e.type === "hide") paintHide(e);
-    else if (e.type==="text") paintText(ctx,e,e.x,e.y);
-    else paintAnnotation(ctx,e,e.x,e.y,video.currentTime);
+    else if (!e.motion) {
+      if(e.type==="text")paintText(ctx,e,e.x,e.y);
+      else paintAnnotation(ctx,e,e.x,e.y,video.currentTime);
+    } else {
+      if(e.type==="text"){
+        const {w,h}=textMetrics(e);
+        e.w=w;e.h=h;
+      }
+      const b=overlayBounds(e);
+      ctx.save();
+      ctx.translate(b.x,b.y);
+      ctx.scale(b.zoom,b.zoom);
+      if(e.type==="text")paintText(ctx,e,0,0);
+      else paintAnnotation(ctx,e,0,0,video.currentTime);
+      ctx.restore();
+    }
   }
 
   if(S.drag?.kind==="drawing")paintPendingDrawing(ctx,S.drag);
 
   const sel = getEdit(S.selected);
   if (sel && (sel.type === "hide" || sel.type === "text" || sel.type === "annotation")) {
+    const b=overlayBounds(sel);
     ctx.save();
     ctx.lineWidth = 2 * lw;
     ctx.setLineDash([6 * lw, 4 * lw]);
     ctx.strokeStyle = isActive(sel) ? "#5b8ff0" : "rgba(91,143,240,0.45)";
-    ctx.strokeRect(sel.x, sel.y, sel.w, sel.h);
+    ctx.strokeRect(b.x,b.y,b.w,b.h);
     if (sel.type === "hide" || sel.type === "annotation") {
       ctx.setLineDash([]);
       ctx.fillStyle = "#5b8ff0";
       const hs = 10 * lw;
-      ctx.fillRect(sel.x + sel.w - hs / 2, sel.y + sel.h - hs / 2, hs, hs);
+      ctx.fillRect(b.x+b.w-hs/2,b.y+b.h-hs/2,hs,hs);
     }
     ctx.restore();
   }
@@ -167,12 +188,16 @@ function hitTest(p) {
   const lw = S.job.width / canvas.getBoundingClientRect().width;
   const sel = getEdit(S.selected);
   if (sel?.type === "hide" || sel?.type === "annotation") {
+    const b=overlayBounds(sel);
     const hs = 14 * lw;
-    if (Math.abs(p.x - (sel.x + sel.w)) < hs && Math.abs(p.y - (sel.y + sel.h)) < hs) {
+    if (Math.abs(p.x-(b.x+b.w))<hs && Math.abs(p.y-(b.y+b.h))<hs) {
       return { edit: sel, part: "resize" };
     }
   }
-  const inside = (e) => p.x >= e.x && p.x <= e.x + e.w && p.y >= e.y && p.y <= e.y + e.h;
+  const inside = (e) => {
+    const b=overlayBounds(e);
+    return p.x>=b.x&&p.x<=b.x+b.w&&p.y>=b.y&&p.y<=b.y+b.h;
+  };
   if (sel && (sel.type === "hide" || sel.type === "text" || sel.type === "annotation") && inside(sel)) return { edit: sel, part: "move" };
   for (let i = S.edits.length - 1; i >= 0; i--) {
     const e = S.edits[i];
@@ -186,9 +211,20 @@ canvas.addEventListener("pointerdown", (ev) => {
   const p = toSource(ev);
   if (!p.inside) return;
   canvas.setPointerCapture(ev.pointerId);
+  if(S.mode==="overlay-end"){
+    const e=getEdit(S.selected);
+    setMode("select");
+    if(!EditorModel.canTransform(e))return;
+    const next={...(e.motion||EditorModel.DEFAULT_MOTION),
+      dx:Math.round(clamp(p.x-e.x-e.w/2,-16384,16384)),
+      dy:Math.round(clamp(p.y-e.y-e.h/2,-16384,16384))};
+    commitEdit("edit:motion",()=>{e.motion=next;});
+    sourcePlayer().currentTime=e.end-Math.min(.05,(e.end-e.start)/2);
+    return;
+  }
   if(S.mode==="draw"){ev.preventDefault();beginDrawingStroke(p,ev.pointerId);return;}
-  if (S.mode === "hide" || S.mode === "background") {
-    S.drag = { background: S.mode === "background", kind: "new", x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+  if (["hide","background","zoom-region"].includes(S.mode)) {
+    S.drag = { background: S.mode === "background", regionZoom:S.mode==="zoom-region", kind: "new", x0: p.x, y0: p.y, x1: p.x, y1: p.y };
     return;
   }
   if (S.mode === "annotation") {
@@ -254,8 +290,10 @@ canvas.addEventListener("pointermove", (ev) => {
     }
   } else if (d.kind === "resize") {
     const minimum = d.edit.type === "annotation" ? 16 : 8;
-    const w=Math.round(clamp(p.x-d.edit.x,minimum,W-d.edit.x));
-    const h=Math.round(clamp(p.y-d.edit.y,minimum,H-d.edit.y));
+    const pose=d.edit.motion?EditorModel.motionAt(d.edit.motion,d.edit.start,d.edit.end,video.currentTime):{dx:0,dy:0,zoom:1};
+    const factor=(1+pose.zoom)/2;
+    const w=Math.round(clamp((p.x-d.edit.x-pose.dx)/factor,minimum,W-d.edit.x));
+    const h=Math.round(clamp((p.y-d.edit.y-pose.dy)/factor,minimum,H-d.edit.y));
     if(d.edit.kind==="drawing"&&AnnotationModel.validate({...d.edit,w,h},duration(),W,H))return;
     d.edit.w=w;d.edit.h=h;
   }
@@ -276,8 +314,14 @@ canvas.addEventListener("pointerup", (ev) => {
     editorStore.dispatch("edit:drag", () => {});
   }
   if (d?.kind === "new") {
+    if(d.regionZoom){
+      const p=toSource(ev);
+      d.x1=p.x;d.y1=p.y;
+    }
     const r = normRect(d);
-    if (r.w >= 8 && r.h >= 8 && d.background) {
+    if(d.regionZoom){
+      if(r.w>=8 && r.h>=8){setMode("select");setZoomRegion(r);}
+    } else if (r.w >= 8 && r.h >= 8 && d.background) {
       checkpoint();
       S.background.region = {x: Math.round(r.x), y: Math.round(r.y), w: Math.min(S.job.width - Math.round(r.x), Math.round(r.w)), h: Math.min(S.job.height - Math.round(r.y), Math.round(r.h))};
       syncBackgroundControls(); backgroundChanged(); setMode("select");

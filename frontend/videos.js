@@ -34,6 +34,11 @@ function syncVideos() {
   show($("presenterControls"), !!presenter);
   if (!presenter) return;
   const s = presenter.settings;
+  $("presenterOutline").checked = !!s.outline_color;
+  $("presenterOutlineColor").disabled = !s.outline_color;
+  $("presenterOutlineColor").value = s.outline_color || "#ffffff";
+  for(const input of $("presenterMotion").querySelectorAll("[data-motion]"))
+    input.value=(s.motion||EditorModel.DEFAULT_MOTION)[input.dataset.motion];
   const hasSound = s.sound !== "muted" && (S.job.has_audio || presenter.source.has_audio);
   $("exportPreset").querySelector('[value="audio_only"]').disabled = !hasSound;
   show($("audioOpts"), S.job.has_audio || presenter.source.has_audio);
@@ -98,10 +103,28 @@ function changedVideos() {
   combinedPlayer.pause(); show(combinedPlayer,false); syncVideos();refreshExportState();render();
   $("compositionStatus").textContent="Settings changed. Preview the combined video to check the result.";
 }
+$("presenterMotion").append(overlayMotionControls(()=>presenter?.settings.motion,next=>{
+  if(!presenter)return;
+  checkpoint();presenter.settings.motion=next;changedVideos();
+},()=>{
+  if(!presenter?.ready)return;
+  sourcePlayer().pause();
+  sourcePlayer().currentTime=presenter.settings.offset;
+  setMode("presenter-end");
+}));
 for(const [id,key] of [["presenterEffect","effect"],["compositionSound","sound"]]) $(id).onchange=event=>{checkpoint();presenter.settings[key]=event.target.value;changedVideos();};
 for(const [id,key] of [["presenterOffset","offset"],["presenterFrom","trim_start"],["presenterTo","trim_end"],["mainVolume","main_volume"],["presenterVolume","presenter_volume"]]) $(id).onchange=event=>{checkpoint();presenter.settings[key]=Number(event.target.value)/(id.endsWith("Volume")?100:1);changedVideos();};
 for(const key of ["x","y"]) $("presenter"+key.toUpperCase()).onchange=event=>{checkpoint();const b=presenter.settings.box;b[key]=Math.round(clamp(Number(event.target.value)||0,0,(key==="x"?S.job.width-b.w:S.job.height-b.h)));changedVideos();};
 $("presenterSize").onchange=()=>{checkpoint();resizeInset();changedVideos();};
+$("presenterOutline").onchange=event=>{
+  checkpoint();
+  if(event.target.checked)presenter.settings.outline_color=$("presenterOutlineColor").value;
+  else delete presenter.settings.outline_color;
+  changedVideos();
+};
+$("presenterOutlineColor").onchange=event=>{
+  checkpoint();presenter.settings.outline_color=event.target.value;changedVideos();
+};
 $("presenterCorner").onchange=()=>{checkpoint();cornerInset();changedVideos();};
 function validateVideos() {
   if(!presenter)return true;
@@ -115,6 +138,12 @@ function validateVideos() {
     window.dispatchEvent(new CustomEvent("freeedit:workspace",{detail:"videos"}));return false;
   }
 }
+function presenterBounds(s) {
+  const b=s.box;
+  if(!s.motion)return {...b,zoom:1,dx:0,dy:0};
+  const {dx,dy,zoom}=EditorModel.motionAt(s.motion,0,s.trim_end-s.trim_start,video.currentTime-s.offset);
+  return {x:b.x+dx+(1-zoom)*b.w/2,y:b.y+dy+(1-zoom)*b.h/2,w:b.w*zoom,h:b.h*zoom,zoom,dx,dy};
+}
 function drawPresenter(context) {
   if(!presenter?.ready)return;
   const s=presenter.settings,t=video.currentTime-s.offset;
@@ -125,10 +154,15 @@ function drawPresenter(context) {
   if(!video.paused && presenterVideo.paused)presenterVideo.play().catch(()=>{});
   if(video.paused)presenterVideo.pause();
   if(presenterVideo.readyState>=2){
-    const b=s.box;context.drawImage(presenterVideo,b.x,b.y,b.w,b.h);
+    const b=presenterBounds(s);context.drawImage(presenterVideo,b.x,b.y,b.w,b.h);
     context.save();context.strokeStyle=getComputedStyle(canvas).getPropertyValue("--accent");
     const line=S.job.width/canvas.getBoundingClientRect().width;context.lineWidth=2*line;
-    context.strokeRect(b.x,b.y,b.w,b.h);context.fillStyle=context.strokeStyle;
+    context.fillStyle=context.strokeStyle;
+    if(s.outline_color){
+      const thickness=Math.max(2,Math.min(8,Math.floor(Math.min(s.box.w,s.box.h)/30)))*b.zoom;
+      context.strokeStyle=s.outline_color;context.lineWidth=thickness;
+      context.strokeRect(b.x+thickness/2,b.y+thickness/2,b.w-thickness,b.h-thickness);
+    }else context.strokeRect(b.x,b.y,b.w,b.h);
     context.fillRect(b.x+b.w-8*line,b.y+b.h-8*line,8*line,8*line);context.restore();
   }
 }
@@ -155,12 +189,29 @@ let insetDrag = null;
 canvas.addEventListener("pointerdown", event => {
   // The Select preview tool can open the edits inspector; presenter dragging
   // must still work from there. A hit on the presenter reopens Videos settings.
-  if(!presenter?.ready || S.mode!=="select")return;
-  const p=toSource(event), b=presenter.settings.box, local=video.currentTime-presenter.settings.offset;
+  if(!presenter?.ready || event.button!==0 || S.reviewing || S.drag)return;
+  const s=presenter.settings;
+  if(S.mode==="presenter-end"){
+    const p=toSource(event),b=s.box;
+    if(!p.inside)return;
+    checkpoint();
+    s.motion={...(s.motion||EditorModel.DEFAULT_MOTION),
+      dx:Math.round(clamp(p.x-b.x-b.w/2,-16384,16384)),
+      dy:Math.round(clamp(p.y-b.y-b.h/2,-16384,16384))};
+    setMode("select");
+    const end=s.offset+s.trim_end-s.trim_start;
+    sourcePlayer().currentTime=Math.min(duration()-.01,end-Math.min(.05,(end-s.offset)/2));
+    changedVideos();
+    event.stopImmediatePropagation();event.preventDefault();
+    return;
+  }
+  if(S.mode!=="select")return;
+  const p=toSource(event), b=presenterBounds(s), local=video.currentTime-s.offset;
   if(local<0 || local>=presenter.settings.trim_end-presenter.settings.trim_start || p.x<b.x || p.x>b.x+b.w || p.y<b.y || p.y>b.y+b.h)return;
   const handle=18*S.job.width/canvas.getBoundingClientRect().width;
   checkpoint();
-  insetDrag={resize:p.x>b.x+b.w-handle && p.y>b.y+b.h-handle,dx:p.x-b.x,dy:p.y-b.y};
+  insetDrag={resize:p.x>b.x+b.w-handle && p.y>b.y+b.h-handle,
+    dx:p.x-s.box.x,dy:p.y-s.box.y,zoom:b.zoom,offsetX:b.dx};
   video.pause();canvas.setPointerCapture(event.pointerId);event.stopImmediatePropagation();event.preventDefault();
   window.dispatchEvent(new CustomEvent("freeedit:workspace",{detail:"videos"}));
 },true);
@@ -169,7 +220,7 @@ canvas.addEventListener("pointermove",event=>{
   const p=toSource(event),b=presenter.settings.box;
   if(insetDrag.resize){
     const ratio=presenter.source.width/presenter.source.height;
-    b.w=Math.round(clamp(p.x-b.x,8,Math.min(S.job.width-b.x,(S.job.height-b.y)*ratio)));
+    b.w=Math.round(clamp((p.x-b.x-insetDrag.offsetX)*2/(1+insetDrag.zoom),8,Math.min(S.job.width-b.x,(S.job.height-b.y)*ratio)));
     b.h=Math.min(S.job.height-b.y,Math.max(8,Math.round(b.w/ratio)));
   }else{b.x=Math.round(clamp(p.x-insetDrag.dx,0,S.job.width-b.w));b.y=Math.round(clamp(p.y-insetDrag.dy,0,S.job.height-b.h));}
   event.stopImmediatePropagation();syncVideos();refreshExportState();render();

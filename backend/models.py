@@ -35,6 +35,14 @@ class HideEdit(TimeRange):
     style: Literal["black", "blur", "pixelate"] = "black"
 
 
+class OverlayMotion(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    dx: int = Field(ge=-16384, le=16384)
+    dy: int = Field(ge=-16384, le=16384)
+    zoom_from: float = Field(ge=1, le=3)
+    zoom_to: float = Field(ge=1, le=3)
+
+
 class AnnotationEdit(TimeRange):
     type: Literal["annotation"]
     x: int = Field(ge=-16384, le=16384)
@@ -43,6 +51,7 @@ class AnnotationEdit(TimeRange):
     animation: Literal["none", "fade", "slide"] = "none"
     transition: float = Field(default=0.35, ge=0, le=1.5)
     shift: int = Field(default=40, ge=0, le=90)
+    motion: OverlayMotion | None = None
     # Low-resolution alpha masks may cover the complete source canvas. Their
     # display size is checked against the video before any render is admitted.
     canvas_size: tuple[Annotated[int, Field(ge=2, le=65536)], Annotated[int, Field(ge=2, le=65536)]] | None = None
@@ -51,6 +60,19 @@ class AnnotationEdit(TimeRange):
     @classmethod
     def valid_image(cls, value):
         return TextEdit.valid_png(value)
+
+    @model_validator(mode="after")
+    def bound_motion(self):
+        if self.motion is None:
+            return self
+        if self.canvas_size is not None:
+            raise ValueError("Full-canvas spotlights cannot move or zoom.")
+        header = base64.b64decode(self.image[len("data:image/png;base64,"):][:32])
+        width, height = struct.unpack(">II", header[16:24])
+        zoom = max(self.motion.zoom_from, self.motion.zoom_to)
+        if max(width, height) * zoom > 8192 or width * height * zoom**2 > MAX_OVERLAY_PIXELS:
+            raise ValueError("Zoomed overlay exceeds the server's image size limit.")
+        return self
 
 
 class TextEdit(TimeRange):
@@ -121,6 +143,8 @@ class PresenterSettings(BaseModel):
     trim_start: float = Field(default=0, ge=0)
     trim_end: float = Field(gt=0)
     effect: Literal["original", "blur", "remove"] = "original"
+    outline_color: str | None = Field(default=None, pattern=r"^#[a-fA-F0-9]{6}$")
+    motion: OverlayMotion | None = None
     sound: Literal["main", "presenter", "both", "muted"] = "main"
     main_volume: float = Field(default=1, ge=0, le=2)
     presenter_volume: float = Field(default=1, ge=0, le=2)
@@ -133,6 +157,10 @@ class PresenterSettings(BaseModel):
         self.trim_end = min(self.trim_end, other["duration"])
         if self.box.x + self.box.w > media["width"] or self.box.y + self.box.h > media["height"]:
             raise HTTPException(422, "Presenter inset extends beyond the main video.")
+        if self.motion:
+            zoom = max(self.motion.zoom_from, self.motion.zoom_to)
+            if zoom > 1 and (max(self.box.w, self.box.h) * zoom > 8192 or self.box.w * self.box.h * zoom**2 > MAX_OVERLAY_PIXELS):
+                raise HTTPException(422, "Zoomed presenter inset exceeds the server's image size limit.")
         if self.sound in ("main", "both") and not media["has_audio"]:
             raise HTTPException(422, "The main video has no sound. Choose Presenter or Muted.")
         if self.sound in ("presenter", "both") and not other["has_audio"]:

@@ -4,6 +4,7 @@
 // all have the same identity and original-source [start, end] interval.
 // Whole-video reframe, background and presenter remain scene-level settings.
 const EditorModel = (() => {
+  const DEFAULT_MOTION = Object.freeze({dx:0,dy:0,zoom_from:1,zoom_to:1});
   const TIMELINE_TYPES = Object.freeze(["cut", "hide", "text", "reframe", "annotation", "audio", "speed"]);
   const DEFAULT_REFRAME = Object.freeze({aspect: "original", zoom: 1, focus_x: .5, focus_y: .5});
 
@@ -94,7 +95,16 @@ const EditorModel = (() => {
     if (style.strokeStyles) result.strokes.forEach((stroke, i) => Object.assign(stroke, style.strokeStyles[i]));
     return result;
   }
-  return Object.freeze({TIMELINE_TYPES, DEFAULT_REFRAME, limitError, isTimedEdit, sorted, byType,
+  const canTransform = e => e?.type==="text" || e?.type==="annotation" && e.kind!=="spotlight";
+  function validMotion(m) {
+    return m && [m.dx,m.dy].every(n=>Number.isInteger(n)&&Math.abs(n)<=16384) &&
+      [m.zoom_from,m.zoom_to].every(n=>Number.isFinite(n)&&n>=1&&n<=3);
+  }
+  function motionAt(m,start,end,time) {
+    const p=Math.max(0,Math.min(1,(time-start)/Math.max(.000001,end-start)));
+    return {dx:m.dx*p,dy:m.dy*p,zoom:m.zoom_from+(m.zoom_to-m.zoom_from)*p};
+  }
+  return Object.freeze({TIMELINE_TYPES, DEFAULT_REFRAME, DEFAULT_MOTION, canTransform, validMotion, motionAt, limitError, isTimedEdit, sorted, byType,
     validateSpeed, validateAudioRegion, styleProperties, pastedStyle, sections, exportReframe, validateReframe, cutRanges, editableProperties});
 })();
 

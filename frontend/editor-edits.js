@@ -16,7 +16,7 @@ $("placeEditBtn").onclick = () => {
 };
 
 function setMode(mode) {
-  if(S.drag?.kind==="drawing")S.drag=null;
+  if(S.drag?.kind==="drawing" || S.drag?.regionZoom)S.drag=null;
   if(mode==="draw" && S.job?.has_video){
     if(S.reviewing)setReview(false);
     sourcePlayer().pause();
@@ -25,13 +25,16 @@ function setMode(mode) {
   window.dispatchEvent(new CustomEvent("freeedit:workspace", { detail: "mode" }));
   $("drawCameraAreaBtn").setAttribute("aria-pressed", String(mode === "background"));
   $("drawCameraAreaBtn").textContent = mode === "background" ? "Cancel area selection" : "Draw camera area";
+  $("reframeDrawRegion").setAttribute("aria-pressed",String(mode==="zoom-region"));
+  $("reframeDrawRegion").textContent=mode==="zoom-region"?"Cancel region selection":"Draw zoom region";
   show($("placeEditBtn"), ["text","hide"].includes(mode) && !!S.job?.has_video);
   document.querySelectorAll(".tool").forEach((b) => {
     b.classList.toggle("active", b.dataset.mode === mode);
     b.setAttribute("aria-pressed", String(b.dataset.mode === mode));
   });
-  $("modeHint").textContent = MODE_HINTS[mode];
-  canvas.className = (mode === "hide" || mode === "background" || mode === "draw") ? "crosshair" : mode === "text" ? "text" : mode === "annotation" ? "annotation-place" : "";
+  $("modeHint").textContent = mode==="zoom-region"?"Drag a box around the area to keep.":
+    ["overlay-end","presenter-end"].includes(mode)?"Click where the overlay should finish.":MODE_HINTS[mode];
+  canvas.className = ["hide","background","draw","zoom-region","overlay-end","presenter-end"].includes(mode) ? "crosshair" : mode === "text" ? "text" : mode === "annotation" ? "annotation-place" : "";
 }
 function chooseSelectTool() {
   if (S.reviewing) setReview(false);
@@ -230,6 +233,16 @@ function renderList() {
       });
     });
 
+    if(EditorModel.canTransform(e)){
+      card.append(overlayMotionControls(()=>e.motion,next=>{
+        commitEdit("edit:property",()=>{e.motion=next;});
+      },()=>{
+        if(S.selected!==e.id)select(e.id);
+        sourcePlayer().pause();
+        sourcePlayer().currentTime=e.start;
+        setMode("overlay-end");
+      }));
+    }
     if(e.type==="annotation"){
       if(["spotlight","click"].includes(e.kind)){
         card.querySelector(".badge").textContent=e.kind==="spotlight"?"Spotlight":"Click";
@@ -241,6 +254,8 @@ function renderList() {
       if(grouped){
         card.querySelector(".drawing-group-summary").textContent=e.strokes.length+" strokes move, resize and share timing as one drawing. Ungroup to edit individual colors and widths.";
         card.querySelector(".drawing-ungroup-btn").onclick=()=>ungroupDrawing(e);
+        card.querySelector(".drawing-ungroup-btn").disabled=!!e.fill;
+        if(e.fill)card.querySelector(".drawing-group-summary").textContent="Clear the fill in Draw to ungroup these shapes.";
       }
       card.querySelector('[data-k="color"]').closest("label").hidden=grouped;
       if(e.kind==="drawing")card.querySelector('[data-k="opacity"]').min="0";
@@ -305,6 +320,22 @@ function renderList() {
     list.append(tpl);
   }
   if (typeof renderZoomSelectList === "function") renderZoomSelectList();
+}
+
+function overlayMotionControls(read,write,pick) {
+  const panel=$("overlayMotionTpl").content.firstElementChild.cloneNode(true);
+  for(const input of panel.querySelectorAll("[data-motion]")){
+    const key=input.dataset.motion;
+    input.value=(read()||EditorModel.DEFAULT_MOTION)[key];
+    input.onchange=()=>{
+      const previous=read()||EditorModel.DEFAULT_MOTION;
+      const next={...previous,[key]:input.valueAsNumber};
+      if(!EditorModel.validMotion(next)){input.value=previous[key];return;}
+      write(next);
+    };
+  }
+  panel.querySelector(".overlay-motion-pick").onclick=pick;
+  return panel;
 }
 
 document.addEventListener("keydown", (ev) => {

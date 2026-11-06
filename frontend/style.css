@@ -224,8 +224,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 .card-title { border: 0; background: transparent; justify-content: flex-start; text-align: left; padding: 4px 0; }
 .card-title:hover { background: transparent; color: var(--text); }
-.geometry { margin: 12px 0; }
-.geometry summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+:is(.geometry, .overlay-motion) { margin: 12px 0; }
+:is(.geometry, .overlay-motion) summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 #retryUploadBtn, #recoverFileBtn { margin-top: 10px; }
 @media (max-width: 600px) {
   .side { gap: 12px; }

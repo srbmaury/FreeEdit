@@ -196,6 +196,9 @@
             <label class="field"><span>Presenter background</span><select id="presenterEffect"><option value="original">Original</option><option value="blur">Blur</option><option value="remove">Remove background</option></select></label>
             <label class="field"><span>Corner</span><select id="presenterCorner"><option value="bottom-right">Bottom right</option><option value="bottom-left">Bottom left</option><option value="top-right">Top right</option><option value="top-left">Top left</option></select></label>
             <label class="field"><span>Inset width (% of main video)</span><input id="presenterSize" type="range" min="10" max="60" value="28" /></label>
+            <label class="check"><input id="presenterOutline" type="checkbox" /> Show outline</label>
+            <label class="field"><span>Outline color</span><input id="presenterOutlineColor" type="color" value="#ffffff" disabled /></label>
+            <div id="presenterMotion"></div>
             <div class="camera-coordinates">
               <label class="field"><span>X (pixels)</span><input id="presenterX" type="number" min="0" step="1" /></label>
               <label class="field"><span>Y (pixels)</span><input id="presenterY" type="number" min="0" step="1" /></label>
@@ -238,11 +241,19 @@
             <button type="button" id="drawingDoneBtn" class="primary">Done drawing</button>
           </div>
           <p class="small">Use Undo / Redo for individual strokes. Erase removes whole strokes visible at the playhead.</p>
-          <section class="drawing-group-section" aria-label="Group drawings">
-            <h4>Drawing groups</h4>
-            <p class="small">Choose strokes below and group them to move, resize and time them together. Grouping gives them one shared time range and animation.</p>
+          <section class="drawing-group-section" aria-label="Group and fill shapes">
+            <h4>Group and fill shapes</h4>
+            <p class="small">Select rectangles, circles or freehand loops. Bring the ends of each loop together to close it. Filling multiple shapes groups them with one time range and animation.</p>
             <div id="drawingGroupChoices" class="drawing-group-choices"></div>
-            <button type="button" id="drawingGroupBtn" disabled>Group selected strokes</button>
+            <button type="button" id="drawingGroupBtn" disabled>Group selection</button>
+            <label class="field"><span>Fill color</span><input id="drawingFillColor" type="color" value="#635bff"></label>
+            <div class="drawing-actions">
+              <button type="button" id="drawingFillColorBtn" disabled>Apply color fill</button>
+              <button type="button" id="drawingFillImageBtn" disabled>Choose fill image</button>
+              <button type="button" id="drawingClearFillBtn" disabled>Clear fill</button>
+              <input type="file" id="drawingFillImage" accept="image/png,image/jpeg,image/webp" hidden>
+            </div>
+            <p class="small">One PNG, JPG or WebP spans the selected shapes and is cropped to their combined bounds. Clear an existing fill before joining its shapes with another selection.</p>
           </section>
           <p id="drawingMessage" class="small" role="status" aria-live="polite"></p>
         </section>
@@ -306,6 +317,7 @@
           <label class="field"><span>To (seconds)</span><div class="with-btn"><input id="reframeEnd" type="number" min="0" step="0.1" value="3"><button id="reframeEndNow" type="button" class="mini">Use playhead</button></div></label>
           </div>
           <label class="field"><span>Portion zoom</span><input id="reframeSectionZoom" type="range" min="1" max="3" step="0.05" value="1.8"><output id="reframeSectionZoomLabel">1.80×</output></label>
+          <button id="reframeDrawRegion" type="button" aria-pressed="false">Draw zoom region</button>
           <label class="field"><span>Portion horizontal focus</span><input id="reframeSectionX" type="range" min="0" max="1" step="0.01" value="0.5"></label>
           <label class="field"><span>Portion vertical focus</span><input id="reframeSectionY" type="range" min="0" max="1" step="0.01" value="0.5"></label>
           <label class="field"><span>Transition (seconds)</span><input id="reframeTransition" type="number" min="0" max="1.5" step="0.05" value="0.35"></label>
@@ -552,6 +564,20 @@
       </div></details>
       <div class="times"></div>
     </div>
+  </template>
+
+  <template id="overlayMotionTpl">
+    <details class="overlay-motion">
+      <summary>Move and zoom</summary>
+      <p class="small">Set the starting position on the video. Movement and zoom interpolate across this overlay’s time range.</p>
+      <div class="grid2">
+        <label class="field"><span>Start zoom (×)</span><input data-motion="zoom_from" type="number" min="1" max="3" step=".05"></label>
+        <label class="field"><span>End zoom (×)</span><input data-motion="zoom_to" type="number" min="1" max="3" step=".05"></label>
+        <label class="field"><span>Move right (pixels)</span><input data-motion="dx" type="number" step="1"></label>
+        <label class="field"><span>Move down (pixels)</span><input data-motion="dy" type="number" step="1"></label>
+      </div>
+      <button class="overlay-motion-pick" type="button">Place end position on video</button>
+    </details>
   </template>
 
   <template id="annotationCardTpl">

@@ -87,6 +87,32 @@ test('group validation rejects nested and oversized data and retains overlay lim
   assert.match(EditorModel.limitError([...Array(99).fill(base),group]),/100/);
 });
 
+test('one image covers the combined bounds of closed shapes and survives a project round-trip',async()=>{
+  const {validateProjectDocument}=await import('../frontend/project-schema.mjs');
+  const rectangle={...AnnotationModel.defaultEdit('shape',1280,720,1,3),x:100,y:100,w:100,h:100};
+  const second={...rectangle,x:300};
+  const fill='data:image/png;base64,iVBORw0KGgo=';
+  const group={...AnnotationModel.defaultEdit('drawing',1280,720,1,3),
+    ...DrawingModel.group([rectangle,second]),fill};
+  assert.equal(DrawingModel.fillable(edit()),false);
+  assert.equal(DrawingModel.fillable(rectangle),true);
+  assert.equal(DrawingModel.valid({...group,fill:'https://example.com/image.png'}),false);
+  const document={format:'FreeEdit',version:2,source:{name:'demo.mp4',size:10,
+    algorithm:'sha256-chunks-4m-v1',fingerprint:'a'.repeat(64),duration:5,width:1280,height:720,has_video:true,has_audio:true},
+    edits:[group],settings:{denoise:false,strength:'18',preset:'balanced',background:null,presenter:null,reframe:null}};
+  const saved=validateProjectDocument(HistoryModel.read(HistoryModel.capture(document)),{EditorModel,AnnotationModel}).edits[0];
+  assert.equal(saved.fill,fill);
+  assert.ok(saved.strokes.every(s=>s.closed));
+  const calls=[];
+  const canvas={
+    globalAlpha:1,save(){},restore(){},beginPath(){},moveTo(){},lineTo(){},stroke(){},
+    closePath(){calls.push('close');},clip(){calls.push('clip');},
+    drawImage(_image,x,y,w,h){calls.push('image');assert.ok(w>293&&h>293);}
+  };
+  DrawingModel.paint(canvas,saved,{naturalWidth:100,naturalHeight:100});
+  assert.deepEqual(calls,['close','close','clip','image','close','close']);
+});
+
 test('group vectors round-trip through projects, history and ungroup geometry',async()=>{
   const {validateProjectDocument}=await import('../frontend/project-schema.mjs');
   const base=edit();

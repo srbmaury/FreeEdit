@@ -117,38 +117,80 @@ window.addEventListener("freeedit:workspace",event=>{
 });
 
 
+const isDrawing = e => e.type==="annotation" && e.kind==="drawing";
+const isShape = e => e.type==="annotation" && e.kind==="shape";
+const selectedDrawings = () => S.edits.filter(e=>drawingSelection.has(e.id)&&(isDrawing(e)||isShape(e)));
+const canFillDrawings = edits => edits.length>0 && edits.every(DrawingModel.fillable) &&
+  (edits.length===1 || edits.every(e=>!e.fill));
+function refreshDrawingActions() {
+  const edits=selectedDrawings();
+  $("drawingGroupBtn").disabled=edits.length<2||edits.some(e=>e.fill);
+  $("drawingFillColorBtn").disabled=$("drawingFillImageBtn").disabled=!canFillDrawings(edits);
+  $("drawingClearFillBtn").disabled=!edits.some(e=>e.fill);
+}
 function refreshDrawingGroups() {
   const list=$("drawingGroupChoices");
   list.replaceChildren();
-  const drawings=S.edits.filter(e=>e.type==="annotation"&&e.kind==="drawing");
+  const drawings=S.edits.filter(e=>isDrawing(e)||isShape(e));
   for(const id of drawingSelection)if(!drawings.some(e=>e.id===id))drawingSelection.delete(id);
   if(!drawings.length){
-    const empty=document.createElement("p");empty.className="small";empty.textContent="Draw two strokes to create a group.";list.append(empty);
+    const empty=document.createElement("p");empty.className="small";empty.textContent="Draw a loop or add a shape from Annotations.";list.append(empty);
   }
   drawings.forEach((e,index)=>{
     const label=document.createElement("label"),input=document.createElement("input"),name=document.createElement("span");
     input.type="checkbox";input.value=String(e.id);input.checked=drawingSelection.has(e.id);
     input.setAttribute("aria-label","Select drawing "+(index+1));
-    name.textContent=(DrawingModel.isGroup(e)?"Group of "+e.strokes.length+" strokes":"Stroke "+(index+1))+" · "+fmt(e.start)+"–"+fmt(e.end);
+    const title=isShape(e)?(e.shape==="ellipse"?"Circle":"Rectangle"):
+      DrawingModel.isGroup(e)?"Group of "+e.strokes.length+" strokes":
+      DrawingModel.fillable(e)?"Closed loop":"Stroke";
+    name.textContent=(index+1)+". "+title+(e.fill?" (filled)":"")+" · "+fmt(e.start)+"–"+fmt(e.end);
     input.onchange=()=>{
       if(input.checked)drawingSelection.add(e.id);else drawingSelection.delete(e.id);
-      $("drawingGroupBtn").disabled=drawingSelection.size<2;
+      refreshDrawingActions();
     };
     label.append(input,name);list.append(label);
   });
-  $("drawingGroupBtn").disabled=drawingSelection.size<2;
+  refreshDrawingActions();
 }
-function groupSelectedDrawings() {
-  const selected=S.edits.filter(e=>drawingSelection.has(e.id)&&e.type==="annotation"&&e.kind==="drawing");
-  if(selected.length<2)return;
+function groupSelectedDrawings(selected,fill) {
+  if(fill ? !canFillDrawings(selected) : selected.length<2||selected.some(e=>e.fill))return;
+  if(fill && selected.length===1 && isDrawing(selected[0])){
+    const edit=selected[0];
+    const {points,strokeWidth,closed,...base}=edit;
+    const strokes=(edit.strokes||[{points,strokeWidth,color:edit.color,opacity:1}])
+      .map(s=>({...s,closed:true}));
+    const updated={...base,strokes,fill};
+    const error=AnnotationModel.validate(updated,duration(),S.job.width,S.job.height);
+    if(error){$("drawingMessage").textContent=error;return;}
+    commitEdit("drawing:fill",state=>{state.edits=state.edits.map(e=>e===edit?updated:e);});
+    const player=sourcePlayer();
+    if(player.currentTime<updated.start || player.currentTime>=updated.end ||
+      AnnotationModel.animationState(updated,player.currentTime).alpha===0){
+      player.pause();
+      player.currentTime=AnnotationModel.visibleTime(updated);
+    }
+    $("drawingMessage").textContent="Fill applied.";
+    return;
+  }
   const count=selected.reduce((n,e)=>n+(DrawingModel.isGroup(e)?e.strokes.length:1),0);
-  const pointCount=selected.reduce((n,e)=>n+(DrawingModel.isGroup(e)?e.strokes:[e]).reduce((sum,s)=>sum+s.points.length,0),0);
+  const pointCount=selected.reduce((n,e)=>n+(isShape(e)?128:
+    (DrawingModel.isGroup(e)?e.strokes:[e]).reduce((sum,s)=>sum+s.points.length,0)),0);
   if(count>DrawingModel.MAX_STROKES||pointCount>DrawingModel.MAX_GROUP_POINTS){
     $("drawingMessage").textContent="This group is too detailed. Select fewer strokes (up to 100 strokes and 20,000 points).";return;
   }
   const start=Math.min(...selected.map(e=>e.start)),end=Math.max(...selected.map(e=>e.end));
   const group={...AnnotationModel.defaultEdit("drawing",S.job.width,S.job.height,start,end),
     ...DrawingModel.group(selected)};
+  if(fill){
+    group.fill=fill;
+    for(const stroke of group.strokes)stroke.closed=true;
+  }
+  if(selected.length===1){
+    group.animation=selected[0].animation;
+    group.transition=selected[0].transition;
+    group.opacity=selected[0].opacity;
+    group.strokes[0].opacity=1;
+  }
   // Shared explicit shift preserves slide motion if the group is later ungrouped.
   group.animationShift=Math.max(8,Math.round(Math.min(90,group.w*.4)));
   const error=AnnotationModel.validate(group,duration(),S.job.width,S.job.height);
@@ -156,21 +198,28 @@ function groupSelectedDrawings() {
   const ids=new Set(selected.map(e=>e.id));
   group.id=S.nextId++;
   drawingSelection.clear();
-  commitEdit("drawing:group",state=>{
+  commitEdit(fill?"drawing:fill":"drawing:group",state=>{
     // Place the group where its uppermost member was, keeping unrelated edits
     // in their existing order. Grouped strokes retain their own paint order.
     const last=state.edits.findLastIndex(e=>ids.has(e.id));
     state.edits=state.edits.flatMap((e,i)=>i===last?[group]:ids.has(e.id)?[]:[e]);
     state.selected=group.id;
   });
-  sourcePlayer().pause();sourcePlayer().currentTime=start;
+  sourcePlayer().pause();sourcePlayer().currentTime=AnnotationModel.visibleTime(group);
+  if(fill){
+    drawingSelection.add(group.id);
+    refreshDrawingGroups();
+    $("drawingMessage").textContent="Fill applied.";
+    return;
+  }
   chooseSelectTool();select(group.id);
 }
 function ungroupDrawing(group) {
-  if(!S.job||!S.edits.includes(group)||!DrawingModel.isGroup(group))return;
+  if(!S.job||!S.edits.includes(group)||!DrawingModel.isGroup(group)||group.fill)return;
   const members=DrawingModel.worldStrokes(group).map(s=>({
     ...AnnotationModel.defaultEdit("drawing",S.job.width,S.job.height,group.start,group.end),
     ...DrawingModel.stroke(s.points,s.width),color:s.color,opacity:s.opacity,
+    ...(s.closed?{closed:true}:{}),
     animation:group.animation,transition:group.transition,
     animationShift:group.animationShift ?? Math.max(8,Math.round(Math.min(90,group.w*.4)))
   }));
@@ -184,7 +233,23 @@ function ungroupDrawing(group) {
   });
   select(members[0].id);
 }
-$("drawingGroupBtn").onclick=groupSelectedDrawings;
+$("drawingGroupBtn").onclick=()=>groupSelectedDrawings(selectedDrawings());
+$("drawingFillColorBtn").onclick=()=>groupSelectedDrawings(selectedDrawings(),$("drawingFillColor").value);
+$("drawingClearFillBtn").onclick=()=>{
+  const edits=selectedDrawings().filter(e=>e.fill);
+  if(edits.length)commitEdit("drawing:clear-fill",()=>{for(const edit of edits)delete edit.fill;});
+};
+$("drawingFillImageBtn").onclick=()=>$("drawingFillImage").click();
+$("drawingFillImage").onchange=async event=>{
+  const file=event.target.files?.[0];
+  event.target.value="";
+  const edits=selectedDrawings();
+  if(!file||!canFillDrawings(edits))return;
+  try{
+    const {data}=await readAnnotationFile(file);
+    if(edits.every(e=>S.edits.includes(e)))groupSelectedDrawings(edits,data);
+  }catch(error){$("drawingMessage").textContent=error.message;}
+};
 editorStore.subscribe(({reason})=>{
   if(reason==="history:restore")drawingSelection.clear();
   refreshDrawingGroups();

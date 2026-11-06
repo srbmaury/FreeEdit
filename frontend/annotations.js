@@ -3,12 +3,12 @@
 // Annotations share a single edit type and project timeline. Rasterized assets
 // are used by both the browser preview and final FFmpeg overlay.
 const annotationImages = new Map();
-function annotationImage(edit){
-  if(!edit.image)return null;
-  let value=annotationImages.get(edit.image);
+function annotationImage(source){
+  if(!source)return null;
+  let value=annotationImages.get(source);
   if(!value){
-    value=new Image();value.src=edit.image;value.onload=()=>render();
-    annotationImages.set(edit.image,value);
+    value=new Image();value.src=source;value.onload=()=>render();
+    annotationImages.set(source,value);
     if(annotationImages.size>128)annotationImages.delete(annotationImages.keys().next().value);
   }
   return value.complete&&value.naturalWidth?value:null;
@@ -59,9 +59,9 @@ function paintAnnotation(c,e,x,y,t=video.currentTime,animated=true){
     c.save();c.globalAlpha*=.18;c.fill();c.restore();c.stroke();
     c.beginPath();c.arc(0,0,Math.min(w,h)*.07,0,Math.PI*2);c.fill();
   } else if(e.kind==="drawing"){
-    DrawingModel.paint(c,e);
+    DrawingModel.paint(c,e,e.fill?.startsWith("data:")?annotationImage(e.fill):null);
   } else if(e.kind==="image"){
-    const img=annotationImage(e);if(img)c.drawImage(img,-w/2,-h/2,w,h);
+    const img=annotationImage(e.image);if(img)c.drawImage(img,-w/2,-h/2,w,h);
   } else if(e.kind==="shape"){
     if(e.shape==="ellipse"){c.beginPath();c.ellipse(0,0,w*.47,h*.47,0,0,Math.PI*2);c.stroke();}
     else c.strokeRect(-w*.47,-h*.47,w*.94,h*.94);
@@ -82,10 +82,12 @@ function paintAnnotation(c,e,x,y,t=video.currentTime,animated=true){
 }
 async function prepareAnnotationAssets(){
   for(const e of S.edits){
-    if(e.type!=="annotation"||e.kind!=="image"||!e.image)continue;
-    const img=annotationImage(e);
+    if(e.type!=="annotation")continue;
+    const source=e.kind==="image"?e.image:e.kind==="drawing"&&e.fill?.startsWith("data:")?e.fill:null;
+    if(!source)continue;
+    const img=annotationImage(source);
     if(img)continue;
-    const loading=annotationImages.get(e.image);
+    const loading=annotationImages.get(source);
     try{await loading.decode();}catch{throw Error("Annotation image could not be decoded. Replace the image and retry.");}
   }
 }
@@ -97,6 +99,7 @@ function annotationPayload(e){
   const context=c.getContext("2d");context.scale(c.width/bounds.w,c.height/bounds.h);
   paintAnnotation(context,e,e.x-bounds.x,e.y-bounds.y,e.start,false);
   return {type:"annotation",start:e.start,end:e.end,x:bounds.x,y:bounds.y,
+    ...(e.motion?{motion:e.motion}:{}),
     ...(e.kind==="spotlight"?{canvas_size:[S.job.width,S.job.height]}:{}),
     image:c.toDataURL("image/png"),animation:e.animation,transition:e.transition,
     shift:e.animationShift ?? Math.max(8,Math.round(Math.min(90,e.w*.4)))};

@@ -16,6 +16,7 @@ import threading
 import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
 from contextlib import nullcontext
@@ -27,6 +28,14 @@ from .execution import check_cancelled, run_process, start_process, kill_process
 from .waveform import pcm_peaks
 
 ProgressFn = Callable[[str, float | None], None]
+
+def motion_progress(start: float, duration: float) -> str:
+    return f"clip((t-({start}))/{max(.000001, duration)},0,1)"
+
+
+def motion_zoom(motion: dict, progress: str) -> str:
+    return f"({motion['zoom_from']}+({motion['zoom_to']-motion['zoom_from']})*{progress})"
+
 
 HIDE_STYLES = {"blur", "pixelate", "black"}
 
@@ -375,7 +384,10 @@ def build_video_edits(
             if kind == "annotation":
                 transition = min(e.get("transition", .35), (e["end"] - e["start"]) / 2)
                 animation = e.get("animation", "none")
-                if animation == "fade" and transition > 0:
+                motion = e.get("motion")
+                fade = animation == "fade" and transition > 0
+                zooming = motion and motion["zoom_from"] != motion["zoom_to"]
+                if fade or zooming:
                     # A single still image is repeated as frames at the source
                     # rate, so alpha fades use the original source timeline.
                     animated = f"[ann{i}]"
@@ -387,21 +399,37 @@ def build_video_edits(
                     # Evaluate fades on a nonnegative clock, then shift back;
                     # FFmpeg's fade filter rejects negative start times.
                     clock_offset = max(0, -e["start"])
-                    parts.append(
+                    filters = (
                         f"{img}format=rgba,loop=loop={frames}:size=1:start=0,"
-                        f"setpts=N/({fps:.3f}*TB),fps={fps:.3f},"
-                        f"setpts=PTS+{clock_offset:.6f}/TB,"
-                        f"fade=t=in:st={e['start']+clock_offset:.3f}:d={transition:.3f}:alpha=1,"
-                        f"fade=t=out:st={e['end']-transition+clock_offset:.3f}:d={transition:.3f}:alpha=1,"
-                        f"setpts=PTS-{clock_offset:.6f}/TB{animated}")
+                        f"setpts=N/({fps:.3f}*TB),fps={fps:.3f}")
+                    if fade:
+                        filters += (f",setpts=PTS+{clock_offset:.6f}/TB,"
+                                    f"fade=t=in:st={e['start']+clock_offset:.3f}:d={transition:.3f}:alpha=1,"
+                                    f"fade=t=out:st={e['end']-transition+clock_offset:.3f}:d={transition:.3f}:alpha=1,"
+                                    f"setpts=PTS-{clock_offset:.6f}/TB")
+                    parts.append(filters + animated)
                     img = animated
-                xpos = str(x)
+                xpos, ypos, zoom = str(x), str(y), "1"
+                if motion:
+                    progress = motion_progress(e["start"], e["end"] - e["start"])
+                    zoom = motion_zoom(motion, progress) if zooming else str(motion["zoom_from"])
+                    xpos = f"({x})+({motion['dx']*scale})*{progress}"
+                    ypos = f"({y})+({motion['dy']*scale})*{progress}"
+                    if zooming or motion["zoom_from"] != 1:
+                        width, height = struct.unpack(">II", base64.b64decode(png.split(",", 1)[1][:32])[16:24])
+                        width = max(1, round(width*scale))
+                        height = max(1, round(height*scale))
+                        parts.append(f"{img}scale=w='max(1,round(iw*{zoom}))':h='max(1,round(ih*{zoom}))'"
+                                     f":eval={'frame' if zooming else 'init'}[motion{i}]")
+                        img = f"[motion{i}]"
+                        xpos += f"+({width}-overlay_w)/2"
+                        ypos += f"+({height}-overlay_h)/2"
                 if animation == "slide" and transition > 0:
                     shift = max(0, int(e.get("shift", 40) * scale))
                     xpos = (
-                        f"({x})-({shift})*max(0,1-(t-{e['start']:.3f})/{transition:.3f})"
-                        f"-({shift})*max(0,1-({e['end']:.3f}-t)/{transition:.3f})")
-                parts.append(f"{cur}{img}overlay=x='{xpos}':y={y}:enable='{en}'{out}")
+                        f"{xpos}-({shift})*{zoom}*max(0,1-(t-({e['start']:.3f}))/{transition:.3f})"
+                        f"-({shift})*{zoom}*max(0,1-(({e['end']:.3f})-t)/{transition:.3f})")
+                parts.append(f"{cur}{img}overlay=x='{xpos}':y='{ypos}':enable='{en}'{out}")
             else:
                 parts.append(f"{cur}{img}overlay={x}:{y}:enable='{en}'{out}")
             cur = out
