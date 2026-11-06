@@ -131,6 +131,24 @@ $("reframeSectionZoom").oninput=()=>{
   $("reframeSectionZoomLabel").textContent=Number($("reframeSectionZoom").value).toFixed(2)+"×";
   render();
 };
+$("reframeDrawRegion").onclick=()=>{
+  if(!S.job?.has_video)return;
+  if(S.reviewing)setReview(false);
+  sourcePlayer().pause();
+  setMode(S.mode==="zoom-region"?"select":"zoom-region");
+  layoutStage();
+};
+function setZoomRegion(rect) {
+  const {width,height}=S.job;
+  const base=freeeditCropRect(width,height,{...S.reframe,zoom:1});
+  const zoom=Math.floor(clamp(Math.min(base.w/rect.w,base.h/rect.h),1,3)*20)/20;
+  const crop=freeeditCropRect(width,height,{...S.reframe,zoom});
+  $("reframeSectionZoom").value=zoom;
+  $("reframeSectionX").value=width>crop.w?clamp((rect.x+(rect.w-crop.w)/2)/(width-crop.w),0,1):.5;
+  $("reframeSectionY").value=height>crop.h?clamp((rect.y+(rect.h-crop.h)/2)/(height-crop.h),0,1):.5;
+  $("reframeSectionZoom").oninput();
+  $("reframeStatus").textContent="Region selected. Set the time range and add the timed zoom.";
+}
 for(const id of ["reframeSectionX","reframeSectionY"])$(id).addEventListener("input",render);
 for(const [button,field]of [["reframeStartNow","reframeStart"],["reframeEndNow","reframeEnd"]])
   $(button).onclick=()=>{$(field).value=sourcePlayer().currentTime.toFixed(2);};
@@ -344,6 +362,10 @@ function updateReframePreview(rect){
       const w = target.w / S.job.width * width, h = target.h / S.job.height * height;
       reframeCtx.drawImage(video, 0, 0, width, height);
       reframeCtx.drawImage(canvas, 0, 0, width, height);
+      if(S.mode==="zoom-region"){
+        reframePreview.hidden=false;
+        return;
+      }
       reframeCtx.beginPath();
       reframeCtx.rect(0, 0, width, height);
       reframeCtx.rect(x, y, w, h);

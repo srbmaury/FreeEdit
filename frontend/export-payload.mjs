@@ -7,7 +7,8 @@ export function buildExportPayload(document, adapters) {
     const base = {type: e.type, start: e.start, end: e.end};
     if (e.type === "hide") return {...base, style: e.style, x: e.x, y: e.y, w: e.w, h: e.h};
     if (e.type === "annotation") return adapters.annotationPayload(e);
-    return {...base, x: Math.round(e.x), y: Math.round(e.y), image: adapters.textToPng(e)};
+    return {...base, ...(e.motion?{type:"annotation",motion:e.motion}:{}),
+      x: Math.round(e.x), y: Math.round(e.y), image: adapters.textToPng(e)};
   }) : [];
   return {
     audio: structuredClone(audio),

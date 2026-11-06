@@ -75,7 +75,7 @@
     button.onclick = () => {
       if (!S.job) return;
       if (S.reviewing && pane !== "export") setReview(false);
-      if(S.mode==="draw"&&pane!=="draw")setMode("select");
+      if((S.mode==="draw"&&pane!=="draw") || ["zoom-region","overlay-end","presenter-end"].includes(S.mode))setMode("select");
       if (mode === "cut") { addCut(); return; }
       if (mode) setMode(mode);
       activate(pane, mode);
@@ -176,6 +176,8 @@
     }
     if (reason === "mode") {
       if (S.mode === "background") activate("background");
+      else if (S.mode === "zoom-region") activate("reframe", S.mode);
+      else if (S.mode === "presenter-end") activate("videos", S.mode);
       else if (S.mode === "draw") activate("draw", "draw");
       else if (S.mode === "annotation") activate("annotations");
       // Select is a preview tool, not a task. Keep the Videos inspector visible

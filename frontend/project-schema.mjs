@@ -80,8 +80,10 @@ export function validateProjectDocument(value, {EditorModel, AnnotationModel}) {
       if (!source.has_video || AnnotationModel.validate(edit, timelineDuration, source.width, source.height)) fail();
       for(const key of ["kind","icon","shape","text","image","x","y","w","h","color","opacity","rotation","animation","transition"])result[key]=edit[key];
       if(edit.kind==="drawing"){
-        if(edit.strokes)result.strokes=edit.strokes.map(s=>({points:s.points.map(p=>[...p]),strokeWidth:s.strokeWidth,color:s.color,opacity:s.opacity}));
+        if(edit.strokes)result.strokes=edit.strokes.map(s=>({points:s.points.map(p=>[...p]),strokeWidth:s.strokeWidth,color:s.color,opacity:s.opacity,...(s.closed?{closed:true}:{})}));
         else {result.points=edit.points.map(p=>[...p]);result.strokeWidth=edit.strokeWidth;}
+        if(edit.closed)result.closed=true;
+        if(edit.fill!==undefined)result.fill=edit.fill;
         if(edit.animationShift!==undefined)result.animationShift=edit.animationShift;
       }
     }
@@ -90,6 +92,11 @@ export function validateProjectDocument(value, {EditorModel, AnnotationModel}) {
           !/^#[a-f0-9]{6}$/i.test(edit.color) || !["sans", "serif", "mono"].includes(edit.font) ||
           !["none", "dark", "light"].includes(edit.bg) || typeof edit.bold !== "boolean") fail();
       Object.assign(result, {text: edit.text, fontSize: edit.fontSize, color: edit.color, font: edit.font, bg: edit.bg, bold: edit.bold});
+    }
+    if(edit.motion!==undefined){
+      if(!EditorModel.canTransform(edit)||!EditorModel.validMotion(edit.motion))fail();
+      const {dx,dy,zoom_from,zoom_to}=edit.motion;
+      result.motion={dx,dy,zoom_from,zoom_to};
     }
     return result;
   });

@@ -59,8 +59,32 @@ def compose(main: Path, presenter: Path, work: Path, settings: dict, progress,
                 parts += ['[presenter]split=2[sharp][soft]', '[soft]gblur=sigma=16[blurred]',
                           '[blurred][sharp][mask]maskedmerge[person]']
             current = '[person]'
+        outline_color = settings.get('outline_color')
+        motion = settings.get('motion')
+        x, y = str(region['x']), str(region['y'])
+        if motion:
+            if outline_color:
+                thickness = max(2, min(8, min(w, h) // 30))
+                parts.append(f'{current}format=rgba,crop={w-2*thickness}:{h-2*thickness}:{thickness}:{thickness},'
+                             f'pad={w}:{h}:{thickness}:{thickness}:color=0x{outline_color[1:]}[outlined]')
+                current = '[outlined]'
+                outline_color = None
+            if motion['zoom_from'] != 1 or motion['zoom_to'] != 1:
+                zoom = pipeline.motion_zoom(motion, pipeline.motion_progress(trim_start-source_start, trim_end-trim_start))
+                parts.append(f"{current}scale=w='round(iw*{zoom})':h='round(ih*{zoom})':eval=frame[zoomed]")
+                current = '[zoomed]'
+            progress_at = pipeline.motion_progress(offset-start, trim_end-trim_start)
+            x = f"{x}+({w}-overlay_w)/2+({motion['dx']})*{progress_at}"
+            y = f"{y}+({h}-overlay_h)/2+({motion['dy']})*{progress_at}"
+        overlay_output = '[inset]' if outline_color else '[video]'
         parts += [f'{current}setpts=PTS+{delay}/TB[placed]',
-                  f'[main][placed]overlay={region["x"]}:{region["y"]}:eof_action=pass:repeatlast=0:enable=\'between(t,{delay},{delay + span})\'[video]']
+                  f"[main][placed]overlay=x='{x}':y='{y}':eof_action=pass:repeatlast=0:"
+                  f"enable='between(t,{delay},{delay + span})'{overlay_output}"]
+        if outline_color:
+            thickness = max(2, min(8, min(w, h) // 30))
+            parts.append(f'[inset]drawbox=x={region["x"]}:y={region["y"]}:w={w}:h={h}:'
+                         f'color=0x{outline_color[1:]}:t={thickness}:'
+                         f'enable=\'gte(t,{delay})*lt(t,{delay + span})\'[video]')
     else:
         parts.append('[main]null[video]')
     audio_parts, has_audio = audio_filters(info, other, settings, length, span, delay)

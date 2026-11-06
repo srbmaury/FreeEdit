@@ -42,8 +42,13 @@ export function validatePresenterProject(value, main) {
       s.offset < 0 || s.offset >= main.duration || s.trim_start < 0 || s.trim_end <= s.trim_start || s.trim_end > source.duration + .05 ||
       s.main_volume < 0 || s.main_volume > 2 || s.presenter_volume < 0 || s.presenter_volume > 2 ||
       !["main","presenter","both","muted"].includes(s.sound) || !["original","blur","remove"].includes(s.effect)) fail();
+  if(s.outline_color!=null && (typeof s.outline_color!=="string" || !/^#[a-f0-9]{6}$/i.test(s.outline_color)))fail();
+  if(s.motion!==undefined && (!s.motion || ![s.motion.dx,s.motion.dy].every(n=>Number.isInteger(n)&&Math.abs(n)<=16384) ||
+    ![s.motion.zoom_from,s.motion.zoom_to].every(n=>Number.isFinite(n)&&n>=1&&n<=3)))fail();
   return {source: {...source}, settings: {box: {...b}, offset:s.offset, trim_start:s.trim_start, trim_end:s.trim_end,
-    main_volume:s.main_volume, presenter_volume:s.presenter_volume, sound:s.sound, effect:s.effect}};
+    main_volume:s.main_volume, presenter_volume:s.presenter_volume, sound:s.sound, effect:s.effect,
+    ...(s.outline_color!=null?{outline_color:s.outline_color}:{}),
+    ...(s.motion?{motion:{dx:s.motion.dx,dy:s.motion.dy,zoom_from:s.motion.zoom_from,zoom_to:s.motion.zoom_to}}:{})}};
 }
 
 export function validateFraming(value, source) {
