@@ -30,6 +30,7 @@ try {
   assert.equal(await page.evaluate(()=>S.edits[1].volume),0);
   // Dragging a mute region uses the same original-source timeline as cuts.
   const block=page.locator('#audioRegionTrack .timeline-block').last();
+  await block.scrollIntoViewIfNeeded();
   const b=await block.boundingBox();
   await page.mouse.move(b.x+b.width*.5,b.y+b.height*.5);await page.mouse.down();
   await page.mouse.move(b.x+b.width*.5+20,b.y+b.height*.5,{steps:5});await page.mouse.up();
