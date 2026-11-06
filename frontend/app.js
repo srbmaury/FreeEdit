@@ -274,11 +274,10 @@ function layoutStage() {
   const wrap = $("stageWrap");
   const style = getComputedStyle(wrap);
   const maxW = wrap.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
-  // Use more of the workspace while preserving the recording's aspect ratio.
-  // The timeline stays beneath the preview and never gets overlapped.
+  // Leave room for the preview header, playback controls and waveform.
   const maxH = window.innerWidth <= 850
     ? Math.max(180, window.innerHeight * 0.5)
-    : Math.max(220, window.innerHeight - 420);
+    : Math.max(220, window.innerHeight - 460);
   const { width: W, height: H } = S.job;
   const guide = typeof reframeGuideSection === "function" && reframeGuideSection();
   let shape = guide ? {w: W, h: H} : freeeditCropRect(W, H, {...S.reframe, zoom: 1});
