@@ -90,15 +90,12 @@ print(json.dumps({'missing':missing,'model':model}))
     return {'checks': checks}
 
 
-def require_export_space(work: Path, duration: float, channels: int, background: bool = False):
+def require_export_space(source: Path, duration: float, channels: int, background: bool = False):
     # Reserve room for decoded/clean WAV, output, and encoder overhead.
-    source = work / 'sequence.mp4'
-    if not source.is_file():
-        source = next(work.glob('source.*'))
     required = max(256 * 1024**2, source.stat().st_size * 2 + int(duration * 48000 * max(1, channels) * 4))
     if background:
         required += int(duration * 1024**2)  # Conservative headroom for the streamed lossless mask.
-    if shutil.disk_usage(work).free < required:
+    if shutil.disk_usage(source.parent).free < required:
         raise pipeline.PipelineError('Not enough temporary disk space. Free disk space or use a shorter recording.')
 
 

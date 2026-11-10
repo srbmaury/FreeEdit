@@ -68,3 +68,13 @@ test('undoing to the saved document supersedes a pending different snapshot',asy
  assert.equal(writes.at(-1).project.edits[0].text,'first');
  assert.match(app.projects.signature,/first/);
 });
+
+test('sequence changes invalidate recovery even when the project document is identical', async () => {
+ const writes = [];
+ const app = editor(async snapshot => { writes.push(snapshot); });
+ app.S.job.sequence_revision = 'first';
+ await app.save();
+ app.S.job.sequence_revision = 'second';
+ await app.save();
+ assert.deepEqual(writes.map(snapshot => snapshot.sequenceRevision), ['first', 'second']);
+});

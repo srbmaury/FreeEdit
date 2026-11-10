@@ -222,10 +222,53 @@ def _job(job_id: str) -> dict:
     return snapshot
 
 
-def _working_source(job_id: str) -> Path:
+def _working_source(job_id: str, job: dict | None = None) -> Path:
     work = JOBS_DIR / job_id
-    sequence = work / "sequence.mp4"
-    return sequence if sequence.is_file() else next(work.glob("source.*"))
+    if job is None:
+        with jobs_lock:
+            job = jobs[job_id]
+    revision = job.get("sequence_revision")
+    if revision:
+        return work / f"sequence-{revision}.mp4"
+    legacy = work / "sequence.mp4"
+    return legacy if job.get("sequence_clips") and legacy.is_file() else next(work.glob("source.*"))
+
+
+def _rebuild_sequence(job_id, clips, transitions):
+    work = JOBS_DIR / job_id
+    revision = uuid.uuid4().hex
+    target = work / f"sequence-{revision}.mp4"
+    media = clip_sequence.rebuild(work, clips, transitions, output=target)
+    waveform = None
+    if media["has_audio"]:
+        try:
+            waveform = pipeline.audio_waveform(target, media["duration"])
+        except pipeline.PipelineError as exc:
+            event("waveform_unavailable", job_id=job_id, detail=str(exc))
+    fields = dict(sequence_clips=clips, sequence_transitions=transitions,
+                  sequence_revision=revision, media=media, waveform=waveform,
+                  status="uploaded", stage=None, progress=None, error=None, error_code=None,
+                  output=None, operation=None, export_submission_id=None,
+                  result_preview=None, result_preview_submission_id=None, silence=None,
+                  preview=None, background_preview=None, composition_preview=None,
+                  updated_at=time.time())
+    # Publish the new manifest and registry only after the new media exists.
+    # The old manifest can still resolve its media if the process stops mid-build.
+    with persistence_lock:
+        with jobs_lock:
+            current = jobs[job_id]
+            old_source = _working_source(job_id, current)
+            snapshot = {**current, **fields}
+        JobStore(JOBS_DIR).save(snapshot)
+        with jobs_lock:
+            current.update(fields)
+    if not old_source.name.startswith("source."):
+        try:
+            old_source.unlink(missing_ok=True)
+        except OSError as exc:
+            event("sequence_cleanup_failed", job_id=job_id, detail=str(exc))
+    return {"clips": [{k: c[k] for k in ("id", "name", "duration")} for c in clips],
+            "sequence_revision": revision, "transitions": transitions, **media, "waveform": waveform}
 
 
 def _cleanup_old_jobs() -> None:
@@ -274,25 +317,22 @@ async def upload(request: Request, filename: str):
 @app.post("/api/jobs/{job_id}/clips")
 async def add_sequence_clip(job_id: str, request: Request, filename: str):
     """Upload one compatible main clip, append it, and rebuild the sequence."""
-    job = _job(job_id)
-    if not job["media"].get("has_video"):
-        raise HTTPException(422, "Main clip sequences require a video project.")
     with jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            raise HTTPException(404, "Job not found")
+        if not job["media"].get("has_video"):
+            raise HTTPException(422, "Main clip sequences require a video project.")
         if job_id in active_uploads or job_id in job_controls:
             raise HTTPException(409, "Wait for the current operation before changing clips.")
         active_uploads.add(job_id)
     temporary_id = None
-    destination = None
     try:
         uploaded = await _receive_upload(request, filename, protected_job=job_id)
         temporary_id = uploaded["id"]
         if not uploaded["has_video"]:
             raise HTTPException(422, "Choose a video clip.")
         base = job["media"]
-        if (uploaded["width"] != base["width"] or uploaded["height"] != base["height"]
-                or uploaded["has_audio"] != base["has_audio"]
-                or abs(uploaded["frame_rate"] - base.get("frame_rate", 30)) > .01):
-            raise HTTPException(422, "Clips must match the sequence dimensions, frame rate, and audio tracks.")
         clips = copy.deepcopy(job.get("sequence_clips") or [{
             "id": uuid.uuid4().hex[:8], "name": job["filename"],
             "file": next((JOBS_DIR / job_id).glob("source.*")).name,
@@ -307,28 +347,13 @@ async def add_sequence_clip(job_id: str, request: Request, filename: str):
         destination = JOBS_DIR / job_id / f"clip-{clip_id}{source.suffix.lower()}"
         source.replace(destination)
         clips.append({"id": clip_id, "name": filename[:255], "file": destination.name, "duration": uploaded["duration"]})
+        transitions = copy.deepcopy(job.get("sequence_transitions") or [{"type": "cut", "duration": 0} for _ in clips[1:-1]])
+        transitions.append({"type": "cut", "duration": 0})
         try:
-            transitions = copy.deepcopy(job.get("sequence_transitions") or [{"type":"cut","duration":0} for _ in clips[1:-1]])
-            transitions.append({"type":"cut","duration":0})
-            media = await anyio.to_thread.run_sync(clip_sequence.rebuild, JOBS_DIR / job_id, clips, transitions)
+            return await anyio.to_thread.run_sync(_rebuild_sequence, job_id, clips, transitions)
         except pipeline.PipelineError as exc:
-            raise HTTPException(422, str(exc)) from exc
-        waveform = None
-        if media["has_audio"]:
-            try:
-                waveform = await anyio.to_thread.run_sync(pipeline.audio_waveform, JOBS_DIR / job_id / "sequence.mp4", media["duration"])
-            except pipeline.PipelineError as exc:
-                event("waveform_unavailable", job_id=job_id, detail=str(exc))
-        with jobs_lock:
-            current = jobs[job_id]
-            current.update(sequence_clips=clips, sequence_transitions=transitions, media=media, waveform=waveform,
-                           result_preview=None, updated_at=time.time())
-        _persist_job(jobs[job_id])
-        return {"clips": [{k: c[k] for k in ("id", "name", "duration")} for c in clips], **media, "waveform": waveform}
-    except BaseException:
-        if destination:
             destination.unlink(missing_ok=True)
-        raise
+            raise HTTPException(422, str(exc)) from exc
     finally:
         if temporary_id:
             shutil.rmtree(JOBS_DIR / temporary_id, ignore_errors=True)
@@ -340,46 +365,39 @@ async def add_sequence_clip(job_id: str, request: Request, filename: str):
 
 @app.put("/api/jobs/{job_id}/clips/order")
 async def order_sequence_clips(job_id: str, request: Request):
-    job = _job(job_id)
-    clips = copy.deepcopy(job.get("sequence_clips") or [{
-        "id": uuid.uuid4().hex[:8], "name": job["filename"],
-        "file": next((JOBS_DIR / job_id).glob("source.*")).name,
-        "duration": job["media"]["duration"],
-    }])
     try:
         body = await request.json()
         order = body.get("order")
     except (ValueError, AttributeError):
         raise HTTPException(400, "Choose a valid clip order.")
-    by_id = {clip["id"]: clip for clip in clips}
-    if not isinstance(order, list) or not 1 <= len(order) <= len(clips) or len(set(order)) != len(order) or any(item not in by_id for item in order):
+    if (not isinstance(order, list) or not 1 <= len(order) <= 8
+            or any(not isinstance(item, str) for item in order) or len(set(order)) != len(order)):
         raise HTTPException(422, "Keep at least one clip and choose a valid order.")
     with jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            raise HTTPException(404, "Job not found")
         if job_id in active_uploads or job_id in job_controls:
             raise HTTPException(409, "Wait for the current operation before changing clips.")
         active_uploads.add(job_id)
     try:
+        clips = job.get("sequence_clips") or []
+        by_id = {clip["id"]: clip for clip in clips}
+        if any(item not in by_id for item in order):
+            raise HTTPException(422, "Keep at least one clip and choose a valid order.")
         selected = [by_id[item] for item in order]
-        transitions = copy.deepcopy(body.get("transitions", job.get("sequence_transitions") or [{"type":"cut","duration":0} for _ in clips[1:]]))
+        transitions = copy.deepcopy(body.get("transitions", job.get("sequence_transitions") or
+                                             [{"type": "cut", "duration": 0} for _ in clips[1:]]))
         if not isinstance(transitions, list) or len(transitions) != len(selected) - 1:
             raise HTTPException(422, "Choose one transition for each clip join.")
-        media = await anyio.to_thread.run_sync(clip_sequence.rebuild, JOBS_DIR / job_id, selected, transitions)
-        waveform = None
-        if media["has_audio"]:
-            try:
-                waveform = await anyio.to_thread.run_sync(pipeline.audio_waveform, JOBS_DIR / job_id / "sequence.mp4", media["duration"])
-            except pipeline.PipelineError as exc:
-                event("waveform_unavailable", job_id=job_id, detail=str(exc))
-        removed = [clip for clip in clips if clip["id"] not in order]
-        with jobs_lock:
-            jobs[job_id].update(sequence_clips=selected, sequence_transitions=transitions, media=media, waveform=waveform,
-                                result_preview=None, updated_at=time.time())
-        _persist_job(jobs[job_id])
-        for clip in removed:
-            path = JOBS_DIR / job_id / clip["file"]
-            if not clip["file"].startswith("source."):
-                path.unlink(missing_ok=True)
-        return {"clips": [{k: c[k] for k in ("id", "name", "duration")} for c in selected], **media, "waveform": waveform}
+        result = await anyio.to_thread.run_sync(_rebuild_sequence, job_id, selected, transitions)
+        for clip in clips:
+            if clip["id"] not in order and not clip["file"].startswith("source."):
+                try:
+                    (JOBS_DIR / job_id / clip["file"]).unlink(missing_ok=True)
+                except OSError as exc:
+                    event("sequence_cleanup_failed", job_id=job_id, detail=str(exc))
+        return result
     except pipeline.PipelineError as exc:
         raise HTTPException(422, str(exc)) from exc
     finally:
@@ -488,7 +506,7 @@ def _run(job_id: str, req: ProcessRequest, previous: dict) -> None:
         keep = pipeline.kept_ranges([c.model_dump() for c in req.cuts], source_duration) or [(0, source_duration)]
         segments = pipeline.speed_segments(keep, [r.model_dump() for r in req.speed_regions])
         output_duration = sum((b-a)/rate for a,b,rate in segments)
-        require_export_space(work, max(source_duration, output_duration), previous["media"]["audio_channels"], background=bool(req.background))
+        require_export_space(source, max(source_duration, output_duration), previous["media"]["audio_channels"], background=bool(req.background))
         for stale in [*work.glob("output.*"), *work.glob("text_*.png"), work / "raw.wav"]:
             stale.unlink(missing_ok=True)
         shutil.rmtree(work / "denoised", ignore_errors=True)
@@ -743,8 +761,8 @@ def _preview_background(job_id: str, req: BackgroundPreviewRequest, previous: di
         shutil.rmtree(preview, ignore_errors=True)
         preview.mkdir()
         length = min(3, previous["media"]["duration"] - req.start)
-        require_export_space(work, length, 0, background=True)
         source = _working_source(job_id)
+        require_export_space(source, length, 0, background=True)
         sample = preview / "source.mp4"
         pipeline._run_ffmpeg(["-ss", str(req.start), "-i", str(source), "-t", str(length),
             "-an", "-vf", f"tpad=stop_mode=clone:stop_duration={length}", "-c:v", "libx264",
@@ -831,8 +849,9 @@ def _preview_composition(job_id, req, previous):
         shutil.rmtree(target, ignore_errors=True)
         target.mkdir()
         length = min(3, previous["media"]["duration"] - req.start)
-        require_export_space(work, length, 2, background=req.presenter.effect != "original")
-        compose(_working_source(job_id), next(work.glob("presenter.*")), target,
+        source = _working_source(job_id)
+        require_export_space(source, length, 2, background=req.presenter.effect != "original")
+        compose(source, next(work.glob("presenter.*")), target,
                 req.presenter.model_dump(), lambda stage, pct: _update(job_id, stage=stage, progress=pct),
                 start=req.start, length=length)
         result = {"start": req.start, "duration": length, "error": None}
@@ -930,9 +949,14 @@ def job_status(job_id: str):
 
 
 @app.api_route("/api/jobs/{job_id}/source", methods=["GET", "HEAD"])
-def job_source(job_id: str):
-    _job(job_id)
-    return FileResponse(_working_source(job_id))
+def job_source(job_id: str, revision: str | None = None):
+    job = _job(job_id)
+    if revision is not None and revision != (job.get("sequence_revision") or "original"):
+        raise HTTPException(409, "The clip sequence has changed. Reopen the project to load the correct footage.")
+    source = _working_source(job_id, job)
+    if not source.is_file():
+        raise HTTPException(404, "The recording is unavailable.")
+    return FileResponse(source)
 
 
 @app.api_route("/api/jobs/{job_id}/result", methods=["GET", "HEAD"])

@@ -119,3 +119,33 @@ test('late recovery never replaces a newer upload, project or editing session',a
   await pending;assert.equal(opened,false,supersede);
  }
 });
+
+test('sequence recovery requires the saved revision even when media properties match', async () => {
+ const code = fs.readFileSync('frontend/projects.js', 'utf8');
+ const locate = code.slice(code.indexOf('async function locateProjectSource('), code.indexOf('\n$("projectSourceInput")'));
+ const job = {id: 'abcdef123456', sequence_revision: 'new', sequence_clips: [{id:'b'}, {id:'a'}], media: {}};
+ let opened = 0;
+ let fallback = 0;
+ let source;
+ const project = {source: {}, sequence: {clips: [{name:'a'}, {name:'b'}]}};
+ const ctx = vm.createContext({
+  job, project, recovery: {jobId: job.id}, projects: {pending: project}, S: {},
+  editorReady: Promise.resolve(), api: async () => job, projectMediaMatches: () => true,
+  fetch: async url => { source = url; return {ok: true}; }, AbortSignal,
+  openEditor: () => { opened++; }, projectSourceReady: () => {},
+  exportRules: {recoverSubmission: () => null}, restoreResultPreviewSubmission: () => {}, saveRecovery: () => {},
+  showProjectMessage: () => { fallback++; },
+ });
+ vm.runInContext(locate, ctx);
+ await vm.runInContext('locateProjectSource(project, recovery)', ctx);
+ assert.equal(opened, 0);
+ ctx.recovery.sequenceRevision = 'old';
+ await vm.runInContext('locateProjectSource(project, recovery)', ctx);
+ assert.equal(opened, 0);
+ assert.equal(fallback, 2);
+ assert.equal(source, undefined);
+ ctx.recovery.sequenceRevision = 'new';
+ await vm.runInContext('locateProjectSource(project, recovery)', ctx);
+ assert.equal(opened, 1);
+ assert.match(source, /revision=new$/);
+});

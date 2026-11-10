@@ -89,9 +89,9 @@ function applyProject(project) {
     sequenceTransitions = project.sequence.transitions || project.sequence.clips.slice(1).map(()=>({type:"cut",duration:0}));
     sequenceClips = project.sequence.clips.map((clip,index)=>({id:S.job.sequence_clips?.[index]?.id || clip.id,
       name:clip.name,duration:clip.duration,identity:clip.source}));
-    if (typeof sequenceOriginalMedia !== "undefined") sequenceOriginalMedia = {...S.job, duration:project.source.duration,
-      width:project.source.width,height:project.source.height,has_video:project.source.has_video,has_audio:project.source.has_audio};
   }
+  if (typeof sequenceOriginalMedia !== "undefined") sequenceOriginalMedia = {...S.job, duration:project.source.duration,
+    width:project.source.width,height:project.source.height,has_video:project.source.has_video,has_audio:project.source.has_audio};
   restorePresenter(project.settings.presenter);
   const imported = project.edits.map(edit => ({...edit, id: S.nextId++}));
   editorStore.dispatch("project:load", state => {
@@ -132,7 +132,8 @@ async function saveRecovery() {
   if (!project) return;
   const exportSubmission = S.exportSubmission?.jobId === S.job.id ? S.exportSubmission : null;
   const resultPreviewSubmission = previewSubmission?.id === S.job.id ? previewSubmission : null;
-  const signature = JSON.stringify({project, exportSubmission, previewSubmission: resultPreviewSubmission});
+  const sequenceRevision = S.job.sequence_revision ?? null;
+  const signature = JSON.stringify({project, sequenceRevision, exportSubmission, previewSubmission: resultPreviewSubmission});
   if (!ownsRecovery()) return;
   if (signature === projects.pendingSignature ||
       (signature === projects.signature && projects.pendingSignature === null)) return;
@@ -143,7 +144,7 @@ async function saveRecovery() {
     const store = await recoveryStore;
     if (revision !== projects.recoveryRevision || S.job?.id !== jobId || !ownsRecovery()) return;
     await store.write({project, exportSubmission, previewSubmission: resultPreviewSubmission,
-      jobId, waveform: S.job.waveform, savedAt: new Date().toISOString()});
+      jobId, sequenceRevision, waveform: S.job.waveform, savedAt: new Date().toISOString()});
     if (revision !== projects.recoveryRevision || S.job?.id !== jobId) return;
     projects.signature = signature;
     $("projectStatus").textContent = `Saved in this browser · ${new Date().toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})}` ;
@@ -235,14 +236,23 @@ async function locateProjectSource(project, recovery) {
     try {
       const job = await api(`/api/jobs/${recovery.jobId}`);
       if (!current()) return;
-      // The server's job ID still refers to the same source from this autosave.
-      const response = await fetch(`/api/jobs/${recovery.jobId}/source`, {headers: {Range: "bytes=0-0"}, signal: AbortSignal.timeout(10000)});
-      if (response.body) await response.body.cancel();
-      if (!current()) return;
-      if (response.ok && projectMediaMatches({...project.source, duration:project.sequence?.duration ?? project.source.duration,
-        width:project.sequence ? project.source.width + project.source.width % 2 : project.source.width,
-        height:project.sequence ? project.source.height + project.source.height % 2 : project.source.height}, job.media)) {
-        openEditor({id: job.id, filename: project.source.name, ...job.media, waveform: recovery.waveform, sequence_clips:job.sequence_clips});
+      // A job ID survives reorder and removal. Require the exact sequence
+      // revision before applying an autosave to its footage.
+      const revision = job.sequence_revision ?? null;
+      const matchingRevision = revision === (recovery.sequenceRevision ?? null) &&
+        (revision !== null || (!job.sequence_clips?.length && !project.sequence));
+      const normalized = !!job.sequence_clips?.length;
+      if (matchingRevision && projectMediaMatches({...project.source,
+        duration: project.sequence?.duration ?? project.source.duration,
+        width: normalized ? project.source.width + project.source.width % 2 : project.source.width,
+        height: normalized ? project.source.height + project.source.height % 2 : project.source.height}, job.media)) {
+        const response = await fetch(`/api/jobs/${recovery.jobId}/source?revision=${revision ?? "original"}`,
+          {headers: {Range: "bytes=0-0"}, signal: AbortSignal.timeout(10000)});
+        if (response.body) await response.body.cancel();
+        if (!current()) return;
+        if (!response.ok) throw new Error("The saved recording is unavailable.");
+        openEditor({id: job.id, filename: project.source.name, ...job.media, waveform: recovery.waveform,
+          sequence_clips: job.sequence_clips, sequence_transitions: job.sequence_transitions, sequence_revision: revision});
         // Apply the document without flushing a half-restored recovery snapshot.
         projectSourceReady(project.source, {save: false});
         const submission = exportRules.recoverSubmission(recovery.exportSubmission, job);
