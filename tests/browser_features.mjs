@@ -106,7 +106,7 @@ try {
     if(job.status==='error')throw new Error(job.error);
     return job.status==='done';
   },jobId,{timeout:60000});
-  await page.locator('.workspace-rail button').filter({hasText:/^Clips$/}).click();
+  await page.locator('.workspace-rail button').filter({hasText:/^Videos$/}).click();
   const duration = await page.evaluate(() => S.job.duration);
   const original = await page.evaluate(() => S.edits[0].start);
   await page.locator('#sequenceClipInput').setInputFiles({
