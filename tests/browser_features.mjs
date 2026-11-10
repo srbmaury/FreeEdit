@@ -96,16 +96,6 @@ try {
   });
   assert.equal(saved.framing.aspect,'square');assert.equal(saved.edits,4);
   assert.deepEqual(saved.payload.framing,saved.framing);
-  await page.evaluate(()=>{$('denoise').checked=false;});
-  const payload=await page.evaluate(()=>buildPayload());
-  const jobId=await page.evaluate(()=>S.job.id);
-  const response=await page.request.post(new URL(`/api/jobs/${jobId}/process`,page.url()).href,{data:payload});
-  assert.ok(response.ok(),await response.text());
-  await page.waitForFunction(async id=>{
-    const response=await fetch(`/api/jobs/${id}`);const job=await response.json();
-    if(job.status==='error')throw new Error(job.error);
-    return job.status==='done';
-  },jobId,{timeout:60000});
   await page.locator('.workspace-rail button').filter({hasText:/^Videos$/}).click();
   const duration = await page.evaluate(() => S.job.duration);
   const original = await page.evaluate(() => S.edits[0].start);
@@ -118,6 +108,16 @@ try {
   await page.waitForFunction(() => $('sequenceStatus').textContent.includes('Timed edits stayed'));
   assert.ok(Math.abs(await page.evaluate(() => S.edits[0].start) - original - duration) < .05);
   assert.match(await page.locator('#clipTrack button').first().innerText(), /second\.mp4/);
+  await page.evaluate(()=>{$('denoise').checked=false;});
+  const payload=await page.evaluate(()=>buildPayload());
+  const jobId=await page.evaluate(()=>S.job.id);
+  const response=await page.request.post(new URL(`/api/jobs/${jobId}/process`,page.url()).href,{data:payload});
+  assert.ok(response.ok(),await response.text());
+  await page.waitForFunction(async id=>{
+    const response=await fetch(`/api/jobs/${id}`);const job=await response.json();
+    if(job.status==='error')throw new Error(job.error);
+    return job.status==='done';
+  },jobId,{timeout:60000});
   assert.deepEqual(errors,[]);
   await page.evaluate(()=>{chooseSelectTool();select(S.edits[0].id);});
   await page.screenshot({path:'/tmp/freeedit-features.png'});
