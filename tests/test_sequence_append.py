@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
+from starlette.requests import Request
 from backend import app as api
 
 
@@ -23,7 +24,7 @@ class SequenceAppendTests(unittest.IsolatedAsyncioTestCase):
                  patch.object(api,'job_controls',{}),patch.object(api.JobStore,'save'), \
                  patch.object(api,'_receive_upload',AsyncMock(return_value={'id':'temp',**media})), \
                  patch.object(api.clip_sequence,'rebuild',side_effect=rebuild):
-                result=await api.add_sequence_clip('main',None,'clip.mp4')
+                result=await api.add_sequence_clip('main',Request({'type': 'http'}),'clip.mp4')
             self.assertEqual(result['duration'],4)
 
 
@@ -67,6 +68,17 @@ class SequenceMediaTests(unittest.TestCase):
                         response = client.put(f"{path}/clips/order", json=invalid)
                         self.assertEqual(response.status_code, 422, response.text)
                     self.assertEqual(client.get(path).json()["sequence_revision"], triple["sequence_revision"])
+                    stale = {"X-FreeEdit-Sequence-Revision": pair["sequence_revision"]}
+                    response = client.put(f"{path}/clips/order", json={"order": order, "transitions": [cut, cut]},
+                                          headers=stale)
+                    self.assertEqual(response.status_code, 412, response.text)
+                    response = client.post(f"{path}/clips?filename=stale.mp4", content=content, headers=stale)
+                    self.assertEqual(response.status_code, 412, response.text)
+                    response = client.post(f"{path}/process", json={"denoise": False}, headers=stale)
+                    self.assertEqual(response.status_code, 412, response.text)
+                    response = client.post(f"{path}/result-preview", json={"denoise": False, "start": 0, "end": 1},
+                                           headers=stale)
+                    self.assertEqual(response.status_code, 412, response.text)
                     for transitions in ([cut, fade], [fade, fade]):
                         response = client.put(f"{path}/clips/order", json={"order": order[::-1], "transitions": transitions})
                         self.assertEqual(response.status_code, 200, response.text)

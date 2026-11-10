@@ -88,7 +88,11 @@ Choose original, wide (16:9), vertical (9:16), or square aspect ratio. Set whole
 3. Choose sound from Main, Presenter, Both (with independent volumes), or Muted.
 4. Preview a short combined sample; export to apply all other edits.
 
-FreeEdit supports **one main recording and one presenter inset**, not an arbitrary clip sequence. Save both originals: project JSON contains media identities and settings but does not contain the video files. Combining clips creates an intermediate encode and needs extra disk space.
+### Working with a clip sequence
+
+Add up to eight matching clips in **Clips**. Drag clip cards or use their arrow buttons to reorder them. Click a clip on the timeline to jump to its start. Existing transitions stay with their original pair when the clips remain adjacent in the same order.
+
+Timed edits move with the footage they cover. If a change would alter the footage or blend under an edit that spans a join, shorten the edit or remove it before changing the sequence. Keep all original recordings, including any presenter video. The project file stores their identities and settings, and combining clips requires space for an intermediate render.
 
 ### Person-aware backgrounds
 
