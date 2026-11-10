@@ -22,6 +22,7 @@ function renderTimeline() {
   const d = duration();
   if (!d) return;
   renderTimelineRuler();
+  renderClipTimeline();
   $("zoomLabel").textContent = `${timeline.zoom}×`;
   $("zoomOutBtn").disabled = timeline.zoom === 1;
   $("zoomInBtn").disabled = timeline.zoom === 16;

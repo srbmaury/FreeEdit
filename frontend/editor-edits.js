@@ -340,7 +340,7 @@ function overlayMotionControls(read,write,pick) {
 
 document.addEventListener("keydown", (ev) => {
   if (document.querySelector("dialog[open]")) return;
-  if (!S.job || $("editorView").classList.contains("hidden")) return;
+  if (!S.job || $("editorView").inert || $("editorView").classList.contains("hidden")) return;
   if (ev.target.closest("input, textarea, select")) return;
   if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "z") { ev.preventDefault(); restoreHistory(ev.shiftKey); return; }
   if (S.reviewing) return;

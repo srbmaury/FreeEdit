@@ -96,6 +96,18 @@ try {
   });
   assert.equal(saved.framing.aspect,'square');assert.equal(saved.edits,4);
   assert.deepEqual(saved.payload.framing,saved.framing);
+  await page.locator('.workspace-rail button').filter({hasText:/^Videos$/}).click();
+  const duration = await page.evaluate(() => S.job.duration);
+  const original = await page.evaluate(() => S.edits[0].start);
+  await page.locator('#sequenceClipInput').setInputFiles({
+    name: 'second.mp4', mimeType: 'video/mp4',
+    buffer: await import('node:fs/promises').then(fs => fs.readFile('/tmp/freeedit-ci-sample.mp4')),
+  });
+  await page.locator('#clipTrack button').nth(1).waitFor();
+  await page.getByRole('button', {name:'Move earlier: second.mp4'}).click();
+  await page.waitForFunction(() => $('sequenceStatus').textContent.includes('Timed edits stayed'));
+  assert.ok(Math.abs(await page.evaluate(() => S.edits[0].start) - original - duration) < .05);
+  assert.match(await page.locator('#clipTrack button').first().innerText(), /second\.mp4/);
   await page.evaluate(()=>{$('denoise').checked=false;});
   const payload=await page.evaluate(()=>buildPayload());
   const jobId=await page.evaluate(()=>S.job.id);

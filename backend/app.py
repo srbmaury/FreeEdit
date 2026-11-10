@@ -234,6 +234,11 @@ def _working_source(job_id: str, job: dict | None = None) -> Path:
     return legacy if job.get("sequence_clips") and legacy.is_file() else next(work.glob("source.*"))
 
 
+def _check_sequence_revision(job, expected):
+    if expected is not None and expected != (job.get("sequence_revision") or "original"):
+        raise HTTPException(412, "The clip sequence changed in another editor. Reopen the project and try again.")
+
+
 def _rebuild_sequence(job_id, clips, transitions):
     work = JOBS_DIR / job_id
     revision = uuid.uuid4().hex
@@ -323,6 +328,7 @@ async def add_sequence_clip(job_id: str, request: Request, filename: str):
             raise HTTPException(404, "Job not found")
         if not job["media"].get("has_video"):
             raise HTTPException(422, "Main clip sequences require a video project.")
+        _check_sequence_revision(job, request.headers.get("x-freeedit-sequence-revision"))
         if job_id in active_uploads or job_id in job_controls:
             raise HTTPException(409, "Wait for the current operation before changing clips.")
         active_uploads.add(job_id)
@@ -377,6 +383,7 @@ async def order_sequence_clips(job_id: str, request: Request):
         job = jobs.get(job_id)
         if not job:
             raise HTTPException(404, "Job not found")
+        _check_sequence_revision(job, request.headers.get("x-freeedit-sequence-revision"))
         if job_id in active_uploads or job_id in job_controls:
             raise HTTPException(409, "Wait for the current operation before changing clips.")
         active_uploads.add(job_id)
@@ -592,15 +599,16 @@ def cancel_processing(job_id: str):
 
 
 @app.post("/api/jobs/{job_id}/process")
-def start_processing(job_id: str, req: ProcessRequest):
-    return _submit(job_id, req, _run)
+def start_processing(job_id: str, req: ProcessRequest, request: Request):
+    return _submit(job_id, req, _run, request.headers.get("x-freeedit-sequence-revision"))
 
 
-def _submit(job_id, req, worker):
+def _submit(job_id, req, worker, expected_revision=None):
     with jobs_lock:
         job = jobs.get(job_id)
         if not job:
             raise HTTPException(404, "Job not found")
+        _check_sequence_revision(job, expected_revision)
         if job_id in active_uploads or job_id in job_controls or job["status"] in ("queued", "processing", "cancelling"):
             raise HTTPException(409, "This file is already being processed.")
         req.validate_media(job["media"])
@@ -1041,8 +1049,8 @@ def _preview_result(job_id, req, previous):
 
 
 @app.post("/api/jobs/{job_id}/result-preview")
-def preview_result(job_id: str, req: ResultPreviewRequest):
-    return _submit(job_id, req, _preview_result)
+def preview_result(job_id: str, req: ResultPreviewRequest, request: Request):
+    return _submit(job_id, req, _preview_result, request.headers.get("x-freeedit-sequence-revision"))
 
 
 @app.api_route("/api/jobs/{job_id}/result-preview", methods=["GET", "HEAD"])

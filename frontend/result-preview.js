@@ -41,7 +41,7 @@ $("resultPreviewBtn").onclick = async () => {
   const selected = rangeSelection.range;
   const start = selected ? selected.start : Math.min(sourcePlayer().currentTime || 0, Math.max(0, duration() - .1));
   const end = Math.min(duration(), selected?.end ?? start + 15, start + 15);
-  const id = S.job.id;
+  const {id, sequence_revision: revision} = S.job;
   resultSample = null;
   pendingResultSample = {signature: editSignature(), id, submissionId: null};
   previewSubmission = pendingResultSample;
@@ -53,7 +53,7 @@ $("resultPreviewBtn").onclick = async () => {
   setProgress("Preparing result preview…", null);
   try {
     await prepareAnnotationAssets();
-    const response = await api(`/api/jobs/${id}/result-preview`, {method:"POST", headers:{"Content-Type":"application/json"},
+    const response = await api(`/api/jobs/${id}/result-preview`, {method:"POST", headers:{"Content-Type":"application/json", "X-FreeEdit-Sequence-Revision": revision ?? "original"},
       body:JSON.stringify({...buildPayload(), start, end})});
     if (S.job?.id === id) {
       previewSubmission.submissionId = response.submission_id;
@@ -128,7 +128,9 @@ function switchResultRange(original, preserve = true) {
     player.currentTime = Math.min(target, player.duration || target);
     if (playing) player.play().catch(() => {});
   };
-  player.src = `/api/jobs/${resultSample.id}/${original ? "source" : "result-preview"}?t=${Date.now()}`;
+  const path = `/api/jobs/${resultSample.id}`;
+  player.src = original ? `${path}/source?revision=${S.job.sequence_revision ?? "original"}`
+    : `${path}/result-preview?t=${Date.now()}`;
   $("rangeOriginalBtn").setAttribute("aria-pressed", String(original));
   $("rangeResultBtn").setAttribute("aria-pressed", String(!original));
 }

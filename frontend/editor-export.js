@@ -27,7 +27,7 @@ async function startExport() {
   show($("recoverFileBtn"), false);
   video.pause(); $("audio").pause();
   setBusy("export");
-  const id = S.job.id;
+  const {id, sequence_revision: revision} = S.job;
   try { await prepareAnnotationAssets(); }
   catch(error) { procFailed(error.message); return; }
   const payload = buildPayload();
@@ -35,7 +35,8 @@ async function startExport() {
   const ranges = keptRangesForExport();
   try {
     const submission = await api(`/api/jobs/${id}/process`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+      method: "POST", headers: {"Content-Type": "application/json", "X-FreeEdit-Sequence-Revision": revision ?? "original"},
+      body: JSON.stringify(payload),
     });
     if (S.job?.id !== id) return;
     S.exportSignature = signature;
@@ -176,7 +177,7 @@ function comparePreview(original) {
     player.currentTime = Math.min(t, player.duration || t);
     if (playing) player.play().catch(() => {});
   }, { once: true });
-  player.src = S.compareOriginal ? `/api/jobs/${S.job.id}/source` : S.resultSrc;
+  player.src = S.compareOriginal ? `/api/jobs/${S.job.id}/source?revision=${S.job.sequence_revision ?? "original"}` : S.resultSrc;
   refreshExportState();
   $("originalPreviewBtn").setAttribute("aria-pressed", String(original));
   $("exportedPreviewBtn").setAttribute("aria-pressed", String(!original));

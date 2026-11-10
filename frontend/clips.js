@@ -13,6 +13,20 @@ function renderSequenceClips() {
   list.replaceChildren();
   clips.forEach((clip, index) => {
     const row = document.createElement("div"); row.className = "sequence-clip";
+    if (!locked && clips.length > 1) {
+      row.draggable = true;
+      row.ondragstart = event => event.dataTransfer.setData("application/x-freeedit-clip", String(index));
+      row.ondragover = event => {
+        if (event.dataTransfer.types.includes("application/x-freeedit-clip")) event.preventDefault();
+      };
+      row.ondrop = event => {
+        const source = event.dataTransfer.getData("application/x-freeedit-clip");
+        const from = Number(source);
+        if (!source || !Number.isInteger(from) || from < 0 || from >= clips.length) return;
+        event.preventDefault();
+        changeSequenceOrder(from, index);
+      };
+    }
     const title = document.createElement("span"); title.textContent = `${index + 1}. ${clip.name} · ${fmt(clip.duration)}`;
     const controls = document.createElement("div"); controls.className = "sequence-clip-actions";
     for (const [label, direction, disabled] of [["↑", -1, index === 0], ["↓", 1, index === clips.length - 1]]) {
@@ -47,9 +61,79 @@ function renderSequenceTransitions(locked = false) {
   }
 }
 
-function sequenceDuration(clips) { return clips.reduce((total, clip) => total + clip.duration, 0); }
-function refreshSequenceSource(data) {
-  const currentTime = sourcePlayer().currentTime || 0;
+function clipIntervals(clips, transitions) {
+  let start = 0;
+  return clips.map((clip, index) => {
+    const interval = {...clip, start, end: start + clip.duration};
+    start = interval.end - (transitions[index]?.duration ?? 0);
+    return interval;
+  });
+}
+
+function mapClipRange(before, after, start, end) {
+  const epsilon = 1e-7;
+  const overlaps = (clips, a, b) => clips.filter(clip => clip.end > a + epsilon && clip.start < b - epsilon);
+  const original = overlaps(before, start, end);
+  const first = after.find(clip => clip.id === original[0]?.id);
+  if (!first || start < -epsilon || end > before.at(-1).end + epsilon) return null;
+  const offset = first.start - original[0].start;
+  const mapped = {start: Math.max(0, start + offset), end: Math.min(after.at(-1).end, end + offset)};
+  if (mapped.end - mapped.start < end - start - epsilon) return null;
+  const target = overlaps(after, mapped.start, mapped.end);
+  // Both the footage and the crossfade phase must match across the full range.
+  if (original.length !== target.length || original.some((clip, index) =>
+    clip.id !== target[index].id || Math.abs(clip.start + offset - target[index].start) > epsilon)) return null;
+  return mapped;
+}
+
+function planSequenceEdits(before, after, edits, inset) {
+  const moved = [];
+  for (const edit of edits) {
+    const range = mapClipRange(before, after, edit.start, edit.end);
+    if (!range) return null;
+    moved.push({...edit, ...range});
+  }
+  let presenterOffset = null;
+  if (inset) {
+    const range = mapClipRange(before, after, inset.offset, inset.offset + inset.trim_end - inset.trim_start);
+    if (!range) return null;
+    presenterOffset = range.start;
+  }
+  return {edits: moved, presenterOffset};
+}
+
+function remapSequenceHistory(entries, before, after) {
+  return entries.flatMap(entry => {
+    const document = HistoryModel.read(entry);
+    const plan = planSequenceEdits(before, after, document.edits, document.presenter?.settings);
+    if (!plan) return [];
+    document.edits = plan.edits;
+    if (document.presenter) document.presenter.settings.offset = plan.presenterOffset;
+    return [HistoryModel.capture(document, entries)];
+  });
+}
+
+function renderClipTimeline() {
+  const track = $("clipTrack"), label = $("clipLabel");
+  const clips = clipIntervals(sequenceClips, sequenceTransitions);
+  track.replaceChildren();
+  show(track, clips.length > 1);
+  show(label, clips.length > 1);
+  if (clips.length < 2) return;
+  clips.forEach((clip, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "timeline-block clip";
+    button.textContent = `${index + 1}. ${clip.name}`;
+    button.title = `Seek to clip ${index + 1}: ${clip.name} (${fmt(clip.start)})`;
+    button.setAttribute("aria-label", button.title);
+    positionTimelineBlock(button, {...clip, end: clips[index + 1]?.start ?? clip.end});
+    button.onclick = () => { sourcePlayer().currentTime = clip.start; };
+    track.append(button);
+  });
+}
+
+function refreshSequenceSource(data, currentTime = sourcePlayer().currentTime || 0) {
   const previous = new Map(sequenceClips.map(clip => [clip.id, clip]));
   sequenceClips = data.clips.map((clip, index) => ({...clip, identity:clip.identity || previous.get(clip.id)?.identity || (index === 0 ? projects.source : null)}));
   S.job.sequence_clips = data.clips.map(({id,name,duration})=>({id,name,duration}));
@@ -75,34 +159,85 @@ function refreshSequenceSource(data) {
 }
 
 async function rebuildSequence(order, transitions = sequenceTransitions) {
-  if (sequenceBusy || !S.job) return;
+  if (sequenceBusy || !S.job || S.operation || S.reviewing) return;
   const job = S.job;
-  sequenceBusy = true; renderSequenceClips(); $("sequenceStatus").textContent = "Updating clip sequence…";
+  const before = clipIntervals(sequenceClips, sequenceTransitions);
+  const next = order.map(id => sequenceClips.find(clip => clip.id === id));
+  if (transitions.some((transition, index) => !Number.isFinite(transition.duration) ||
+      transition.duration < 0 || transition.duration > Math.min(2, next[index].duration, next[index + 1].duration))) {
+    $("sequenceStatus").textContent = "Choose a transition no longer than either clip (up to 2 seconds).";
+    return;
+  }
+  const after = clipIntervals(next, transitions);
+  const inset = getPresenterSettings();
+  const plan = planSequenceEdits(before, after, S.edits, inset);
+  if (!plan) {
+    $("sequenceStatus").textContent = "This change would move an edit or presenter inset onto different footage. Shorten edits at the affected clip joins or remove them first.";
+    renderSequenceClips();
+    return;
+  }
+  const undo = remapSequenceHistory(S.undo, before, after);
+  const redo = remapSequenceHistory(S.redo, before, after);
+  const playhead = sourcePlayer().currentTime;
+  const activeClip = before.findLast(clip => clip.start <= playhead && clip.end > playhead);
+  const target = after.find(clip => clip.id === activeClip?.id);
+  const nextPlayhead = target ? target.start + playhead - activeClip.start : playhead;
+  const view = $("editorView");
+  sequenceBusy = true;
+  sourcePlayer().pause();
+  show($("sequenceUpdateNotice"));
+  view.inert = true;
+  renderSequenceClips();
+  $("sequenceStatus").textContent = "Updating clip sequence…";
   try {
-    const result = await api(`/api/jobs/${job.id}/clips/order`, {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({order,transitions})});
+    const result = await api(`/api/jobs/${job.id}/clips/order`, {
+      method: "PUT", headers: {"Content-Type": "application/json",
+        "X-FreeEdit-Sequence-Revision": job.sequence_revision ?? "original"},
+      body: JSON.stringify({order, transitions}),
+      // Allow time for the server to probe and re-encode the full sequence.
+      signal: AbortSignal.timeout(Math.ceil((Math.max(120, after.at(-1).end * 20) + 300) * 1000)),
+    });
     if (S.job !== job) return;
-    refreshSequenceSource(result); $("sequenceStatus").textContent = "Sequence updated. Timeline edits use the new clip order.";
-  } catch (error) { if (S.job === job) $("sequenceStatus").textContent = error.message; }
-  finally { sequenceBusy = false; renderSequenceClips(); }
+    S.edits = plan.edits;
+    S.undo = undo;
+    S.redo = redo;
+    if (inset && plan.presenterOffset !== inset.offset) {
+      presenter.settings.offset = plan.presenterOffset;
+      syncVideos();
+    }
+    refreshSequenceSource(result, nextPlayhead);
+    renderList();
+    renderReframeSections();
+    $("sequenceStatus").textContent = "Sequence updated. Timed edits stayed with their footage.";
+  } catch (error) {
+    if (S.job === job) $("sequenceStatus").textContent = error.message;
+  } finally {
+    view.inert = false;
+    show($("sequenceUpdateNotice"), false);
+    sequenceBusy = false;
+    renderSequenceClips();
+    if (S.job === job) $("sequenceStatus").focus({preventScroll: true});
+  }
 }
+
 function changeSequenceOrder(from, to) {
-  const next = [...sequenceClips]; [next[from], next[to]] = [next[to], next[from]];
-  const transitions = next.slice(1).map((_,i)=>sequenceTransitions[Math.min(i,sequenceTransitions.length-1)] || {type:"cut",duration:0}); rebuildSequence(next.map(clip => clip.id), transitions);
+  if (from === to) return;
+  const next = [...sequenceClips];
+  next.splice(to, 0, next.splice(from, 1)[0]);
+  rebuildSequence(next.map(clip => clip.id), transitionsForOrder(next));
 }
+
+function transitionsForOrder(next) {
+  return next.slice(1).map((clip, index) => {
+    const previous = sequenceClips.findIndex(item => item.id === next[index].id);
+    return sequenceClips[previous + 1]?.id === clip.id
+      ? sequenceTransitions[previous] : {type: "cut", duration: 0};
+  });
+}
+
 function removeSequenceClip(index) {
   const next = sequenceClips.filter((_, i) => i !== index);
-  const transitions = next.slice(1).map((_,i)=>sequenceTransitions[i] || {type:"cut",duration:0});
-  const remainingDuration = sequenceDuration(next) - transitions.reduce((sum,t)=>sum+t.duration,0);
-  if (S.edits.some(edit => edit.end > remainingDuration + .005)) {
-    $("sequenceStatus").textContent = "This clip cannot be removed because existing edits extend past the shortened sequence. Remove or shorten those edits first.";
-    return;
-  }
-  const presenterSettings = typeof getPresenterSettings === "function" ? getPresenterSettings() : null;
-  if (presenterSettings && presenterSettings.offset + presenterSettings.trim_end - presenterSettings.trim_start > remainingDuration + .005) {
-    $("sequenceStatus").textContent = "This clip cannot be removed because the presenter inset extends past the shortened sequence. Adjust or remove the presenter first.";
-    return;
-  }
-  rebuildSequence(next.map(clip => clip.id), transitions);
+  rebuildSequence(next.map(clip => clip.id), transitionsForOrder(next));
 }
 
 $("addSequenceClipBtn").onclick = () => $("sequenceClipInput").click();
@@ -119,7 +254,8 @@ $("sequenceClipInput").addEventListener("change", async event => {
     try {
       const identity = await fingerprintSource(file);
       if (S.job !== job) break;
-      const response = await fetch(`/api/jobs/${job.id}/clips?filename=${encodeURIComponent(file.name)}`, {method:"POST", headers:{"Content-Type":"application/octet-stream"}, body:file});
+      const response = await fetch(`/api/jobs/${job.id}/clips?filename=${encodeURIComponent(file.name)}`, {method:"POST", headers:{"Content-Type":"application/octet-stream",
+        "X-FreeEdit-Sequence-Revision": job.sequence_revision ?? "original"}, body:file});
       const data = await response.json();
       if (S.job !== job) break;
       if (!response.ok) throw new Error(data.detail || `Could not add ${file.name}.`);
@@ -136,5 +272,6 @@ window.addEventListener("freeedit:workspace", event => {
     sequenceTransitions = S.job?.sequence_transitions || sequenceClips.slice(1).map(()=>({type:"cut",duration:0}));
     sequenceOriginalMedia = {...S.job, duration:sequenceClips[0]?.duration || S.job?.duration};
     renderSequenceClips();
+    renderClipTimeline();
   }
 });
