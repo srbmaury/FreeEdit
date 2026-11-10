@@ -24,7 +24,7 @@ class SequenceAppendTests(unittest.IsolatedAsyncioTestCase):
                  patch.object(api,'job_controls',{}),patch.object(api.JobStore,'save'), \
                  patch.object(api,'_receive_upload',AsyncMock(return_value={'id':'temp',**media})), \
                  patch.object(api.clip_sequence,'rebuild',side_effect=rebuild):
-                result=await api.add_sequence_clip('main',Request({'type': 'http'}),'clip.mp4')
+                result=await api.add_sequence_clip('main',Request({'type': 'http', 'headers': []}),'clip.mp4')
             self.assertEqual(result['duration'],4)
 
 
