@@ -53,7 +53,9 @@ function refreshSequenceSource(data) {
   const previous = new Map(sequenceClips.map(clip => [clip.id, clip]));
   sequenceClips = data.clips.map((clip, index) => ({...clip, identity:clip.identity || previous.get(clip.id)?.identity || (index === 0 ? projects.source : null)}));
   S.job.sequence_clips = data.clips.map(({id,name,duration})=>({id,name,duration}));
+  sequenceTransitions = data.transitions;
   S.job.sequence_transitions = sequenceTransitions;
+  S.job.sequence_revision = data.sequence_revision;
   if (sequenceClips[0]?.identity) projects.source = sequenceClips[0].identity;
   if (sequenceOriginalMedia && sequenceClips[0]) sequenceOriginalMedia.duration = sequenceClips[0].duration;
   Object.assign(S.job, {duration:data.duration, has_video:data.has_video, has_audio:data.has_audio,
@@ -64,21 +66,23 @@ function refreshSequenceSource(data) {
   $("silenceStatus").textContent = "Clip sequence changed. Detect pauses again to refresh suggestions.";
   S.exportSignature = null; S.exportSubmission = null; S.submittedRanges = [];
   show($("resultPanel"), false); resetResultPreview();
-  const source = `/api/jobs/${S.job.id}/source?t=${Date.now()}`;
+  const source = `/api/jobs/${S.job.id}/source?revision=${S.job.sequence_revision}`;
   video.src = source; video.load();
   video.addEventListener("loadedmetadata", () => { video.currentTime = Math.min(currentTime, data.duration); render(); updateTransport(); renderTimeline(); layoutStage(); }, {once:true});
   $("fileMeta").textContent = `${sequenceClips.length} clips · ${fmt(data.duration)} · ${data.width}×${data.height}${data.has_audio ? "" : " · no audio"}`;
   renderSequenceClips(); renderTimeline(); renderWaveform(); refreshExportState();
+  scheduleProjectSave();
 }
 
 async function rebuildSequence(order, transitions = sequenceTransitions) {
   if (sequenceBusy || !S.job) return;
+  const job = S.job;
   sequenceBusy = true; renderSequenceClips(); $("sequenceStatus").textContent = "Updating clip sequence…";
   try {
-    const result = await api(`/api/jobs/${S.job.id}/clips/order`, {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({order,transitions})});
-    sequenceTransitions = structuredClone(transitions);
+    const result = await api(`/api/jobs/${job.id}/clips/order`, {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({order,transitions})});
+    if (S.job !== job) return;
     refreshSequenceSource(result); $("sequenceStatus").textContent = "Sequence updated. Timeline edits use the new clip order.";
-  } catch (error) { $("sequenceStatus").textContent = error.message; }
+  } catch (error) { if (S.job === job) $("sequenceStatus").textContent = error.message; }
   finally { sequenceBusy = false; renderSequenceClips(); }
 }
 function changeSequenceOrder(from, to) {
@@ -105,6 +109,7 @@ $("addSequenceClipBtn").onclick = () => $("sequenceClipInput").click();
 $("sequenceClipInput").addEventListener("change", async event => {
   const files = [...event.target.files]; event.target.value = "";
   if (!files.length || !S.job || sequenceBusy || S.operation || S.reviewing) return;
+  const job = S.job;
   sequenceBusy = true; renderSequenceClips();
   let addError = null;
   for (const file of files) {
@@ -113,15 +118,16 @@ $("sequenceClipInput").addEventListener("change", async event => {
     $("sequenceStatus").textContent = `Adding ${file.name}…`;
     try {
       const identity = await fingerprintSource(file);
-      const response = await fetch(`/api/jobs/${S.job.id}/clips?filename=${encodeURIComponent(file.name)}`, {method:"POST", headers:{"Content-Type":"application/octet-stream"}, body:file});
+      if (S.job !== job) break;
+      const response = await fetch(`/api/jobs/${job.id}/clips?filename=${encodeURIComponent(file.name)}`, {method:"POST", headers:{"Content-Type":"application/octet-stream"}, body:file});
       const data = await response.json();
+      if (S.job !== job) break;
       if (!response.ok) throw new Error(data.detail || `Could not add ${file.name}.`);
       data.clips = data.clips.map((clip, index) => ({...clip, identity:index === 0 ? projects.source : (index === data.clips.length - 1 ? identity : sequenceClips[index]?.identity)}));
-      sequenceTransitions.push({type:"cut",duration:0}); S.job.sequence_transitions = sequenceTransitions;
       refreshSequenceSource(data);
     } catch (error) { addError = error.message; break; }
   }
-  $("sequenceStatus").textContent = addError || (sequenceClips.length ? `${sequenceClips.length} clips · sequence ready.` : "");
+  if (S.job === job) $("sequenceStatus").textContent = addError || (sequenceClips.length ? `${sequenceClips.length} clips · sequence ready.` : "");
   sequenceBusy = false; renderSequenceClips();
 });
 window.addEventListener("freeedit:workspace", event => {

@@ -67,6 +67,11 @@ class JobStore:
                     continue
                 if not any(p.is_file() and not p.is_symlink() for p in work.glob("source.*")):
                     continue
+                revision = job.get("sequence_revision")
+                if revision is not None and (not isinstance(revision, str)
+                        or not re.fullmatch(r"[a-f0-9]{32}", revision)
+                        or not (work / f"sequence-{revision}.mp4").is_file()):
+                    raise ValueError("Invalid sequence media")
                 if job.get("presenter") and not any(
                         p.is_file() and not p.is_symlink() for p in work.glob("presenter.*")):
                     job["presenter"] = None

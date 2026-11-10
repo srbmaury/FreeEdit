@@ -238,7 +238,7 @@ function openEditor(job) {
   show($("recoverFileBtn"), false);
   show($("procProgress"), false);
 
-  const src = `/api/jobs/${job.id}/source`;
+  const src = `/api/jobs/${job.id}/source?revision=${job.sequence_revision ?? "original"}`;
   const isVideo = job.has_video;
   show($("toolbar"));
   show($("backgroundPanel"), isVideo);
