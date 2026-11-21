@@ -5,10 +5,12 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
 ENV PATH="/root/.cargo/bin:${PATH}"
+ARG PIP_DEFAULT_TIMEOUT=60
 RUN pip wheel --no-cache-dir --no-deps -w /wheels deepfilterlib==0.5.6
 
 # --- Stage 2: runtime
 FROM python:3.12-slim
+ARG PIP_DEFAULT_TIMEOUT=60
 
 # git: DeepFilterNet shells out to it at startup to log its version
 
