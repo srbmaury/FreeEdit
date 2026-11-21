@@ -38,6 +38,17 @@ cd FreeEdit
 
 Open **http://localhost:8000**. The setup uses Python 3.12, Rust/Cargo, FFmpeg and FFprobe. `./scripts/run.sh` shows which checkout and Python environment it launched.
 
+#### Python virtual environment
+
+`./scripts/setup.sh` creates `.venv` with Python 3.12 and installs FreeEdit’s dependencies. `./scripts/run.sh` uses `.venv` automatically. To use the same environment for Python commands in your terminal, activate it after setup:
+
+```sh
+source .venv/bin/activate
+python tests/check.py
+```
+
+If you want to create the environment before running setup, use `python3.12 -m venv .venv` from the repository root with Python 3.12 already installed. Setup will reuse it and install the dependencies.
+
 On a fresh install, the base setup skips the optional background and narration engines. Enable the features you need before starting or restarting FreeEdit.
 
 | Feature | macOS command | Docker build argument |
