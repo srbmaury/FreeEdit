@@ -29,10 +29,35 @@ class SequenceAppendTests(unittest.IsolatedAsyncioTestCase):
 
 
 class SequenceMediaTests(unittest.TestCase):
+    def test_crossfade_aligns_a_short_audio_stream_with_video(self):
+        import json
+        import subprocess
+        from backend.media import pipeline
+        from backend.media import sequence
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name, audio_duration in (("first.mp4", 1), ("second.mp4", 2)):
+                subprocess.run([
+                    pipeline.FFMPEG(), "-loglevel", "error",
+                    "-f", "lavfi", "-i", "color=blue:s=160x120:r=24:d=2",
+                    "-f", "lavfi", "-i", f"sine=frequency=440:duration={audio_duration}",
+                    "-c:v", "libx264", "-c:a", "aac", str(root / name),
+                ], check=True)
+            sequence.rebuild(root, [{"file": "first.mp4"}, {"file": "second.mp4"}],
+                             [{"type": "crossfade", "duration": .5}])
+            metadata = json.loads(subprocess.check_output([
+                pipeline.FFPROBE(), "-v", "error", "-show_entries", "stream=codec_type,duration",
+                "-of", "json", str(root / "sequence.mp4"),
+            ]))
+            durations = {stream["codec_type"]: float(stream["duration"]) for stream in metadata["streams"]}
+            self.assertAlmostEqual(durations["video"], 3.5, delta=.05)
+            self.assertAlmostEqual(durations["audio"], durations["video"], delta=.05)
+
     def test_matching_odd_clips_crossfade_and_recover_by_revision(self):
         import subprocess
         from fastapi.testclient import TestClient
-        from backend import pipeline
+        from backend.media import pipeline
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

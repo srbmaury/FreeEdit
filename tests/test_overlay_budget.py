@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from pydantic import ValidationError
-from backend import models
+from backend.http import models
 
 
 def png(width, height):

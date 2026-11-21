@@ -2,7 +2,7 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
-const source=fs.readFileSync('frontend/projects.js','utf8');
+const source=fs.readFileSync('frontend/projects/projects.js','utf8');
 const save=source.slice(source.indexOf('async function saveRecovery()'),source.indexOf('\n$("saveProjectBtn").onclick'));
 
 function editor(write){

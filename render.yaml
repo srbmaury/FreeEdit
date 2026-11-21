@@ -10,9 +10,9 @@ services:
       - freeedit.srbmaury.com
     envVars:
       - key: MAX_UPLOAD_MB
-        value: "100"
+        value: "200"
       - key: MAX_DURATION_MIN
-        value: "10"
+        value: "15"
       - key: JOB_TTL_HOURS
         value: "1"
       - key: FREEEDIT_MAX_ACTIVE_UPLOADS

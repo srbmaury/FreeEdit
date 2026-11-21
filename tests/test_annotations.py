@@ -9,8 +9,9 @@ import zlib
 from pathlib import Path
 
 from pydantic import ValidationError
-from backend import pipeline, rendering
-from backend.models import AnnotationEdit, ProcessRequest
+from backend.media import pipeline
+from backend.media import rendering
+from backend.http.models import AnnotationEdit, ProcessRequest
 
 
 def png_pixel(color=(255, 0, 0, 255), size=1):

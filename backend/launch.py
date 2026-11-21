@@ -6,7 +6,7 @@ import socket
 import subprocess
 import sys
 
-from .runtime_info import source_info
+from backend.support.runtime_info import source_info
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -32,7 +32,7 @@ def check_port(port):
             f'Another app may already be listening. Inspect it with:\n'
             f'  lsof -nP -iTCP:{port} -sTCP:LISTEN\n'
             'Keep that process running and choose another port, for example:\n'
-            f'  PORT={port + 1 if port < 65535 else 8000} ./run.sh'
+            f'  PORT={port + 1 if port < 65535 else 8000} ./scripts/run.sh'
         ) from error
 
 

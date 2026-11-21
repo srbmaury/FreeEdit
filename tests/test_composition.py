@@ -12,8 +12,9 @@ import wave
 import array
 from pathlib import Path
 
-from backend.composition import compose
-from backend import pipeline, rendering
+from backend.media.composition import compose
+from backend.media import pipeline
+from backend.media import rendering
 
 
 @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"),
@@ -135,9 +136,9 @@ class CompositionTests(unittest.TestCase):
                     "presenter": {"box": {"x": 0, "y": 0, "w": 64, "h": 48},
                         "offset": 1, "trim_start": 0, "trim_end": 2,
                         "effect": "blur", "sound": sound, "main_volume": .5, "presenter_volume": .5}}
-                with patch("backend.composition.create_mask", side_effect=AssertionError("no segmentation")), \
-                     patch("backend.background.create_mask", side_effect=AssertionError("no segmentation")), \
-                     patch("backend.composition.compose", side_effect=AssertionError("no video composition")):
+                with patch("backend.media.composition.create_mask", side_effect=AssertionError("no segmentation")), \
+                     patch("backend.media.background.create_mask", side_effect=AssertionError("no segmentation")), \
+                     patch("backend.media.composition.compose", side_effect=AssertionError("no video composition")):
                     output = rendering.render(self.main, work, settings, lambda *_: None, self.presenter)
                 info = pipeline.probe(output)
                 self.assertFalse(info.has_video)

@@ -4,7 +4,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
 const context = vm.createContext({});
-vm.runInContext(fs.readFileSync("frontend/media-utils.js", "utf8"), context);
+vm.runInContext(fs.readFileSync("frontend/media/media-utils.js", "utf8"), context);
 const crop = (w, h, s) => vm.runInContext(`freeeditCropRect(${w},${h},${JSON.stringify(s)})`, context);
 const parse = (s, d) => vm.runInContext("freeeditParseSrt(" + JSON.stringify(s) + "," + d + ")", context);
 

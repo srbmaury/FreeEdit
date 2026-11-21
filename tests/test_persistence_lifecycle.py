@@ -7,8 +7,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from backend import app as api
-from backend.execution import JobControl
-from backend.models import ProcessRequest
+from backend.jobs.execution import JobControl
+from backend.http.models import ProcessRequest
 
 
 class PersistenceLifecycleTests(unittest.TestCase):

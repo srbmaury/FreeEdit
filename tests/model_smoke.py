@@ -14,7 +14,8 @@ import wave
 from pathlib import Path
 from unittest.mock import patch
 
-from backend import background, pipeline
+from backend.media import background
+from backend.media import pipeline
 
 
 class ModelSmokeTests(unittest.TestCase):

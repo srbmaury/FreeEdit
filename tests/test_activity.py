@@ -5,8 +5,8 @@ from pathlib import Path
 from unittest.mock import patch, Mock
 from fastapi.testclient import TestClient
 from backend import app as api
-from backend.sessions import COOKIE, create_session
-from backend.models import ProcessRequest, ResultPreviewRequest
+from backend.http.sessions import COOKIE, create_session
+from backend.http.models import ProcessRequest, ResultPreviewRequest
 
 
 class ActivityTests(unittest.TestCase):

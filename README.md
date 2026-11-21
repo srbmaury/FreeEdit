@@ -4,25 +4,26 @@
 
 **Try it:** [freeedit.srbmaury.com](https://freeedit.srbmaury.com) · **Source license:** [MIT](LICENSE)
 
-> Hosted processing happens on the server; do not upload confidential media to a deployment you do not trust. The live site may run a different commit from this repository. See [privacy/security](docs/SECURITY.md).
+> Hosted processing happens on the server; do not upload confidential media to a deployment you do not trust. The live site may run a different commit from this repository.
 
 ## What it does
 
 - **Reduce background noise** with [DeepFilterNet3](https://github.com/Rikorose/DeepFilterNet), with a short audio comparison.
 - **Find and shorten pauses**: review quiet portions before making cuts.
-- **Edit visually**: cut ranges, timed text, imported SRT captions, privacy masks, Reframe/zoom portions, and illustrated annotations (icons, arrows, shapes, callouts, or uploaded logos). Draw custom pen and highlighter strokes directly on the recording, and group strokes to move, resize and time them together. Add timed cursor spotlights and click highlights, and mute or change volume over selected audio regions.
+- **Edit visually**: cut ranges, timed text, imported SRT captions, privacy masks, Reframe/zoom portions, and illustrated annotations (icons, arrows, shapes, callouts, or uploaded logos). Draw custom pen and highlighter strokes directly on the recording, and group strokes to move, resize and time them together. Mute or change volume over selected audio regions.
 - **Highlight tutorial actions**: manually place timed cursor spotlights and fading click rings, then move, resize, or restyle them.
 - **Adjust range speed**: open Speed, set From/To times, and apply 0.25×–4× speed, with preserved audio pitch, editable Speed blocks, and matching result previews and exports.
 - **Explain what matters**: pick a focus point in the video; choose original, wide, vertical or square aspect ratios.
-- **Build a main-video sequence**: arrange up to eight clips with matching dimensions, frame rate, and audio-track presence; add a movable presenter inset, choose the presenter/mixed audio, and optionally process the presenter background.
+- **Build a main-video sequence**: arrange up to eight clips with matching dimensions, frame rate, and audio-track presence; join them with cuts or crossfades, add a movable presenter inset, choose the presenter/mixed audio, and optionally process the presenter background.
+- **Generate narration** with local Kokoro text-to-speech, four English voices, playback, and WAV download.
 - **Replace backgrounds** (optional): person-aware blur, solid color or an image, optionally restricted to a webcam area.
 - **Review accurately**: timeline selection, original/result comparisons, and short processed previews before exporting.
 - **Export** balanced, high-quality or smaller H.264 MP4, or audio-only WAV. Optional speech leveling and fades.
 - **Resume later** using version-2 `.freeedit.json` project files with a saved edit document and source fingerprints.
 
-For placement, captions, pause controls, background effects, and the scope of each preview, see the [usage guide](docs/USAGE.md).
-
 ## Quick start
+
+The commands below apply to a checkout containing the `scripts/` directory. Run them from the repository root.
 
 ### macOS (native)
 
@@ -31,28 +32,48 @@ Requires Homebrew and an internet connection for initial dependencies/models.
 ```sh
 git clone https://github.com/srbmaury/FreeEdit.git
 cd FreeEdit
-./setup.sh
-./run.sh
+./scripts/setup.sh
+./scripts/run.sh
 ```
 
-Open **http://localhost:8000**. The setup uses Python 3.12, Rust/Cargo, FFmpeg and FFprobe. `./run.sh` shows which checkout and Python environment it launched.
+Open **http://localhost:8000**. The setup uses Python 3.12, Rust/Cargo, FFmpeg and FFprobe. `./scripts/run.sh` shows which checkout and Python environment it launched.
 
-Person-aware background effects use an optional separate environment:
+#### Python virtual environment
+
+`./scripts/setup.sh` creates `.venv` with Python 3.12 and installs FreeEdit’s dependencies. `./scripts/run.sh` uses `.venv` automatically. To use the same environment for Python commands in your terminal, activate it after setup:
 
 ```sh
-./setup-background.sh
-./run.sh
+source .venv/bin/activate
+python tests/check.py
 ```
 
-Alternatively, to preload the denoising model during initial setup:
+If you want to create the environment before running setup, use `python3.12 -m venv .venv` from the repository root with Python 3.12 already installed. Setup will reuse it and install the dependencies.
+
+On a fresh install, the base setup skips the optional background and narration engines. Enable the features you need before starting or restarting FreeEdit.
+
+| Feature | macOS command | Docker build argument |
+| --- | --- | --- |
+| Person-aware background blur and replacement | `./scripts/setup.sh --background` | `--build-arg INSTALL_BACKGROUND=true` |
+| Local text-to-speech | `./scripts/setup-tts.sh` after base setup | `--build-arg INSTALL_TTS=true` |
+
+To enable both optional features on a fresh macOS checkout, replace the setup and launch lines above with:
 
 ```sh
-./setup.sh --warm-model
+./scripts/setup.sh --background
+./scripts/setup-tts.sh
+./scripts/run.sh
 ```
 
-### Docker / other operating systems
+Background setup installs MediaPipe in `.venv-background` and verifies the segmentation model. Add `--warm-model` to `./scripts/setup.sh` to preload DeepFilterNet3 for noise reduction, for example `./scripts/setup.sh --background --warm-model`.
 
-The [Dockerfile](Dockerfile) is the supported starting point for Linux/container use; native Windows installation is not validated. Optional background support requires `INSTALL_BACKGROUND=true` at build time. See [development and troubleshooting](docs/DEVELOPMENT.md) and [operational limits](docs/OPERATIONS.md) before hosting it publicly.
+### Docker
+
+```sh
+docker build -t freeedit .
+docker run --rm -p 10000:10000 freeedit
+```
+
+Open **http://localhost:10000**. Add either or both optional build arguments from the table before the final `.` in the build command.
 
 ## Basic editing workflow
 
@@ -67,47 +88,62 @@ Keyboard essentials: `Space` play/pause, `←/→` step, `V` Select, `H` Hide, `
 
 ## Boundaries worth knowing
 
-FreeEdit is a focused video editor rather than a general-purpose nonlinear editor. The local default upload limit is 1 GiB, with resource-dependent runtime. Main-video sequences support up to eight clips with matching dimensions, frame rate, and audio-track presence. The editor allows up to 100 cuts, up to 100 text/privacy/annotation overlays together, and 20 non-overlapping Reframe portions. Automatic subtitle transcription, speed-ramping, clip transitions and full color grading are not included.
+FreeEdit is a focused video editor rather than a general-purpose nonlinear editor. The local default upload limit is 1 GiB, with resource-dependent runtime. Main-video sequences support up to eight clips with matching dimensions, frame rate, and audio-track presence. The editor allows up to 100 cuts, up to 100 text/privacy/annotation overlays together, and 20 non-overlapping Reframe portions. Automatic subtitle transcription, speed-ramping and full color grading are not included.
 
-Temporary uploaded files and rendered jobs expire. Signed anonymous sessions protect access to the current browser's jobs, but **are not user accounts**. Public hosting requires sensible request limits, HTTPS, a trusted reverse proxy and sufficient disk. Review [operations](docs/OPERATIONS.md) and [security](docs/SECURITY.md).
+Temporary uploaded files and rendered jobs expire. Signed anonymous sessions protect access to the current browser's jobs, but **are not user accounts**. Public hosting requires sensible request limits, HTTPS, a trusted reverse proxy and sufficient disk.
 
 ## Project structure
 
 ```text
-backend/                 FastAPI routes, validation, processing, FFmpeg, optional ML workers
-frontend/                No-build browser editor (state, canvas, timeline, export, projects)
+backend/                 FastAPI app, launcher, and preflight entry points
+  media/                 FFmpeg, composition, sequencing, and local ML workers
+  jobs/                  Job persistence and subprocess lifecycle
+  http/                  Request models, session cookies, and request limits
+  support/               Diagnostics, logging, and runtime metadata
+frontend/                No-build browser editor
+  editor/                Editor state, history, timeline, and workspace
+  visuals/               Canvas, drawing, annotations, and reframe
+  media/                 Clip sequencing, audio tools, and narration
+  projects/              Project files, recovery, and source identity
+  export/                Export payload, processing, and preview
+  shared/                Common UI, API client, and theme
+  styles/                Editor stylesheets
+pyproject.toml           Pinned web and separate noise, background, and narration dependency groups
 tests/                   Python/FFmpeg and Node/browser regression tests
-scripts/                 Opt-in profiling and license/release inventory helpers
-docs/                    Concise guides, technical architecture, security, benchmark evidence
-setup.sh / run.sh        Native setup and launch
-setup-background.sh      Optional person-segmentation environment
+scripts/                 Native setup, narration setup, and launch
 Dockerfile / render.yaml Container and hosted deployment configuration
 ```
 
-A common edit model keeps cut, mask, caption/text, annotations and Reframe timelines consistent. The frontend is split into focused editor modules; the export adapter converts settings into validated FFmpeg requests. Learn more in [architecture](docs/ARCHITECTURE.md).
+A common edit model keeps cut, mask, caption/text, annotations and Reframe timelines consistent. The frontend is split into focused editor modules; the export adapter converts settings into validated FFmpeg requests.
 
 ## Development and quality checks
 
-After installing the dependencies:
+Dependency groups live in `pyproject.toml` and require pip 25.1 or later. CI installs the pinned `web` group by itself for Python and browser checks. Native setup installs `web` and `noise`, with `background` and `narration` installed by their respective setup commands.
+
+Run the local checks after setup:
 
 ```sh
-.venv/bin/python -m backend.preflight --verify-render
-.venv/bin/python -m unittest discover -s tests -v
-node --test tests/*.cjs tests/test_*.mjs
+.venv/bin/python tests/check.py
 ```
 
-GitHub Actions also runs a Chromium end-to-end upload/edit/export check. Synthetic tests do not replace manual verification with actual recordings and optional segmentation. More details: [development](docs/DEVELOPMENT.md).
+GitHub Actions also runs browser smoke tests in Chrome, Firefox, and WebKit, plus a Docker build and denoising smoke test.
 
-## Documentation
+## Distribution notes
 
-| Guide | Purpose |
-| --- | --- |
-| [Usage](docs/USAGE.md) | Editing workflow, media preview types, shortcuts, presenter and background controls |
-| [Development](docs/DEVELOPMENT.md) | Setup, troubleshooting, tests and code navigation |
-| [Architecture](docs/ARCHITECTURE.md) | State model, module boundaries and invariants |
-| [Code flow](docs/CODE_FLOW.md) | Function index and Mermaid diagrams for startup, editing, export, recovery and cancellation |
-| [Operations](docs/OPERATIONS.md) | Runtime limits, performance evidence, hosting and releases |
-| [Security](docs/SECURITY.md) | Anonymous sessions, data isolation and deployment caveats |
-| [Dependency / model licensing](docs/LICENSE_AUDIT.md) | Open third-party distribution questions |
+FreeEdit source is available under the [MIT license](LICENSE). Distributions should retain the applicable third-party notices for the packages and native libraries they include. FFmpeg terms depend on its build configuration, including whether it bundles libx264.
 
-Historical plans, experiments and UI mockups remain recoverable in Git history instead of being maintained as current documentation.
+The source license and model terms are separate. The production image preloads DeepFilterNet3 weights. Record the exact checkpoint and applicable terms before redistributing an image containing those weights. The optional MediaPipe model downloads separately and requires its own distribution review.
+
+## Local text-to-speech
+
+Run `./scripts/setup-tts.sh` after setting up FreeEdit, then restart the app. The setup
+installs Kokoro ONNX in the FreeEdit Python environment and downloads the voice
+model once. For a different Python environment, set `PYTHON_BIN` to the same
+interpreter that runs FreeEdit. For a shared installation, set
+`FREEEDIT_TTS_MODEL_DIR` to the same model directory at setup and runtime.
+
+Open **Generate narration** on the start screen or from the FreeEdit menu.
+Enter up to 1,000 characters of English text, choose a voice and speed, then preview or download the WAV. Inference runs on the FreeEdit server's CPU with
+no API key, external speech service, or per-generation fee. The server handles
+one narration request at a time. Run FreeEdit locally if you want the script
+and audio to stay on your own machine.

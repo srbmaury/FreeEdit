@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from backend.launch import available_port, check_port
-from backend.runtime_info import source_info
+from backend.support.runtime_info import source_info
 
 
 class LaunchTests(unittest.TestCase):
@@ -33,7 +33,7 @@ class LaunchTests(unittest.TestCase):
             (root/'frontend').mkdir()
             code = root/'frontend'/'app.js'
             code.write_text('first')
-            with patch('backend.runtime_info.subprocess.run', side_effect=FileNotFoundError):
+            with patch('backend.support.runtime_info.subprocess.run', side_effect=FileNotFoundError):
                 first = source_info(root)
                 self.assertIsNone(first['revision'])
                 self.assertEqual(first, source_info(root))

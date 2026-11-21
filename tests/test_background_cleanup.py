@@ -6,8 +6,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from backend import background, pipeline
-from backend.execution import Cancelled
+from backend.media import background
+from backend.media import pipeline
+from backend.jobs.execution import Cancelled
 
 
 class BackgroundCleanupTests(unittest.TestCase):
@@ -26,7 +27,7 @@ class BackgroundCleanupTests(unittest.TestCase):
                     return outcome
 
                 with patch.object(background, 'ensure_model', return_value=work/'model'), \
-                     patch('backend.execution.run_process', side_effect=worker):
+                     patch('backend.jobs.execution.run_process', side_effect=worker):
                     with self.assertRaises((Cancelled, pipeline.PipelineError)):
                         background.create_mask(work/'source.mp4', work, info, {}, lambda *_: None)
                 self.assertFalse((work/'person-mask.mkv').exists())

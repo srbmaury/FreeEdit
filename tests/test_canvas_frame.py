@@ -4,9 +4,10 @@ import unittest
 from pathlib import Path
 from pydantic import ValidationError
 from fastapi import HTTPException
-from backend.models import FramingSettings, ProcessRequest
-from backend import pipeline, rendering
-from backend.canvas_frame import geometry
+from backend.http.models import FramingSettings, ProcessRequest
+from backend.media import pipeline
+from backend.media import rendering
+from backend.media.canvas_frame import geometry
 
 
 class CanvasFrameTests(unittest.TestCase):

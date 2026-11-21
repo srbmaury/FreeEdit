@@ -1,0 +1,843 @@
+"""FFmpeg + DeepFilterNet processing pipeline.
+
+Flow for a video:
+    source.* --ffmpeg--> raw.wav --DeepFilterNet3--> denoised/raw_DeepFilterNet3.wav
+    source.* + denoised wav + overlays --ffmpeg--> output.*
+"""
+
+from __future__ import annotations
+
+import base64
+from fractions import Fraction
+import json
+import math
+import tempfile
+import threading
+import os
+import re
+import shutil
+import struct
+import subprocess
+import sys
+from contextlib import nullcontext
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable
+
+from backend.jobs.execution import check_cancelled, run_process, start_process, kill_process
+from backend.media.waveform import pcm_peaks
+
+ProgressFn = Callable[[str, float | None], None]
+
+def motion_progress(start: float, duration: float) -> str:
+    return f"clip((t-({start}))/{max(.000001, duration)},0,1)"
+
+
+def motion_zoom(motion: dict, progress: str) -> str:
+    return f"({motion['zoom_from']}+({motion['zoom_to']-motion['zoom_from']})*{progress})"
+
+
+HIDE_STYLES = {"blur", "pixelate", "black"}
+
+
+EXPORT_PRESETS = {
+    "balanced": {"label": "Balanced", "max_side": 0, "crf": 23, "audio_kbps": 192},
+    "small": {"label": "Small file", "max_side": 1280, "crf": 28, "audio_kbps": 128},
+    "high": {"label": "High quality", "max_side": 0, "crf": 18, "audio_kbps": 192},
+    "audio_only": {"label": "Audio only", "max_side": 0},
+}
+
+
+class PipelineError(Exception):
+    pass
+
+
+def find_binary(name: str, env_var: str) -> str:
+    """Resolve a binary from an env override, the running venv, or PATH."""
+    override = os.environ.get(env_var)
+    if override:
+        return override
+    venv_bin = Path(sys.executable).parent / name
+    if venv_bin.exists():
+        return str(venv_bin)
+    found = shutil.which(name)
+    if not found:
+        raise PipelineError(f"'{name}' not found. Install it or set {env_var}.")
+    return found
+
+
+FFMPEG = lambda: find_binary("ffmpeg", "FFMPEG_BIN")  # noqa: E731
+FFPROBE = lambda: find_binary("ffprobe", "FFPROBE_BIN")  # noqa: E731
+
+
+@dataclass
+class MediaInfo:
+    duration: float
+    has_video: bool
+    has_audio: bool
+    width: int = 0
+    height: int = 0
+    audio_channels: int = 0
+    frame_rate: float = 30.0
+
+
+def probe(path: Path) -> MediaInfo:
+    try:
+        out = run_process(
+            [FFPROBE(), "-v", "error", "-print_format", "json", "-show_streams", "-show_format", str(path)],
+            capture_output=True, text=True, timeout=30,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise PipelineError("Reading this file timed out.") from exc
+    if out.returncode != 0:
+        raise PipelineError("Could not read this file. Is it a valid audio/video file?")
+    data = json.loads(out.stdout)
+    streams = data.get("streams", [])
+    # Ignore cover-art "video" streams in audio files
+    video = next(
+        (s for s in streams if s.get("codec_type") == "video"
+         and not s.get("disposition", {}).get("attached_pic")),
+        None,
+    )
+    audio = next((s for s in streams if s.get("codec_type") == "audio"), None)
+    width, height = (int(video.get("width", 0)), int(video.get("height", 0))) if video else (0, 0)
+    # Phone videos may carry a 90/270° rotation; ffmpeg auto-rotates when filtering
+    if video and _rotation(video) in (90, 270):
+        width, height = height, width
+    duration = float(data.get("format", {}).get("duration") or 0)
+    if not (video or audio) or not math.isfinite(duration) or duration <= 0:
+        raise PipelineError("This file has no playable media with a known duration.")
+    return MediaInfo(
+        duration=duration,
+        has_video=video is not None,
+        has_audio=audio is not None,
+        width=width,
+        height=height,
+        audio_channels=int(audio.get("channels", 2)) if audio else 0,
+        frame_rate=source_frame_rate(video),
+    )
+
+
+def source_frame_rate(video: dict | None) -> float:
+    if not video:
+        return 30.0
+    try:
+        rate = float(Fraction(video.get("avg_frame_rate") or video.get("r_frame_rate") or "30"))
+        return round(min(60, max(1, rate)), 3) if math.isfinite(rate) and rate > 0 else 30.0
+    except (ValueError, ZeroDivisionError, TypeError):
+        return 30.0
+
+
+def _rotation(stream: dict) -> int:
+    rot = stream.get("tags", {}).get("rotate")
+    if rot is None:
+        for sd in stream.get("side_data_list", []):
+            if "rotation" in sd:
+                rot = sd["rotation"]
+    try:
+        return abs(int(float(rot or 0))) % 360
+    except ValueError:
+        return 0
+
+
+def _run_ffmpeg(args: list[str], duration: float, label: str, progress: ProgressFn) -> None:
+    """Run ffmpeg, reporting percentage progress from its -progress output."""
+    cmd = [FFMPEG(), "-hide_banner", "-loglevel", "error", "-y", "-nostats", "-progress", "pipe:1", *args]
+    timeout = max(30, float(os.environ.get("FFMPEG_TIMEOUT_SECONDS", 300 + duration * 10)))
+    expired = threading.Event()
+    # stderr must drain independently of progress or FFmpeg can deadlock.
+    with tempfile.TemporaryFile() as errors:
+        proc = start_process(cmd, stdout=subprocess.PIPE, stderr=errors, text=True, stdin=subprocess.DEVNULL)
+        def terminate():
+            expired.set()
+            kill_process(proc)
+        timer = threading.Timer(timeout, terminate)
+        timer.start()
+        try:
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                if line.startswith("out_time_us=") and duration > 0:
+                    try:
+                        secs = int(line.split("=", 1)[1]) / 1_000_000
+                        progress(label, max(0.0, min(1.0, secs / duration)))
+                    except ValueError:
+                        pass
+            code = proc.wait()
+        finally:
+            timer.cancel()
+            if proc.poll() is None:
+                kill_process(proc)
+            proc.wait()
+            if proc.stdout:
+                proc.stdout.close()
+        check_cancelled()
+        if expired.is_set():
+            raise PipelineError(f"Export timed out during '{label}'. Try a shorter recording.")
+        if code != 0:
+            errors.seek(0, os.SEEK_END)
+            errors.seek(max(0, errors.tell() - 4000))
+            tail = "\n".join(errors.read().decode("utf-8", errors="replace").strip().splitlines()[-8:])
+            raise PipelineError(f"ffmpeg failed during '{label}':\n{tail}")
+
+
+WORKER = Path(__file__).with_name("df_worker.py")
+
+
+def denoise(wav_in: Path, out_dir: Path, atten_lim: int | None, duration: float) -> Path:
+    """Run DeepFilterNet3 in a separate Python process (see df_worker.py)."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out = out_dir / f"{wav_in.stem}_DeepFilterNet3.wav"
+    python = os.environ.get("DEEPFILTER_PYTHON", sys.executable)
+    cmd = [python, str(WORKER), str(wav_in), str(out), str(atten_lim) if atten_lim is not None else ""]
+    try:
+        proc = run_process(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                              timeout=300 + duration * 5)
+    except subprocess.TimeoutExpired:
+        raise PipelineError("DeepFilterNet timed out.")
+    if proc.returncode != 0 or not out.exists():
+        tail = "\n".join(proc.stderr.strip().splitlines()[-8:])
+        raise PipelineError(f"DeepFilterNet failed:\n{tail}")
+    return out
+
+
+def _even(v: float) -> int:
+    return max(0, int(round(v / 2)) * 2)
+
+
+def _enable(item: dict, duration: float) -> str:
+    start = max(0.0, float(item.get("start", 0)))
+    end = float(item.get("end", duration) or duration)
+    return f"between(t,{start:.3f},{end:.3f})"
+
+
+def output_scale(info: MediaInfo, preset: str = "balanced") -> float:
+    """Fit the preset and server limits without upscaling.
+
+    Small hosts can't decode + filter + encode Retina-size frames in 512 MB.
+    """
+    limit = int(os.environ.get("MAX_OUTPUT_SIDE", 0))
+    preset_limit = EXPORT_PRESETS[preset]["max_side"]
+    limit = min(limit, preset_limit) if limit and preset_limit else limit or preset_limit
+    longest = max(info.width, info.height)
+    return limit / longest if limit and longest > limit else 1.0
+
+
+def reframe_geometry(width: int, height: int, settings: dict) -> tuple[int, int, int, int]:
+    """Even crop rectangle, matching frontend/media-utils.js for normal video sizes."""
+    ratios = {"wide": 16 / 9, "vertical": 9 / 16, "square": 1}
+    aspect = settings["aspect"]
+    ratio = ratios.get(aspect, width / height)
+    available_w = min(width, height * ratio)
+    available_h = min(height, width / ratio)
+    w = max(2, min(width // 2 * 2, int(available_w / settings["zoom"] / 2) * 2))
+    h = max(2, min(height // 2 * 2, int(available_h / settings["zoom"] / 2) * 2))
+    x = int((width - w) * settings["focus_x"] / 2) * 2
+    y = int((height - h) * settings["focus_y"] / 2) * 2
+    return x, y, w, h
+
+
+def reframe_expressions(sections: list[dict], axis: str, baseline: float | None = None) -> str:
+    """Smoothstep per-section weights evaluated on the original input timeline.
+
+    axis: z (zoom), x or y (focus). Each section eases from the whole-video
+    settings into the chosen region and returns to the whole-video settings.
+    """
+    baseline = baseline if baseline is not None else (1 if axis == "z" else .5)
+    expr = f"{baseline:.6f}"
+    for section in sections:
+        start, end = section["start"], section["end"]
+        ease = min(section["transition"], (end - start) / 2)
+        if ease < .001:
+            weight = f"between(T,{start:.3f},{end:.3f})"
+        else:
+            incoming = f"min(1,max(0,(T-{start:.3f})/{ease:.3f}))"
+            outgoing = f"min(1,max(0,({end:.3f}-T)/{ease:.3f}))"
+            # Quintic smootherstep: both velocity and acceleration vanish at
+            # each boundary. The preview uses the same easing function.
+            weight = f"({incoming})*({outgoing})"
+            weight = f"({weight})*({weight})*({weight})*(10-15*({weight})+6*({weight})*({weight}))"
+        value = (section["zoom"] if axis == "z" else section["focus_" + axis]) - baseline
+        if abs(value) >= .000001:
+            expr += f"+({value:.6f})*({weight})"
+    return expr
+
+
+def build_timed_reframe(vlabel: str, width: int, height: int, settings: dict, fps: float) -> tuple[list[str], str]:
+    """Constant aspect ratio; animate zoom and focus in original-timeline sections.
+
+    A time-varying base crop recenters the aspect-ratio region, then zoompan
+    animates the zoom inside it. The combined crop maps to the same source
+    rectangle as the browser's geometry calculation.
+    """
+    if settings["aspect"] not in ("original", "wide", "vertical", "square"):
+        raise PipelineError("Unsupported reframe aspect ratio.")
+    _, _, w, h = reframe_geometry(width, height,
+        {"aspect": settings["aspect"], "zoom": 1, "focus_x": .5, "focus_y": .5})
+    sections = settings["sections"]
+    z = reframe_expressions(sections, "z", settings["zoom"]).replace("T", "in_time")
+    fx_t = reframe_expressions(sections, "x", settings["focus_x"]).replace("T", "t")
+    fy_t = reframe_expressions(sections, "y", settings["focus_y"]).replace("T", "t")
+    fx_in = reframe_expressions(sections, "x", settings["focus_x"]).replace("T", "in_time")
+    fy_in = reframe_expressions(sections, "y", settings["focus_y"]).replace("T", "in_time")
+    graph = [
+        f"{vlabel}fps={fps:.3f},crop={w}:{h}:x='(iw-ow)*({fx_t})':y='(ih-oh)*({fy_t})':exact=1[reframebase]",
+        f"[reframebase]zoompan=z='{z}':x='(iw-iw/zoom)*({fx_in})':y='(ih-ih/zoom)*({fy_in})':d=1:s={w}x{h}:fps={fps:.3f}[reframed]"
+    ]
+    return graph, "[reframed]"
+
+
+def build_video_edits(
+    edits: list[dict], info: MediaInfo, work: Path, scale: float = 1.0,
+    background=None, mask_input=None, image_input=None,
+) -> tuple[list[str], list[Path], str]:
+    """Filter chains for hide regions and text overlays.
+
+    Returns (filter_parts, text_images, final_label). Text images are referenced
+    as [IMG<n>] placeholders; the caller swaps them for real input indices once
+    the input order is known. Times are on the original (uncut) timeline.
+    Edit coordinates are in source pixels and get multiplied by `scale`.
+    """
+    W, H = info.width, info.height
+    parts: list[str] = []
+    images: list[Path] = []
+    # Some screen recordings stop emitting frames before their audio ends.
+    # Hold the last frame through the media duration before applying timed edits.
+    parts.append(f"[0:v]tpad=stop_mode=clone:stop_duration={info.duration:.3f},trim=duration={info.duration:.3f}[vbase]")
+    cur = "[vbase]"
+    n = 0
+    if scale < 1:
+        W, H = _even(W * scale), _even(H * scale)
+        parts.append(f"{cur}scale={W}:{H}[v0]")
+        cur = "[v0]"
+
+    def next_label() -> str:
+        nonlocal n
+        n += 1
+        return f"[v{n}]"
+
+    if background:
+        from backend.media.background import filters
+        background_parts, cur = filters(cur, info, scale, background, mask_input, image_input)
+        parts += background_parts
+
+    for i, e in enumerate(edits):
+        kind = e.get("type")
+        en = _enable(e, info.duration)
+        if kind == "hide":
+            style = e.get("style", "black")
+            if style not in HIDE_STYLES:
+                style = "blur"
+            if style == "black":
+                x = min(W - 1, math.floor(e["x"] * scale))
+                y = min(H - 1, math.floor(e["y"] * scale))
+                w = max(1, min(W, math.ceil((e["x"] + e["w"]) * scale)) - x)
+                h = max(1, min(H, math.ceil((e["y"] + e["h"]) * scale)) - y)
+            else:
+                # Expand outward to the chroma grid. Rounding the origin and
+                # size independently can leave part of a privacy region bare.
+                x = min(W - 2, 2 * math.floor(e["x"] * scale / 2))
+                y = min(H - 2, 2 * math.floor(e["y"] * scale / 2))
+                w = max(2, min(W, 2 * math.ceil((e["x"] + e["w"]) * scale / 2)) - x)
+                h = max(2, min(H, 2 * math.ceil((e["y"] + e["h"]) * scale / 2)) - y)
+                if w < 4 or h < 4:
+                    # Tiny patches cannot support these filters safely. Keep
+                    # the covered region opaque instead of silently exposing it.
+                    style = "black"
+            if style == "black":
+                out = next_label()
+                parts.append(f"{cur}drawbox=x={x}:y={y}:w={w}:h={h}:color=black:t=fill:enable='{en}'{out}")
+                cur = out
+                continue
+            base, patch = f"[b{i}]", f"[p{i}]"
+            parts.append(f"{cur}split=2{base}[c{i}]")
+            if style == "blur":
+                r = max(1, min(w, h) // 8)
+                rc = max(1, min(w, h) // 16)
+                fx = f"boxblur=luma_radius={r}:luma_power=3:chroma_radius={rc}:chroma_power=3"
+            else:  # pixelate
+                block = max(4, min(w, h) // 12)
+                sw, sh = max(1, w // block), max(1, h // block)
+                fx = f"scale={sw}:{sh}:flags=area,scale={w}:{h}:flags=neighbor"
+            parts.append(f"[c{i}]crop={w}:{h}:{x}:{y},{fx}{patch}")
+            out = next_label()
+            parts.append(f"{base}{patch}overlay={x}:{y}:enable='{en}'{out}")
+            cur = out
+        elif kind in {"text", "annotation"}:
+            png = e.get("image", "")
+            if not png.startswith("data:image/png;base64,"):
+                continue
+            img_path = work / f"text_{i}.png"
+            img_path.write_bytes(base64.b64decode(png.split(",", 1)[1]))
+            images.append(img_path)
+            img = f"[IMG{len(images) - 1}]"
+            if kind == "annotation" and e.get("canvas_size"):
+                parts.append(f"{img}scale={W}:{H}[t{i}]")
+                img = f"[t{i}]"
+            elif scale < 1:
+                parts.append(f"{img}scale=iw*{scale:.5f}:-1[t{i}]")
+                img = f"[t{i}]"
+            out = next_label()
+            x, y = int(e["x"] * scale), int(e["y"] * scale)
+            # Single-frame input; overlay's default eof_action=repeat keeps it on
+            # screen. (A `-loop 1` input is an endless stream that ffmpeg reads
+            # ahead of, buffering gigabytes once cuts shift the output timeline.)
+            if kind == "annotation":
+                transition = min(e.get("transition", .35), (e["end"] - e["start"]) / 2)
+                animation = e.get("animation", "none")
+                motion = e.get("motion")
+                fade = animation == "fade" and transition > 0
+                zooming = motion and motion["zoom_from"] != motion["zoom_to"]
+                if fade or zooming:
+                    # A single still image is repeated as frames at the source
+                    # rate, so alpha fades use the original source timeline.
+                    animated = f"[ann{i}]"
+                    fps = min(60, max(1, info.frame_rate))
+                    # Never loop a PNG indefinitely: the overlay would feed
+                    # FFmpeg unbounded frames and stall short previews.
+                    frames = max(1, int(math.ceil(min(e["end"], info.duration) * fps)) + 2)
+                    # Preview annotations can begin before local time zero.
+                    # Evaluate fades on a nonnegative clock, then shift back;
+                    # FFmpeg's fade filter rejects negative start times.
+                    clock_offset = max(0, -e["start"])
+                    filters = (
+                        f"{img}format=rgba,loop=loop={frames}:size=1:start=0,"
+                        f"setpts=N/({fps:.3f}*TB),fps={fps:.3f}")
+                    if fade:
+                        filters += (f",setpts=PTS+{clock_offset:.6f}/TB,"
+                                    f"fade=t=in:st={e['start']+clock_offset:.3f}:d={transition:.3f}:alpha=1,"
+                                    f"fade=t=out:st={e['end']-transition+clock_offset:.3f}:d={transition:.3f}:alpha=1,"
+                                    f"setpts=PTS-{clock_offset:.6f}/TB")
+                    parts.append(filters + animated)
+                    img = animated
+                xpos, ypos, zoom = str(x), str(y), "1"
+                if motion:
+                    progress = motion_progress(e["start"], e["end"] - e["start"])
+                    zoom = motion_zoom(motion, progress) if zooming else str(motion["zoom_from"])
+                    xpos = f"({x})+({motion['dx']*scale})*{progress}"
+                    ypos = f"({y})+({motion['dy']*scale})*{progress}"
+                    if zooming or motion["zoom_from"] != 1:
+                        width, height = struct.unpack(">II", base64.b64decode(png.split(",", 1)[1][:32])[16:24])
+                        width = max(1, round(width*scale))
+                        height = max(1, round(height*scale))
+                        parts.append(f"{img}scale=w='max(1,round(iw*{zoom}))':h='max(1,round(ih*{zoom}))'"
+                                     f":eval={'frame' if zooming else 'init'}[motion{i}]")
+                        img = f"[motion{i}]"
+                        xpos += f"+({width}-overlay_w)/2"
+                        ypos += f"+({height}-overlay_h)/2"
+                if animation == "slide" and transition > 0:
+                    shift = max(0, int(e.get("shift", 40) * scale))
+                    xpos = (
+                        f"{xpos}-({shift})*{zoom}*max(0,1-(t-({e['start']:.3f}))/{transition:.3f})"
+                        f"-({shift})*{zoom}*max(0,1-(({e['end']:.3f})-t)/{transition:.3f})")
+                parts.append(f"{cur}{img}overlay=x='{xpos}':y='{ypos}':enable='{en}'{out}")
+            else:
+                parts.append(f"{cur}{img}overlay={x}:{y}:enable='{en}'{out}")
+            cur = out
+
+    return parts, images, cur
+
+
+def kept_ranges(cuts: list[dict], duration: float) -> list[tuple[float, float]] | None:
+    """Turn 'remove' ranges into the ranges to keep. None means nothing is cut."""
+    spans = sorted(
+        (max(0.0, float(c["start"])), min(duration, float(c["end"])))
+        for c in cuts
+        if float(c["end"]) - float(c["start"]) > 0.01
+    )
+    if not spans:
+        return None
+    merged: list[list[float]] = []
+    for a, b in spans:
+        if merged and a <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], b)
+        else:
+            merged.append([a, b])
+    keep, t = [], 0.0
+    for a, b in merged:
+        if a - t > 0.05:
+            keep.append((t, a))
+        t = max(t, b)
+    if duration - t > 0.05:
+        keep.append((t, duration))
+    if not keep:
+        raise PipelineError("You removed the whole video. Keep at least a short part of it.")
+    return keep
+
+
+def _sum_expression(terms: list[str]) -> str:
+    """Keep FFmpeg expression parser depth logarithmic for dense timelines."""
+    if not terms:
+        return "0"
+    if len(terms) == 1:
+        return terms[0]
+    middle = len(terms) // 2
+    return f"({_sum_expression(terms[:middle])}+{_sum_expression(terms[middle:])})"
+
+
+def build_cuts(
+    vlabel: str, alabel: str | None, keep: list[tuple[float, float]]
+) -> tuple[list[str], str, str | None]:
+    """Drop the removed ranges and close the gaps.
+
+    Video uses select + setpts, which streams frame by frame. (split + trim +
+    concat would queue every frame of the later segments while the first is
+    being encoded: ~1 GB for a 5 s gap at 1080p60.) Timestamps are shifted by
+    the total length removed before each frame, so VFR input stays in sync.
+    Audio is small, so plain atrim + concat is fine there.
+    """
+    parts: list[str] = []
+    # Match atrim's half-open intervals. Including the frame at a cut's start
+    # creates duplicate output timestamps and can shift subsequent video by a
+    # frame relative to audio and range previews.
+    keep_expr = _sum_expression([f"gte(t,{a:.3f})*lt(t,{b:.3f})" for a, b in keep])
+    # STARTPTS drops any leading removed range; each later gap is subtracted
+    # once a frame is past it
+    shift = _sum_expression([
+        f"gte(T,{keep[i + 1][0]:.3f})*{keep[i + 1][0] - keep[i][1]:.3f}"
+        for i in range(len(keep) - 1)
+    ])
+    parts.append(f"{vlabel}select='{keep_expr}',setpts='PTS-STARTPTS-({shift})/TB'[vcut]")
+
+    if not alabel:
+        return parts, "[vcut]", None
+    audio_parts, audio_out = build_audio_cuts(alabel, keep)
+    return parts + audio_parts, "[vcut]", audio_out
+
+
+def speed_segments(keep, regions):
+    """Return retained source intervals and their playback rates."""
+    segments = []
+    for a, b in keep:
+        boundaries = sorted({a, b, *[t for r in regions for t in (r["start"], r["end"]) if a < t < b]})
+        for start, end in zip(boundaries, boundaries[1:]):
+            rate = next((r["rate"] for r in regions if r["start"] <= start < r["end"]), 1)
+            segments.append((start, end, rate))
+    return segments
+
+
+def build_speed(vlabel, alabel, segments):
+    """Retime a cut-closed stream; video streams without split-frame queues."""
+    parts = []
+    cursor = 0
+    shifts = []
+    for a, b, rate in segments:
+        length = b - a
+        shifts.append(f"min(max(T-{cursor:.9f},0),{length:.9f})*{1 / rate - 1:.9f}")
+        cursor += length
+    if vlabel:
+        parts.append(f"{vlabel}setpts='(T+({_sum_expression(shifts)}))/TB'[speedv]")
+    if alabel:
+        inputs = [f"[speedin{i}]" for i in range(len(segments))]
+        if len(inputs) > 1:
+            parts.append(f"{alabel}asplit={len(inputs)}{''.join(inputs)}")
+        else:
+            inputs = [alabel]
+        cursor = 0
+        for i, (a, b, rate) in enumerate(segments):
+            length = b - a
+            # atempo preserves speech pitch. Chain factors below its 0.5 minimum.
+            tempo = f"atempo=0.5,atempo={rate * 2:.9f}" if rate < .5 else f"atempo={rate:.9f}"
+            parts.append(f"{inputs[i]}atrim=start={cursor:.9f}:end={cursor + length:.9f},asetpts=PTS-STARTPTS,{tempo}[speeda{i}]")
+            cursor += length
+        parts.append(f"{''.join(f'[speeda{i}]' for i in range(len(segments)))}concat=n={len(segments)}:v=0:a=1[speedaudio]")
+    return parts, "[speedv]" if vlabel else None, "[speedaudio]" if alabel else None
+
+
+def build_audio_cuts(alabel: str, keep: list[tuple[float, float]]) -> tuple[list[str], str]:
+    k = len(keep)
+    parts = []
+    asrc = [f"[as{i}]" for i in range(k)] if k > 1 else [alabel]
+    if k > 1:
+        parts.append(f"{alabel}asplit={k}{''.join(asrc)}")
+    for i, (a, b) in enumerate(keep):
+        parts.append(f"{asrc[i]}atrim=start={a:.3f}:end={b:.3f},asetpts=PTS-STARTPTS[at{i}]")
+    parts.append(f"{''.join(f'[at{i}]' for i in range(k))}concat=n={k}:v=0:a=1[aout]")
+    return parts, "[aout]"
+
+
+def audio_waveform(source: Path, duration: float) -> list[float]:
+    """Read a compact amplitude envelope without holding decoded audio in RAM."""
+    rate = 8000
+    cmd = [FFMPEG(), "-hide_banner", "-loglevel", "error", "-nostdin", "-i", str(source),
+           "-map", "0:a:0", "-vn", "-ac", "1",
+           "-af", f"aresample={rate}:async=1:first_pts=0", "-t", str(duration), "-f", "s16le", "pipe:1"]
+    expired = threading.Event()
+    with tempfile.TemporaryFile() as errors:
+        proc = start_process(cmd, stdout=subprocess.PIPE, stderr=errors, stdin=subprocess.DEVNULL)
+        def terminate():
+            expired.set()
+            kill_process(proc)
+        timer = threading.Timer(30 + duration, terminate)
+        timer.start()
+        try:
+            peaks = pcm_peaks(proc.stdout, duration, rate)
+            code = proc.wait()
+        finally:
+            timer.cancel()
+            if proc.poll() is None:
+                kill_process(proc)
+            proc.wait()
+            proc.stdout.close()
+        check_cancelled()
+        if expired.is_set():
+            raise PipelineError("Waveform generation timed out.")
+        if code:
+            raise PipelineError("Waveform is unavailable for this file.")
+    return peaks
+
+
+def detect_silence(source: Path, duration: float, threshold_db: float, min_duration: float,
+                   padding: float, start: float = 0, end: float | None = None,
+                   results_path: Path | None = None) -> dict:
+    """Stream logs/results to disk; retain only a bounded first page in memory."""
+    end = min(duration, end if end is not None else duration)
+    length = end - start
+    if start < 0 or length <= 0:
+        raise PipelineError("Choose a pause-analysis range inside the recording.")
+    cmd = [FFMPEG(), "-hide_banner", "-nostats", "-nostdin", "-ss", str(start), "-i", str(source),
+           "-t", str(length), "-map", "0:a:0", "-af", f"silencedetect=noise={threshold_db}dB:d={min_duration}",
+           "-f", "null", "-"]
+    suggestions = []
+    total = 0
+
+    def add_interval(a, b):
+        nonlocal total
+        if b - a - padding * 2 >= .1:
+            segment = {"index": total, "start": round(start + a + padding, 3), "end": round(start + b - padding, 3)}
+            total += 1
+            if results is not None:
+                results.write(json.dumps(segment) + "\n")
+            if len(suggestions) < 25:
+                suggestions.append(segment)
+
+    with tempfile.TemporaryFile(mode="w+t") as log, (results_path.open("w") if results_path else nullcontext(None)) as results:
+        try:
+            result = run_process(cmd, stdout=subprocess.DEVNULL, stderr=log, timeout=60 + length * 2)
+        except subprocess.TimeoutExpired as exc:
+            raise PipelineError("Silence detection timed out. Analyze a shorter range.") from exc
+        if result.returncode:
+            raise PipelineError("Could not analyze the audio in this recording.")
+        log.seek(0)
+        quiet_start = None
+        for line in log:
+            check_cancelled()
+            for kind, value in re.findall(r"silence_(start|end):\s*(-?[\d.]+)", line):
+                t = min(length, max(0, float(value)))
+                if kind == "start":
+                    quiet_start = t
+                elif quiet_start is not None:
+                    add_interval(quiet_start, t)
+                    quiet_start = None
+        if quiet_start is not None:
+            add_interval(quiet_start, length)
+    return {"segments": suggestions, "truncated": total > len(suggestions), "total": total,
+            "range": {"start": start, "end": end}}
+
+
+def audio_regions_filter(regions: list[dict]) -> str:
+    """Sample-accurate envelopes on the original clock; overlapping gains multiply."""
+    if not regions:
+        return "anull"
+    factors = []
+    for region in regions:
+        start, end, volume = region["start"], region["end"], region["volume"]
+        fade = min(region.get("fade", .05), (end-start)/2)
+        envelope = (f"min(1,max(0,(t-({start:.9f}))/{fade:.12g}))*"
+                    f"min(1,max(0,({end:.9f}-t)/{fade:.12g}))" if fade > 0 else "1")
+        factors.append(f"if(between(t,{start:.9f},{end:.9f}),1+({volume:.9f}-1)*({envelope}),1)")
+    def product(items):
+        if len(items)==1:return items[0]
+        middle=len(items)//2
+        return f"({product(items[:middle])}*{product(items[middle:])})"
+    result = f"aeval=exprs='val(ch)*min(2,max(0,{product(factors)}))':channel_layout=same"
+    if any(region["volume"]>1 for region in regions):
+        result += ",alimiter=limit=0.95:level=0:latency=1"
+    return result
+
+
+def audio_finish(settings: dict | None, duration: float, offset: float = 0) -> str:
+    """Apply restrained dynamic leveling, then fades on the retained output clock."""
+    settings = settings or {}
+    filters = []
+    if settings.get("level_speech"):
+        # Bound gain to 2x; silence cannot drive unbounded automatic gain.
+        filters += ["acompressor=threshold=0.125:ratio=3:attack=20:release=250:makeup=2",
+                    "alimiter=limit=0.891:level=0:latency=1"]
+    fade_in = min(settings.get("fade_in", 0), duration / 2)
+    fade_out = min(settings.get("fade_out", 0), duration / 2)
+    if fade_in:
+        filters.append(f"volume='min(1,max(0,(t+{offset:.6f})/{fade_in:.6f}))':eval=frame")
+    if fade_out:
+        filters.append(f"volume='min(1,max(0,({duration:.6f}-t-{offset:.6f})/{fade_out:.6f}))':eval=frame")
+    return ",".join(filters) or "anull"
+
+
+def process(
+    source: Path,
+    work: Path,
+    *,
+    denoise_audio: bool,
+    atten_lim: int | None,
+    edits: list[dict],
+    cuts: list[dict],
+    progress: ProgressFn,
+    preset: str = "balanced",
+    background: dict | None = None,
+    preserve_resolution: bool = False,
+    framing: dict | None = None,
+    reframe: dict | None = None,
+    audio: dict | None = None,
+    audio_regions: list[dict] | None = None,
+    speed_regions: list[dict] | None = None,
+    audio_offset: float = 0,
+    audio_duration: float | None = None,
+) -> Path:
+    progress("Reading file", None)
+    info = probe(source)
+    do_denoise = denoise_audio and info.has_audio
+    clean_wav: Path | None = None
+
+    if do_denoise:
+        raw = work / "raw.wav"
+        _run_ffmpeg(["-i", str(source), "-vn", "-ar", "48000", str(raw)],
+                    info.duration, "Extracting audio", progress)
+        progress("Removing background noise", None)
+        clean_wav = denoise(raw, work / "denoised", atten_lim, info.duration)
+
+    keep = kept_ranges(cuts, info.duration)
+    segments = speed_segments(keep or [(0, info.duration)], speed_regions or [])
+    retained_duration = sum((b-a)/rate for a,b,rate in segments)
+    # Level before regional adjustments so compression cannot undo a quiet
+    # region. Global fades remain on the retained output clock, after cuts.
+    region_audio = "anull"
+    finish_settings = audio
+    if audio_regions:
+        region_audio = audio_finish({"level_speech":(audio or {}).get("level_speech",False)},info.duration) + "," + audio_regions_filter(audio_regions)
+        finish_settings = {**(audio or {}),"level_speech":False}
+    finish_audio = audio_finish(finish_settings, audio_duration or retained_duration, audio_offset)
+    if not info.has_video or preset == "audio_only":
+        out = work / "output.wav"
+        args = ["-i", str(clean_wav or source), "-vn"]
+        if keep or speed_regions:
+            audio_parts = [f"[0:a:0]asetpts=PTS-STARTPTS,{region_audio}[regionalaudio]"] if audio_regions else []
+            cut_parts, alabel = build_audio_cuts("[regionalaudio]" if audio_regions else "[0:a:0]", keep or [(0,info.duration)])
+            audio_parts += cut_parts
+            if speed_regions:
+                speed_parts, _, alabel = build_speed(None, alabel, segments)
+                audio_parts += speed_parts
+            audio_parts.append(f"{alabel}{finish_audio}[finishedaudio]")
+            args += ["-filter_complex", ";".join(audio_parts), "-map", "[finishedaudio]"]
+        else:
+            args += ["-map", "0:a:0", "-af", ("asetpts=PTS-STARTPTS,"+region_audio+"," if audio_regions else "")+finish_audio]
+        args += ["-ar", "48000", "-c:a", "pcm_s16le", str(out)]
+        _run_ffmpeg(args, retained_duration, "Exporting audio", progress)
+        return out
+
+    settings = EXPORT_PRESETS[preset]
+    scale = 1.0 if preserve_resolution else output_scale(info, preset)
+    mask = None
+    replacement = None
+    extra_index = 2 if clean_wav else 1
+    if background:
+        from backend.media.background import create_mask
+        mask = create_mask(source, work, info, background, progress)
+        if background["mode"] == "image":
+            replacement = work / "background.png"
+            replacement.write_bytes(base64.b64decode(background["image"].split(",", 1)[1]))
+    parts, images, vlabel = build_video_edits(edits, info, work, scale, background, extra_index, extra_index + 1)
+
+    # Low-memory mode (hosting): single-threaded decode/filter/encode
+    threads = os.environ.get("FFMPEG_THREADS")
+    args = ["-threads", threads, "-filter_threads", threads] if threads else []
+    args += ["-i", str(source)]
+    if clean_wav:
+        args += ["-i", str(clean_wav)]
+    if mask:
+        args += ["-i", str(mask)]
+    if replacement:
+        args += ["-i", str(replacement)]
+    img_offset = extra_index + bool(mask) + bool(replacement)
+    for img in images:
+        args += ["-i", str(img)]
+    audio_in = "[1:a]" if clean_wav else ("[0:a]" if info.has_audio else None)
+
+    if audio_in and audio_regions:
+        parts.append(f"{audio_in}asetpts=PTS-STARTPTS,{region_audio}[regionalaudio]")
+        audio_in = "[regionalaudio]"
+
+    # Reframe before cutting: zoom keyframes use the original recording's
+    # timestamps, just like text, masks and the editor's timeline.
+    if reframe:
+        if reframe.get("sections"):
+            reframe_parts, vlabel = build_timed_reframe(
+                vlabel, _even(info.width * scale), _even(info.height * scale),
+                reframe, info.frame_rate)
+            parts += reframe_parts
+        else:
+            x, y, w, h = reframe_geometry(_even(info.width * scale), _even(info.height * scale), reframe)
+            parts.append(f"{vlabel}crop={w}:{h}:{x}:{y}[reframed]")
+            vlabel = "[reframed]"
+
+    if framing:
+        from backend.media.canvas_frame import build_frame
+        fw, fh = _even(info.width * scale), _even(info.height * scale)
+        if reframe:
+            _, _, fw, fh = reframe_geometry(fw, fh, {**reframe, "zoom": 1 if reframe.get("sections") else reframe["zoom"]})
+        frame_parts, vlabel, frame_images = build_frame(vlabel, fw, fh, framing, work, img_offset + len(images))
+        parts += frame_parts
+        for image in frame_images:
+            args += ["-loop", "1", "-framerate", str(info.frame_rate), "-i", str(image)]
+
+    out_duration = info.duration
+    alabel = None
+    if keep:
+        cut_parts, vlabel, alabel = build_cuts(vlabel, audio_in, keep)
+        parts += cut_parts
+        out_duration = sum(b - a for a, b in keep)
+    if speed_regions:
+        speed_parts, vlabel, alabel = build_speed(vlabel, alabel or audio_in, segments)
+        parts += speed_parts
+        out_duration = retained_duration
+    # Every video preset produces compatible H.264 MP4 with even dimensions.
+    parts.append(f"{vlabel}scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p[vout]")
+    if audio_in:
+        parts.append(f"{alabel or audio_in}{finish_audio}[finishedaudio]")
+        alabel = "[finishedaudio]"
+    graph = ";".join(parts)
+    for idx in range(len(images)):
+        graph = graph.replace(f"[IMG{idx}]", f"[{img_offset + idx}:v]")
+    args += ["-filter_complex", graph, "-map", "[vout]",
+             "-c:v", "libx264", "-preset", "veryfast", "-crf", str(settings["crf"])]
+    if threads:
+        args += ["-threads", threads, "-rc-lookahead", "5"]
+    out = work / "output.mp4"
+
+    if alabel:
+        args += ["-map", alabel]
+    elif clean_wav:
+        args += ["-map", "1:a:0"]
+    elif info.has_audio:
+        args += ["-map", "0:a:0?"]
+    args += ["-c:a", "aac", "-b:a", f"{settings['audio_kbps']}k", "-shortest", "-t", str(out_duration), "-movflags", "+faststart", str(out)]
+
+    try:
+        _run_ffmpeg(args, out_duration, "Rendering video", progress)
+    finally:
+        for temporary in (mask, replacement):
+            if temporary:
+                temporary.unlink(missing_ok=True)
+    return out
+
+
+def noise_preview(source: Path, work: Path, start: float, length: float,
+                  atten_lim: int | None, progress: ProgressFn) -> None:
+    """A bounded audio-only sample, independent of cuts and rendered exports."""
+    work.mkdir(parents=True, exist_ok=True)
+    raw = work / "original.wav"
+    _run_ffmpeg(["-ss", str(start), "-i", str(source), "-t", str(length),
+                 "-vn", "-ar", "48000", "-ac", "2", str(raw)],
+                length, "Preparing audio sample", progress)
+    progress("Removing noise from sample", None)
+    clean = denoise(raw, work / "denoised", atten_lim, length)
+    shutil.move(str(clean), work / "clean.wav")
+    shutil.rmtree(work / "denoised")

@@ -11,7 +11,8 @@ import struct
 from pathlib import Path
 from unittest.mock import patch
 
-from backend import pipeline, rendering
+from backend.media import pipeline
+from backend.media import rendering
 
 
 @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"),
@@ -162,7 +163,7 @@ class RealMediaTests(unittest.TestCase):
             "-vf", "format=gray", "-c:v", "ffv1", "-threads", "1",
             str(mask),
         ], check=True, capture_output=True)
-        with patch("backend.background.create_mask", return_value=mask):
+        with patch("backend.media.background.create_mask", return_value=mask):
             out = pipeline.process(
                 self.source, work, denoise_audio=False, atten_lim=None,
                 edits=[], cuts=[], progress=lambda *_:None,
@@ -179,7 +180,7 @@ class RealMediaTests(unittest.TestCase):
         subprocess.run(['ffmpeg','-v','error','-y','-f','lavfi','-i',
             'color=black:size=160x90:rate=18:duration=4','-vf','format=gray',
             '-c:v','ffv1','-threads','1',str(mask)],check=True,capture_output=True)
-        with patch('backend.background.create_mask',return_value=mask):
+        with patch('backend.media.background.create_mask',return_value=mask):
             output=pipeline.process(self.source,work,denoise_audio=False,atten_lim=None,
                 edits=[],cuts=[],progress=lambda *_:None,
                 background=dict(mode='color',color='#00ff00'),preset='high')

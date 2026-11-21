@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {buildExportPayload} from '../frontend/export-payload.mjs';
+import {buildExportPayload} from '../frontend/export/export-payload.mjs';
 
 const document = () => ({
   job: {has_video:true, has_audio:true}, audio:{fade_in:1}, presenter:null,

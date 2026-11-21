@@ -5,10 +5,12 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
 ENV PATH="/root/.cargo/bin:${PATH}"
+ARG PIP_DEFAULT_TIMEOUT=60
 RUN pip wheel --no-cache-dir --no-deps -w /wheels deepfilterlib==0.5.6
 
 # --- Stage 2: runtime
 FROM python:3.12-slim
+ARG PIP_DEFAULT_TIMEOUT=60
 
 # git: DeepFilterNet shells out to it at startup to log its version
 
@@ -22,8 +24,9 @@ WORKDIR /app
 RUN pip install --no-cache-dir torch==2.5.1 torchaudio==2.5.1 \
       --index-url https://download.pytorch.org/whl/cpu
 COPY --from=builder /wheels /wheels
-COPY requirements.txt requirements-background.txt requirements-web.lock ./
-RUN pip install --no-cache-dir --find-links /wheels -c requirements-web.lock -r requirements.txt && rm -rf /wheels
+COPY pyproject.toml ./
+RUN pip install --no-cache-dir "pip>=25.1" && \
+    pip install --no-cache-dir --find-links /wheels --group web --group noise && rm -rf /wheels
 
 # Optional person segmentation is isolated from the noise-removal environment.
 ARG INSTALL_BACKGROUND=false
@@ -31,14 +34,19 @@ RUN if [ "$INSTALL_BACKGROUND" = "true" ]; then \
       apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 && \
       rm -rf /var/lib/apt/lists/* && \
       python -m venv .venv-background && \
-      .venv-background/bin/pip install --no-cache-dir -r requirements-background.txt; fi
+      python -m pip --python .venv-background install --no-cache-dir --group background; fi
 
 # Bake the DeepFilterNet3 model into the image so cold starts don't download it
 RUN python -c "from df.enhance import init_df; init_df(log_level='ERROR')"
 
 COPY backend backend
+ARG INSTALL_TTS=false
+COPY scripts/setup-tts.sh scripts/setup-tts.sh
+RUN if [ "$INSTALL_TTS" = "true" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && \
+      rm -rf /var/lib/apt/lists/* && \
+      PYTHON_BIN=/usr/local/bin/python ./scripts/setup-tts.sh; fi
 COPY frontend frontend
-COPY docs/LICENSE_AUDIT.md docs/LICENSE_AUDIT.md
 COPY LICENSE LICENSE
 
 # Tuned for small hosts (Render free: 512 MB, shared CPU); see README

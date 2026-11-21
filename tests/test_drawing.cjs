@@ -3,8 +3,8 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 const context=vm.createContext({});
-for(const path of ['drawing-model','annotation-model','editor-model','history-model'])
-  vm.runInContext(fs.readFileSync(`frontend/${path}.js`,'utf8'),context);
+for (const path of ['visuals/drawing-model', 'visuals/annotation-model', 'editor/editor-model', 'editor/history-model'])
+  vm.runInContext(fs.readFileSync(`frontend/${path}.js`, 'utf8'), context);
 const {DrawingModel,AnnotationModel,EditorModel,HistoryModel}=vm.runInContext('({DrawingModel,AnnotationModel,EditorModel,HistoryModel})',context);
 function edit(){return {...AnnotationModel.defaultEdit('drawing',1280,720,1,3),
   ...DrawingModel.stroke([{x:100,y:100},{x:200,y:150},{x:300,y:100}],8)};}
@@ -39,7 +39,7 @@ test('eraser follows actual segments after moving, resizing and rotating',()=>{
 });
 
 test('vector drawings survive history and project validation without shared point arrays',async()=>{
-  const {validateProjectDocument}=await import('../frontend/project-schema.mjs');
+  const {validateProjectDocument}=await import('../frontend/projects/project-schema.mjs');
   const e=edit();
   const document={format:'FreeEdit',version:2,source:{name:'demo.mp4',size:10,
     algorithm:'sha256-chunks-4m-v1',fingerprint:'a'.repeat(64),duration:5,width:1280,height:720,has_video:true,has_audio:true},
@@ -88,7 +88,7 @@ test('group validation rejects nested and oversized data and retains overlay lim
 });
 
 test('one image covers the combined bounds of closed shapes and survives a project round-trip',async()=>{
-  const {validateProjectDocument}=await import('../frontend/project-schema.mjs');
+  const {validateProjectDocument}=await import('../frontend/projects/project-schema.mjs');
   const rectangle={...AnnotationModel.defaultEdit('shape',1280,720,1,3),x:100,y:100,w:100,h:100};
   const second={...rectangle,x:300};
   const fill='data:image/png;base64,iVBORw0KGgo=';
@@ -114,7 +114,7 @@ test('one image covers the combined bounds of closed shapes and survives a proje
 });
 
 test('group vectors round-trip through projects, history and ungroup geometry',async()=>{
-  const {validateProjectDocument}=await import('../frontend/project-schema.mjs');
+  const {validateProjectDocument}=await import('../frontend/projects/project-schema.mjs');
   const base=edit();
   const group={...AnnotationModel.defaultEdit('drawing',1280,720,1,3),...DrawingModel.group([base,{...base,x:400,color:'#facc15',opacity:.35}]),rotation:15,opacity:.5,animation:'slide',animationShift:60};
   const document={format:'FreeEdit',version:2,source:{name:'demo.mp4',size:10,

@@ -6,8 +6,9 @@ import unittest
 from pathlib import Path
 from fastapi import HTTPException
 from pydantic import ValidationError
-from backend import pipeline, rendering
-from backend.models import ProcessRequest, SpeedRegion
+from backend.media import pipeline
+from backend.media import rendering
+from backend.http.models import ProcessRequest, SpeedRegion
 
 
 class SpeedTests(unittest.TestCase):

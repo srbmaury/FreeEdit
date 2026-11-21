@@ -29,9 +29,9 @@
   <meta name="twitter:description" content="Edit video with a visual timeline, captions, reframing, annotations, audio cleanup, and flexible export. Free and open source." />
   <meta name="twitter:image" content="https://freeedit.srbmaury.com/social-preview.png" />
   <meta name="twitter:image:alt" content="FreeEdit: a video editor with a hidden area, a text overlay, a cut on the timeline, and audio before and after noise removal" />
-  <script src="theme.js"></script>
-  <link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" href="workspace.css" />
+  <script src="shared/theme.js"></script>
+  <link rel="stylesheet" href="styles/style.css" />
+  <link rel="stylesheet" href="styles/workspace.css" />
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to editor</a>
@@ -54,6 +54,7 @@
           </select>
         </label>
         <span class="menu-section-label menu-divider">Tools and help</span>
+        <button data-dialog="narrationDialog">Generate narration</button>
         <button data-dialog="shortcutsDialog">Keyboard shortcuts</button>
         <button data-dialog="storageDialog">Storage and cleanup</button>
         <button id="diagnosticsBtn">Check setup</button>
@@ -84,6 +85,7 @@
       <div id="retentionNote" class="dz-formats"></div>
       <div id="dzLimits" class="dz-formats"></div>
     </div>
+    <button id="openNarrationBtn" type="button" class="ghost">Generate narration</button>
     <div id="uploadProgress" class="progress hidden" role="status" aria-live="polite">
       <div class="progress-label">Uploading… <span id="uploadPct">0%</span></div>
       <div class="bar"><div id="uploadBar"></div></div>
@@ -739,34 +741,63 @@
     <details class="small"><summary>About this preview</summary><p>Uses the export settings. Cuts close gaps in Result. Speech leveling and noise reduction can vary slightly at sample boundaries.</p></details>
     <form method="dialog"><button class="primary">Back to editing</button></form>
   </dialog>
-  <script src="ui.js"></script>
-  <script src="media-utils.js"></script>
-  <script src="editor-model.js"></script>
-  <script src="canvas-model.js"></script>
-  <script src="drawing-model.js"></script>
-  <script src="annotation-model.js"></script>
-  <script src="history-model.js"></script>
-  <script src="app.js"></script>
-  <script src="editor-render.js"></script>
-  <script src="editor-edits.js"></script>
-  <script src="editor-history.js"></script>
-  <script src="editor-export.js"></script>
-  <script src="editor-session.js"></script>
-  <script src="silence.js"></script>
-  <script src="timeline.js"></script>
-  <script src="projects.js"></script>
-  <script src="noise-preview.js"></script>
-  <script src="background.js"></script>
-  <script src="videos.js"></script>
-  <script src="clips.js"></script>
-  <script src="workspace.js"></script>
-  <script src="reframe-captions.js"></script>
-  <script src="annotations.js"></script>
-  <script src="drawing.js"></script>
-  <script src="range-selection.js"></script>
-  <script src="canvas-frame.js"></script>
-  <script src="result-preview.js"></script>
-  <script src="audio-regions.js"></script>
-  <script src="speed-regions.js"></script>
+  <dialog id="narrationDialog" class="info-dialog narration-dialog" aria-labelledby="narrationTitle">
+    <h2 id="narrationTitle">Generate narration</h2>
+    <form id="narrationForm">
+      <p class="small">Generate English speech with the local Kokoro voice model.</p>
+      <label for="narrationText">Script</label>
+      <textarea id="narrationText" rows="6" maxlength="1000" required placeholder="Enter up to 1,000 characters"></textarea>
+      <div class="row narration-options">
+        <label for="narrationVoice">Voice
+          <select id="narrationVoice">
+            <option value="af_heart">Heart · US English</option>
+            <option value="am_michael">Michael · US English</option>
+            <option value="bf_emma">Emma · UK English</option>
+            <option value="bm_george">George · UK English</option>
+          </select>
+        </label>
+        <label for="narrationSpeed">Speed
+          <input id="narrationSpeed" type="number" min="0.75" max="1.25" step="0.05" value="1" required />
+        </label>
+      </div>
+      <button id="generateNarrationBtn" class="primary" type="submit" disabled>Generate speech</button>
+    </form>
+    <p id="narrationStatus" class="small" role="status"></p>
+    <div id="narrationResult" class="hidden">
+      <audio id="narrationAudio" controls aria-label="Generated narration"></audio>
+      <a id="downloadNarration" download="narration.wav">Download WAV</a>
+    </div>
+    <form method="dialog"><button type="submit" class="ghost">Close</button></form>
+  </dialog>
+  <script type="module" src="media/narration.mjs"></script>
+  <script src="shared/ui.js"></script>
+  <script src="media/media-utils.js"></script>
+  <script src="editor/editor-model.js"></script>
+  <script src="visuals/canvas-model.js"></script>
+  <script src="visuals/drawing-model.js"></script>
+  <script src="visuals/annotation-model.js"></script>
+  <script src="editor/history-model.js"></script>
+  <script src="editor/app.js"></script>
+  <script src="editor/editor-render.js"></script>
+  <script src="editor/editor-edits.js"></script>
+  <script src="editor/editor-history.js"></script>
+  <script src="export/editor-export.js"></script>
+  <script src="editor/editor-session.js"></script>
+  <script src="media/silence.js"></script>
+  <script src="editor/timeline.js"></script>
+  <script src="projects/projects.js"></script>
+  <script src="media/noise-preview.js"></script>
+  <script src="media/background.js"></script>
+  <script src="media/videos.js"></script>
+  <script src="media/clips.js"></script>
+  <script src="editor/workspace.js"></script>
+  <script src="visuals/reframe-captions.js"></script>
+  <script src="visuals/annotations.js"></script>
+  <script src="visuals/drawing.js"></script>
+  <script src="editor/range-selection.js"></script>
+  <script src="visuals/canvas-frame.js"></script>
+  <script src="export/result-preview.js"></script>
+  <script src="media/audio-regions.js"></script>
+  <script src="media/speed-regions.js"></script>
 </body>
 </html>

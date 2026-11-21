@@ -2,7 +2,7 @@
 import io
 import struct
 import unittest
-from backend.waveform import pcm_peaks
+from backend.media.waveform import pcm_peaks
 
 
 class Fragmented(io.BytesIO):

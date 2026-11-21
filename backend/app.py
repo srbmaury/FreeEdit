@@ -26,17 +26,18 @@ from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import pipeline
-from . import sequence as clip_sequence
-from .runtime_info import runtime_info
-from .diagnostics import inspect_setup, require_export_space, require_preview_space
-from .execution import Cancelled, JobControl, cancellation_scope
-from .models import ProcessRequest, SilenceRequest, PreviewRequest, BackgroundPreviewRequest, CompositionPreviewRequest, ResultPreviewRequest
-from .observability import event, install_error_handling, public_processing_error
-from .sessions import COOKIE, create_session, verify_session
-from .body_limit import ControlBodyLimit
-from .job_store import JobStore, InstanceLease
-from .rate_limit import RequestLimiter, category_for, limits as admission_limits, env_int
+from backend.media import pipeline
+from backend.media.tts import router as tts_router
+from backend.media import sequence as clip_sequence
+from backend.support.runtime_info import runtime_info
+from backend.support.diagnostics import inspect_setup, require_export_space, require_preview_space
+from backend.jobs.execution import Cancelled, JobControl, cancellation_scope
+from backend.http.models import ProcessRequest, SilenceRequest, PreviewRequest, BackgroundPreviewRequest, CompositionPreviewRequest, ResultPreviewRequest
+from backend.support.observability import event, install_error_handling, public_processing_error
+from backend.http.sessions import COOKIE, create_session, verify_session
+from backend.http.body_limit import ControlBodyLimit
+from backend.jobs.job_store import JobStore, InstanceLease
+from backend.http.rate_limit import RequestLimiter, category_for, limits as admission_limits, env_int
 
 ROOT = Path(__file__).resolve().parent.parent
 JOBS_DIR = Path(os.environ.get("FREEEDIT_JOBS_DIR", ROOT / "jobs"))
@@ -99,6 +100,7 @@ app.add_middleware(ControlBodyLimit,
                    max_active=env_int("FREEEDIT_MAX_ACTIVE_EDIT_REQUESTS", 2),
                    timeout=env_int("FREEEDIT_EDIT_REQUEST_TIMEOUT_SECONDS", 30))
 install_error_handling(app)
+app.include_router(tts_router)
 # One job at a time: DeepFilterNet + x264 already saturate the CPU
 executor = ThreadPoolExecutor(max_workers=1)
 jobs: dict[str, dict] = {}
@@ -518,7 +520,7 @@ def _run(job_id: str, req: ProcessRequest, previous: dict) -> None:
             stale.unlink(missing_ok=True)
         shutil.rmtree(work / "denoised", ignore_errors=True)
 
-        from .rendering import render
+        from backend.media.rendering import render
         out = render(source, work, req.model_dump(), progress,
                      next(work.glob("presenter.*")) if req.presenter else None)
         _update(job_id, status="done", stage="Done", progress=1.0, output=out.name)
@@ -849,7 +851,7 @@ def presenter_source(job_id: str):
 
 
 def _preview_composition(job_id, req, previous):
-    from .composition import compose
+    from backend.media.composition import compose
     work = JOBS_DIR / job_id
     target = work / "composition-preview"
     _update(job_id, status="processing", started_at=time.time(), stage="Preparing combined preview")
@@ -1006,7 +1008,7 @@ def index():
         attribute, filename = match.groups()
         digest = hashlib.sha256((FRONTEND_DIR / filename).read_bytes()).hexdigest()[:12]
         return f'{attribute}="{filename}?v={digest}"'
-    html = re.sub(r'(src|href)="([\w-]+\.(?:js|css))"', version_asset, html)
+    html = re.sub(r'(src|href)="((?:[\w-]+/)*[\w-]+\.(?:m?js|css))"', version_asset, html)
     return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
 
@@ -1019,7 +1021,7 @@ class FrontendFiles(StaticFiles):
 
 
 def _preview_result(job_id, req, previous):
-    from .rendering import preview
+    from backend.media.rendering import preview
     work = JOBS_DIR / job_id
     target = work / "result-preview"
     _update(job_id, status="processing", started_at=time.time(), stage="Preparing result preview")
