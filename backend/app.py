@@ -27,6 +27,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import pipeline
+from .tts import router as tts_router
 from . import sequence as clip_sequence
 from .runtime_info import runtime_info
 from .diagnostics import inspect_setup, require_export_space, require_preview_space
@@ -99,6 +100,7 @@ app.add_middleware(ControlBodyLimit,
                    max_active=env_int("FREEEDIT_MAX_ACTIVE_EDIT_REQUESTS", 2),
                    timeout=env_int("FREEEDIT_EDIT_REQUEST_TIMEOUT_SECONDS", 30))
 install_error_handling(app)
+app.include_router(tts_router)
 # One job at a time: DeepFilterNet + x264 already saturate the CPU
 executor = ThreadPoolExecutor(max_workers=1)
 jobs: dict[str, dict] = {}
@@ -1006,7 +1008,7 @@ def index():
         attribute, filename = match.groups()
         digest = hashlib.sha256((FRONTEND_DIR / filename).read_bytes()).hexdigest()[:12]
         return f'{attribute}="{filename}?v={digest}"'
-    html = re.sub(r'(src|href)="([\w-]+\.(?:js|css))"', version_asset, html)
+    html = re.sub(r'(src|href)="((?:[\w-]+/)*[\w-]+\.(?:m?js|css))"', version_asset, html)
     return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
 

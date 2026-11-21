@@ -2,7 +2,7 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
-const source = fs.readFileSync('frontend/range-selection.js','utf8');
+const source = fs.readFileSync('frontend/editor/range-selection.js','utf8');
 const mark = source.slice(source.indexOf('function markRangeEdge('),source.indexOf('\ndocument.addEventListener("keydown"',source.indexOf('function markRangeEdge(')));
 test('keyboard range edges preserve a valid interval and do not mutate document edits',()=>{
   const selection={range:null}; const S={edits:[],auditionUntil:4};

@@ -69,7 +69,7 @@ print(json.dumps({'missing':missing,'model':model}))
     checks.append({'name': 'Noise reduction', 'ready': ready, 'message': message})
     checks.append({'name': 'Noise model', 'ready': bool(info and info['model']),
                    'message': 'Cached model found' if info and info['model'] else 'No model found in the standard cache. The first noise-reduction run may need internet to download it.'})
-    background_message = "Run ./setup-background.sh, or configure BACKGROUND_PYTHON to that environment."
+    background_message = "Run ./scripts/setup.sh --background, or configure BACKGROUND_PYTHON to that environment."
     try:
         result = subprocess.run([worker_python(), "-c", "import mediapipe, cv2, numpy"], capture_output=True, timeout=15)
         background_ready = result.returncode == 0
@@ -77,14 +77,14 @@ print(json.dumps({'missing':missing,'model':model}))
             background_message = "Person segmentation available"
     except subprocess.TimeoutExpired:
         background_ready = False
-        background_message = "Background initialization timed out. Run ./setup-background.sh to prepare its runtime, then retry."
+        background_message = "Background initialization timed out. Run ./scripts/setup.sh --background to prepare its runtime, then retry."
     except OSError:
         background_ready = False
     checks.append({"name": "Background effects", "ready": background_ready, "message": background_message})
     model = model_path()
     model_ready = model.is_file() and hashlib.sha256(model.read_bytes()).hexdigest() == MODEL_SHA256
     checks.append({"name": "Background model", "ready": model_ready,
-                   "message": "Verified model cached" if model_ready else "Downloaded and verified on first background preview/export. Run ./setup-background.sh to prepare it now."})
+                   "message": "Verified model cached" if model_ready else "Downloaded and verified on first background preview/export. Run ./scripts/setup.sh --background to prepare it now."})
     free = shutil.disk_usage(work).free
     checks.append({'name': 'Temporary disk', 'ready': free >= 256 * 1024 * 1024, 'message': f'{free / 1024**3:.1f} GB available'})
     return {'checks': checks}

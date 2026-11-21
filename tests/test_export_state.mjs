@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {recoverSubmission,retainedRanges,comparisonTime} from '../frontend/export-state.mjs';
+import {recoverSubmission,retainedRanges,comparisonTime} from '../frontend/export/export-state.mjs';
 
 test('comparison follows submitted cuts at boundaries, removed gaps and final position',()=>{
   const ranges=retainedRanges(30,[[10,12]]);
@@ -26,7 +26,7 @@ test('recovered identity rejects mismatches and unordered intervals, and owns it
 });
 
 test('preview identity is independent from full export identity',async()=>{
-  const {recoverPreviewSubmission}=await import('../frontend/export-state.mjs');
+  const {recoverPreviewSubmission}=await import('../frontend/export/export-state.mjs');
   const job={id:'job',export_submission_id:'export',result_preview_submission_id:'preview'};
   const saved={id:'job',submissionId:'preview',signature:'preview-settings'};
   assert.deepEqual(recoverPreviewSubmission(saved,job),saved);

@@ -32,7 +32,7 @@ def check_port(port):
             f'Another app may already be listening. Inspect it with:\n'
             f'  lsof -nP -iTCP:{port} -sTCP:LISTEN\n'
             'Keep that process running and choose another port, for example:\n'
-            f'  PORT={port + 1 if port < 65535 else 8000} ./run.sh'
+            f'  PORT={port + 1 if port < 65535 else 8000} ./scripts/run.sh'
         ) from error
 
 

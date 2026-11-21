@@ -33,10 +33,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements-web.lock
+          python -m pip install "pip>=25.1"
+          python -m pip install --group web
       - name: Check dependencies, Python, restart recovery and rendering
-        run: python -m scripts.check --suite python
+        run: python tests/check.py --suite python
 
   frontend:
     runs-on: ubuntu-latest
@@ -47,7 +47,7 @@ jobs:
         with:
           node-version: "22"
       - name: Check JavaScript syntax and frontend regressions
-        run: python3 -m scripts.check --suite frontend
+        run: python3 tests/check.py --suite frontend
 
   browser-smoke:
     # Playwright 1.56.1 ships browser builds for Ubuntu 24.04.
@@ -81,7 +81,8 @@ jobs:
       - name: Install app and test dependencies
         timeout-minutes: 3
         run: |
-          python -m pip install -r requirements-web.lock
+          python -m pip install "pip>=25.1"
+          python -m pip install --group web
           npm install --no-save playwright@1.56.1
       - name: Verify the runner's Google Chrome
         if: matrix.engine == 'chrome'

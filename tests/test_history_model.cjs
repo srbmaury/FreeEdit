@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 const context=vm.createContext({});
-vm.runInContext(fs.readFileSync('frontend/history-model.js','utf8'),context);
+vm.runInContext(fs.readFileSync('frontend/editor/history-model.js','utf8'),context);
 const history=vm.runInContext('HistoryModel',context);
 
 test('image-heavy history shares assets and restores independent documents',()=>{

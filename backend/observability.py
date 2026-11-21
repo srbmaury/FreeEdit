@@ -33,7 +33,7 @@ def public_processing_error(exc):
     if "Background model" in str(exc):
         return "background_model_unavailable", str(exc)
     if "Background processing failed" in str(exc):
-        return "background_processing_failed", "Background processing could not finish. Open Check setup, or run ./setup-background.sh to install the background engine."
+        return "background_processing_failed", "Background processing could not finish. Open Check setup, or run ./scripts/setup.sh --background to install the background engine."
     if "No module named" in str(exc):
         return "processor_unavailable", "Noise reduction is not configured on this server. Turn it off to export other edits, or configure the denoising environment."
     if "timed out" in str(exc).lower():

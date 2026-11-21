@@ -3,8 +3,33 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const context = vm.createContext({});
-vm.runInContext(fs.readFileSync('frontend/editor-model.js','utf8'),context);
+vm.runInContext(fs.readFileSync('frontend/editor/editor-model.js','utf8'),context);
 const model = vm.runInContext('EditorModel',context);
+
+test('export preparation failure releases busy state and shows retry', async () => {
+  const elements = new Map();
+  const state = {job: {id: 'job'}};
+  const ctx = vm.createContext({
+    S: state,
+    window: {dispatchEvent() {}},
+    CustomEvent: class {},
+    $: id => {
+      if (!elements.has(id)) elements.set(id, {pause() {}});
+      return elements.get(id);
+    },
+    video: {pause() {}},
+    show() {},
+    validateVideos: () => true,
+    setBusy: operation => { state.operation = operation; },
+    prepareAnnotationAssets: async () => {},
+  });
+  vm.runInContext(fs.readFileSync('frontend/export/editor-export.js', 'utf8'), ctx);
+  vm.runInContext("buildPayload = () => { throw new Error('Canvas conversion failed'); };", ctx);
+  await vm.runInContext('startExport()', ctx);
+  assert.equal(state.operation, null);
+  assert.equal(elements.get('processBtn').textContent, 'Retry export');
+  assert.equal(elements.get('procError').textContent, 'Canvas conversion failed');
+});
 
 test('limits reject the next cut, overlay, zoom or combined edit without rejecting valid boundaries',()=>{
   const cuts=Array.from({length:100},()=>({type:'cut'}));
@@ -19,7 +44,7 @@ test('limits reject the next cut, overlay, zoom or combined edit without rejecti
 });
 
 test('manual rejection leaves edits, identity and undo untouched',()=>{
- const code=fs.readFileSync('frontend/editor-edits.js','utf8');
+ const code=fs.readFileSync('frontend/editor/editor-edits.js','utf8');
  const functions=code.slice(code.indexOf('function admitEdits('),code.indexOf('\nfunction deleteEdit('));
  const S={edits:Array.from({length:100},()=>({type:'cut'})),nextId:101};
  let message;
@@ -30,8 +55,8 @@ test('manual rejection leaves edits, identity and undo untouched',()=>{
 });
 
 test('recovery keeps submitted signature/ranges instead of newer edits, and fails closed without submission identity',async()=>{
- const exportRules=await import('../frontend/export-state.mjs');
- const code=fs.readFileSync('frontend/projects.js','utf8');
+ const exportRules=await import('../frontend/export/export-state.mjs');
+ const code=fs.readFileSync('frontend/projects/projects.js','utf8');
  const fn=code.slice(code.indexOf('async function locateProjectSource('),code.indexOf('\n$("projectSourceInput")'));
  for(const matching of [true,false]) {
   const S={job:{id:'abcdef123456'}};
@@ -46,8 +71,8 @@ test('recovery keeps submitted signature/ranges instead of newer edits, and fail
 });
 
 test('completed export recovery restores the result and saves identity only after restoration',async()=>{
- const exportRules=await import('../frontend/export-state.mjs');
- const code=fs.readFileSync('frontend/projects.js','utf8');
+ const exportRules=await import('../frontend/export/export-state.mjs');
+ const code=fs.readFileSync('frontend/projects/projects.js','utf8');
  const fn=code.slice(code.indexOf('async function locateProjectSource('),code.indexOf('\n$("projectSourceInput")'));
  const S={job:{id:'abcdef123456'},exportSubmission:null};
  const job={id:S.job.id,media:{duration:10},status:'done',operation:'export',output:'output.mp4',export_submission_id:'server-id'};
@@ -62,8 +87,8 @@ test('completed export recovery restores the result and saves identity only afte
 });
 
 test('recovered previews retain known signatures and show unknown submissions as stale',async()=>{
- const exportRules=await import('../frontend/export-state.mjs');
- const source=fs.readFileSync('frontend/result-preview.js','utf8');
+ const exportRules=await import('../frontend/export/export-state.mjs');
+ const source=fs.readFileSync('frontend/export/result-preview.js','utf8');
  const functions=source.slice(source.indexOf('function restoreResultPreviewSubmission('),source.indexOf('\nfunction rangePlayer('));
  for(const matching of [true,false]) {
   const elements=new Map();let opened=false;
@@ -83,8 +108,8 @@ test('recovered previews retain known signatures and show unknown submissions as
 });
 
 test('completed preview recovery restores the pending preview before showing its result',async()=>{
- const exportRules=await import('../frontend/export-state.mjs');
- const code=fs.readFileSync('frontend/projects.js','utf8');
+ const exportRules=await import('../frontend/export/export-state.mjs');
+ const code=fs.readFileSync('frontend/projects/projects.js','utf8');
  const fn=code.slice(code.indexOf('async function locateProjectSource('),code.indexOf('\n$("projectSourceInput")'));
  const job={id:'abcdef123456',media:{duration:10},status:'uploaded',operation:'result-preview',
   result_preview_submission_id:'preview-id',result_preview:{file:'sample.mp4',ranges:[[0,5]]}};
@@ -100,8 +125,8 @@ test('completed preview recovery restores the pending preview before showing its
 });
 
 test('late recovery never replaces a newer upload, project or editing session',async()=>{
- const exportRules=await import('../frontend/export-state.mjs');
- const code=fs.readFileSync('frontend/projects.js','utf8');
+ const exportRules=await import('../frontend/export/export-state.mjs');
+ const code=fs.readFileSync('frontend/projects/projects.js','utf8');
  const fn=code.slice(code.indexOf('async function locateProjectSource('),code.indexOf('\n$("projectSourceInput")'));
  for(const supersede of ['upload','project','editor']) {
   let resolve;const reply=new Promise(r=>{resolve=r;});let opened=false;
@@ -121,7 +146,7 @@ test('late recovery never replaces a newer upload, project or editing session',a
 });
 
 test('sequence recovery requires the saved revision even when media properties match', async () => {
- const code = fs.readFileSync('frontend/projects.js', 'utf8');
+ const code = fs.readFileSync('frontend/projects/projects.js', 'utf8');
  const locate = code.slice(code.indexOf('async function locateProjectSource('), code.indexOf('\n$("projectSourceInput")'));
  const job = {id: 'abcdef123456', sequence_revision: 'new', sequence_clips: [{id:'b'}, {id:'a'}], media: {}};
  let opened = 0;

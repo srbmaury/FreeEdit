@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const vm=require('node:vm');
 const fs=require('node:fs');
 const context=vm.createContext({structuredClone});
-vm.runInContext(fs.readFileSync('frontend/editor-model.js','utf8')+';globalThis.model=EditorModel;',context);
+vm.runInContext(fs.readFileSync('frontend/editor/editor-model.js','utf8')+';globalThis.model=EditorModel;',context);
 const model=context.model;
 test('audio regions are validated timed edits and preserve content on style paste',()=>{
   const edit={type:'audio',id:1,start:1,end:3,volume:0,fade:.05};
@@ -14,7 +14,7 @@ test('audio regions are validated timed edits and preserve content on style past
   assert.match(model.limitError(Array.from({length:51},()=>edit)),/50 audio/);
 });
 test('audio regions survive audio-only payload projection without becoming visual edits',async()=>{
-  const {buildExportPayload}=await import('../frontend/export-payload.mjs');
+  const {buildExportPayload}=await import('../frontend/export/export-payload.mjs');
   const edit={id:1,type:'audio',start:1,end:2,volume:.5,fade:.05};
   const payload=buildExportPayload({job:{has_video:false,has_audio:true},edits:[edit],audio:{},preset:'audio_only'},{});
   assert.deepEqual(payload.audio_regions,[{start:1,end:2,volume:.5,fade:.05}]);assert.deepEqual(payload.edits,[]);

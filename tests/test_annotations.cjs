@@ -4,7 +4,7 @@ const assert=require("node:assert/strict");
 const fs=require("node:fs");
 const vm=require("node:vm");
 const ctx=vm.createContext({});
-vm.runInContext(fs.readFileSync("frontend/annotation-model.js","utf8"),ctx);
+vm.runInContext(fs.readFileSync("frontend/visuals/annotation-model.js","utf8"),ctx);
 const call=(expr)=>vm.runInContext(expr,ctx);
 test("all five annotation types use the same validated time model",()=>{
  for(const kind of ["icon","shape","arrow","callout","image"]){
@@ -78,8 +78,8 @@ test("canvas resize keeps annotations valid for project loading",()=>{
    clamp:(value,min,max)=>Math.max(min,Math.min(max,value)),
    S:{job:{width:1280,height:720}}
  });
- vm.runInContext(fs.readFileSync("frontend/annotation-model.js","utf8"),context);
- vm.runInContext(fs.readFileSync("frontend/editor-render.js","utf8"),context);
+ vm.runInContext(fs.readFileSync("frontend/visuals/annotation-model.js","utf8"),context);
+ vm.runInContext(fs.readFileSync("frontend/editor/editor-render.js","utf8"),context);
  vm.runInContext(`render=()=>{};toSource=event=>event;
    var edit=AnnotationModel.defaultEdit('icon',1280,720,0,2);
    S.drag={kind:'resize',edit};`,context);

@@ -46,9 +46,16 @@ def rebuild(work: Path, clips: list[dict], transitions: list[dict] | None = None
         args += ["-i", str(path)]
     graph = []
     for index, info in enumerate(infos):
-        graph.append(f"[{index}:v:0]scale=ceil(iw/2)*2:ceil(ih/2)*2,setsar=1,setpts=PTS-STARTPTS,{rate}{video_format}[v{index}]")
+        duration = info.duration
+        graph.append(
+            f"[{index}:v:0]scale=ceil(iw/2)*2:ceil(ih/2)*2,setsar=1,setpts=PTS-STARTPTS,"
+            f"{rate},tpad=stop_mode=clone:stop=-1,trim=duration={duration}{video_format}[v{index}]"
+        )
         if first.has_audio:
-            graph.append(f"[{index}:a:0]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,asetpts=PTS-STARTPTS[a{index}]")
+            graph.append(
+                f"[{index}:a:0]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,"
+                f"asetpts=PTS-STARTPTS,apad=whole_dur={duration},atrim=duration={duration}[a{index}]"
+            )
     if not crossfade:
         concat_inputs = "".join(f"[v{i}][a{i}]" for i in range(len(paths))) if first.has_audio else "".join(f"[v{i}]" for i in range(len(paths)))
         graph.append(f"{concat_inputs}concat=n={len(paths)}:v=1:a={1 if first.has_audio else 0}[outv]" + ("[outa]" if first.has_audio else ""))

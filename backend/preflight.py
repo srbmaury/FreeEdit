@@ -35,7 +35,7 @@ def main():
         print("OK Setup render: generated video, audio, cut, mask, Reframe, leveling and fades")
     if args.warm_model:
         if not next(c["ready"] for c in checks if c["name"] == "Noise reduction"):
-            print("Install noise dependencies with ./setup.sh before downloading the model.")
+            print("Install noise dependencies with ./scripts/setup.sh before downloading the model.")
             return 1
         python = os.environ.get("DEEPFILTER_PYTHON", sys.executable)
         try:

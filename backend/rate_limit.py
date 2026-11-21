@@ -66,6 +66,8 @@ def category_for(method: str, path: str) -> str | None:
         path.startswith("/api/jobs/") and path.endswith(("/presenter", "/clips"))
     ):
         return "upload"
+    if path == "/api/tts":
+        return "processing"
     if path.startswith("/api/jobs/") and path.rsplit("/", 1)[-1] in {
         "process", "silence", "preview", "background-preview",
         "composition-preview", "result-preview"

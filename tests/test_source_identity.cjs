@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const {createHash} = require('node:crypto');
 
 test('file identity hashes every chunk, including the final partial chunk', async () => {
-  const {fingerprintSource} = await import('../frontend/source-identity.mjs');
+  const {fingerprintSource} = await import('../frontend/projects/source-identity.mjs');
   const bytes = Buffer.alloc(4 * 1024 * 1024 + 3, 7);
   const blob = new Blob([bytes]);
   blob.name = 'movie.mkv';
@@ -18,6 +18,6 @@ test('file identity hashes every chunk, including the final partial chunk', asyn
 });
 
 test('unreadable files fail instead of yielding an identity', async () => {
-  const {fingerprintSource} = await import('../frontend/source-identity.mjs');
+  const {fingerprintSource} = await import('../frontend/projects/source-identity.mjs');
   await assert.rejects(fingerprintSource({size:1,slice(){throw Error('unreadable');}}), /unreadable/);
 });

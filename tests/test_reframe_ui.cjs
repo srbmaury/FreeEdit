@@ -5,15 +5,15 @@ const fs=require("node:fs");
 const vm=require("node:vm");
 
 const html=fs.readFileSync("frontend/index.html","utf8");
-const app=fs.readFileSync("frontend/app.js","utf8");
-const reframe=fs.readFileSync("frontend/reframe-captions.js","utf8");
-const drawing=fs.readFileSync("frontend/editor-render.js","utf8");
-const exporter=fs.readFileSync("frontend/editor-export.js","utf8");
-const projects=fs.readFileSync("frontend/projects.js","utf8");
-const projectSchema=fs.readFileSync("frontend/project-schema.mjs","utf8");
-const timeline=fs.readFileSync("frontend/timeline.js","utf8");
+const app=fs.readFileSync("frontend/editor/app.js","utf8");
+const reframe=fs.readFileSync("frontend/visuals/reframe-captions.js","utf8");
+const drawing=fs.readFileSync("frontend/editor/editor-render.js","utf8");
+const exporter=fs.readFileSync("frontend/export/editor-export.js","utf8");
+const projects=fs.readFileSync("frontend/projects/projects.js","utf8");
+const projectSchema=fs.readFileSync("frontend/projects/project-schema.mjs","utf8");
+const timeline=fs.readFileSync("frontend/editor/timeline.js","utf8");
 const ctx=vm.createContext({});
-vm.runInContext(fs.readFileSync("frontend/editor-model.js","utf8"),ctx);
+vm.runInContext(fs.readFileSync("frontend/editor/editor-model.js","utf8"),ctx);
 const evaluate=(expression)=>vm.runInContext(expression,ctx);
 const document=[
  {id:1,type:"cut",start:1,end:2},
@@ -64,7 +64,7 @@ test("unified inspector, timeline and persistence are wired",()=>{
   "selectedZoomEnd","selectedZoomStrength","selectedZoomTransition","zoomTrack"]){
   assert.match(html,new RegExp('id="'+id+'"'));
  }
- assert.match(html,/script src="editor-model\.js"/);
+ assert.match(html,/script src="editor\/editor-model\.js"/);
  assert.match(app,/const editorStore = createEditorStore\(S\)/);
  assert.match(drawing+exporter,/EditorModel\.exportReframe\(S\.reframe, S\.edits\)/);
  assert.match(projects,/version: 2/);
@@ -77,7 +77,7 @@ test("unified inspector, timeline and persistence are wired",()=>{
 });
 
 test("browser and exporter share quintic baseline easing",()=>{
- vm.runInContext(fs.readFileSync("frontend/media-utils.js","utf8"),ctx);
+ vm.runInContext(fs.readFileSync("frontend/media/media-utils.js","utf8"),ctx);
  const config={aspect:"original",zoom:2,focus_x:.7,focus_y:.6,
  sections:[{start:1,end:3,zoom:2.5,focus_x:.7,focus_y:.6,transition:.5}]};
  for(const [t,value] of [[0,2],[1,2],[1.25,2.25],[2,2.5],[2.75,2.25],[3,2],[4,2]]){
