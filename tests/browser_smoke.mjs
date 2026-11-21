@@ -32,7 +32,7 @@ try {
   await page.goto("http://127.0.0.1:8765/",{waitUntil:"domcontentloaded"});
   console.log("Smoke: IndexedDB recovery, large snapshots and failed writes");
   const storage=await page.evaluate(async()=>{
-    const {createRecoveryStore}=await import('./recovery-store.mjs');
+    const {createRecoveryStore}=await import('/projects/recovery-store.mjs');
     const name='freeedit-smoke-'+crypto.randomUUID();
     const store=createRecoveryStore({name});
     const original={image:'data:image/png;base64,'+'a'.repeat(6*1024*1024),edit:1};

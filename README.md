@@ -23,6 +23,8 @@
 
 ## Quick start
 
+The commands below apply to a checkout containing the `scripts/` directory. Run them from the repository root.
+
 ### macOS (native)
 
 Requires Homebrew and an internet connection for initial dependencies/models.
@@ -42,6 +44,14 @@ On a fresh install, the base setup skips the optional background and narration e
 | --- | --- | --- |
 | Person-aware background blur and replacement | `./scripts/setup.sh --background` | `--build-arg INSTALL_BACKGROUND=true` |
 | Local text-to-speech | `./scripts/setup-tts.sh` after base setup | `--build-arg INSTALL_TTS=true` |
+
+To enable both optional features on a fresh macOS checkout, replace the setup and launch lines above with:
+
+```sh
+./scripts/setup.sh --background
+./scripts/setup-tts.sh
+./scripts/run.sh
+```
 
 Background setup installs MediaPipe in `.venv-background` and verifies the segmentation model. Add `--warm-model` to `./scripts/setup.sh` to preload DeepFilterNet3 for noise reduction, for example `./scripts/setup.sh --background --warm-model`.
 
