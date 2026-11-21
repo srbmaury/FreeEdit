@@ -8,8 +8,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-from . import pipeline
-from .background import model_path, worker_python, MODEL_SHA256
+from backend.media import pipeline
+from backend.media.background import model_path, worker_python, MODEL_SHA256
 import hashlib
 
 

@@ -3,7 +3,7 @@ import copy
 import shutil
 from pathlib import Path
 
-from . import pipeline
+from backend.media import pipeline
 
 
 def render(source: Path, work: Path, settings: dict, progress, presenter: Path | None = None,
@@ -11,7 +11,7 @@ def render(source: Path, work: Path, settings: dict, progress, presenter: Path |
     composition_work = work / "composition"
     try:
         if settings.get("presenter"):
-            from .composition import compose, compose_audio
+            from backend.media.composition import compose, compose_audio
             info = pipeline.probe(source)
             audio_only = settings["preset"] == "audio_only"
             required = (256 * 1024**2 + int(info.duration * 48000 * 2 * 2) if audio_only else

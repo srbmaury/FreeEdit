@@ -5,7 +5,7 @@ import subprocess
 import shutil
 from pathlib import Path
 
-from . import pipeline
+from backend.media import pipeline
 
 
 def rebuild(work: Path, clips: list[dict], transitions: list[dict] | None = None, *,

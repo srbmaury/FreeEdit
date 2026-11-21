@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from backend import pipeline
+from backend.media import pipeline
 
 
 class PrivacyGeometryTests(unittest.TestCase):

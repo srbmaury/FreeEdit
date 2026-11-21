@@ -9,8 +9,8 @@ import time
 import unittest
 from unittest.mock import patch
 
-from backend.job_store import JobStore, InstanceLease
-from backend.sessions import load_secret
+from backend.jobs.job_store import JobStore, InstanceLease
+from backend.http.sessions import load_secret
 
 
 class JobStoreTests(unittest.TestCase):
@@ -114,8 +114,8 @@ from pathlib import Path
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 from backend import app as api
-from backend.pipeline import MediaInfo
-from backend.sessions import COOKIE
+from backend.media.pipeline import MediaInfo
+from backend.http.sessions import COOKIE
 with TestClient(api.app) as client:
     if os.environ['PHASE'] == 'upload':
         media = MediaInfo(duration=1, has_video=True, has_audio=False, width=320, height=180)

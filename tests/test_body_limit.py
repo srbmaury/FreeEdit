@@ -5,9 +5,9 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from backend.body_limit import ControlBodyLimit
+from backend.http.body_limit import ControlBodyLimit
 from backend import app as api
-from backend.sessions import COOKIE, create_session
+from backend.http.sessions import COOKIE, create_session
 
 
 class BodyLimitTests(unittest.IsolatedAsyncioTestCase):

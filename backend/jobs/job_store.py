@@ -6,7 +6,7 @@ import re
 import tempfile
 import time
 
-from .observability import event
+from backend.support.observability import event
 
 JOB_ID = re.compile(r"^[a-f0-9]{12}$")
 OWNER = re.compile(r"^[a-f0-9]{48}$")

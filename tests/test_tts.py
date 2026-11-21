@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from backend import tts
+from backend.media import tts
 from backend.app import app
 
 

@@ -30,7 +30,7 @@ voices-v1.0.bin bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d
 MODELS
 
 FREEEDIT_TTS_MODEL_DIR="$model_dir" "$python_bin" - <<'PY'
-from backend.tts import NarrationRequest, synthesize
+from backend.media.tts import NarrationRequest, synthesize
 
 audio = synthesize(NarrationRequest(text="FreeEdit is ready to generate narration."))
 assert audio.startswith(b"RIFF")

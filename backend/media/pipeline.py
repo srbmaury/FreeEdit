@@ -24,8 +24,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from .execution import check_cancelled, run_process, start_process, kill_process
-from .waveform import pcm_peaks
+from backend.jobs.execution import check_cancelled, run_process, start_process, kill_process
+from backend.media.waveform import pcm_peaks
 
 ProgressFn = Callable[[str, float | None], None]
 
@@ -316,7 +316,7 @@ def build_video_edits(
         return f"[v{n}]"
 
     if background:
-        from .background import filters
+        from backend.media.background import filters
         background_parts, cur = filters(cur, info, scale, background, mask_input, image_input)
         parts += background_parts
 
@@ -739,7 +739,7 @@ def process(
     replacement = None
     extra_index = 2 if clean_wav else 1
     if background:
-        from .background import create_mask
+        from backend.media.background import create_mask
         mask = create_mask(source, work, info, background, progress)
         if background["mode"] == "image":
             replacement = work / "background.png"
@@ -779,7 +779,7 @@ def process(
             vlabel = "[reframed]"
 
     if framing:
-        from .canvas_frame import build_frame
+        from backend.media.canvas_frame import build_frame
         fw, fh = _even(info.width * scale), _even(info.height * scale)
         if reframe:
             _, _, fw, fh = reframe_geometry(fw, fh, {**reframe, "zoom": 1 if reframe.get("sections") else reframe["zoom"]})

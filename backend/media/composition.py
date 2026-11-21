@@ -1,8 +1,8 @@
 """Two-video composition on the main recording's original timeline."""
 from pathlib import Path
 
-from . import pipeline
-from .background import create_mask
+from backend.media import pipeline
+from backend.media.background import create_mask
 
 
 def audio_filters(info, other, settings, length, span, delay):

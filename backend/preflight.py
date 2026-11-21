@@ -6,8 +6,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-from .diagnostics import inspect_setup, verify_render
-from .pipeline import PipelineError
+from backend.support.diagnostics import inspect_setup, verify_render
+from backend.media.pipeline import PipelineError
 
 
 def main():

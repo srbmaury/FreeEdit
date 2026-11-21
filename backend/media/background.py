@@ -13,7 +13,7 @@ MODEL_SHA256 = "191ac9529ae506ee0beefa6b2c945a172dab9d07d1e802a290a4e4038226658b
 
 
 def worker_python():
-    local = Path(__file__).resolve().parent.parent / ".venv-background" / "bin" / "python"
+    local = Path(__file__).resolve().parents[2] / ".venv-background" / "bin" / "python"
     return os.environ.get("BACKGROUND_PYTHON", str(local) if local.is_file() else sys.executable)
 
 
@@ -23,7 +23,7 @@ def model_path():
 
 
 def ensure_model():
-    from .pipeline import PipelineError
+    from backend.media.pipeline import PipelineError
     target = model_path()
     if target.is_file() and hashlib.sha256(target.read_bytes()).hexdigest() == MODEL_SHA256:
         return target
@@ -47,8 +47,8 @@ def ensure_model():
 
 
 def create_mask(source, work, info, settings, progress, start=0, length=None):
-    from .pipeline import FFMPEG, PipelineError
-    from .execution import run_process
+    from backend.media.pipeline import FFMPEG, PipelineError
+    from backend.jobs.execution import run_process
     length = info.duration if length is None else length
     progress("Preparing person segmentation", None)
     model = ensure_model()
@@ -87,7 +87,7 @@ def filters(current, info, scale, settings, mask_input, image_input):
     w = min(w, int(round(info.width * scale / 2)) * 2 - x)
     h = min(h, int(round(info.height * scale / 2)) * 2 - y)
     if w < 2 or h < 2:
-        from .pipeline import PipelineError
+        from backend.media.pipeline import PipelineError
         raise PipelineError("Camera area is too small at this export resolution. Choose a larger area.")
     parts = [f"{current}split=2[bgbase][bgcrop]",
              f"[bgcrop]crop={w}:{h}:{x}:{y}:exact=1,format=yuv444p[bgperson]"]

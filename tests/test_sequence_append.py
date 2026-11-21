@@ -32,7 +32,8 @@ class SequenceMediaTests(unittest.TestCase):
     def test_crossfade_aligns_a_short_audio_stream_with_video(self):
         import json
         import subprocess
-        from backend import pipeline, sequence
+        from backend.media import pipeline
+        from backend.media import sequence
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -56,7 +57,7 @@ class SequenceMediaTests(unittest.TestCase):
     def test_matching_odd_clips_crossfade_and_recover_by_revision(self):
         import subprocess
         from fastapi.testclient import TestClient
-        from backend import pipeline
+        from backend.media import pipeline
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

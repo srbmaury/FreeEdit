@@ -95,7 +95,11 @@ Temporary uploaded files and rendered jobs expire. Signed anonymous sessions pro
 ## Project structure
 
 ```text
-backend/                 FastAPI routes, validation, processing, FFmpeg, optional ML workers
+backend/                 FastAPI app, launcher, and preflight entry points
+  media/                 FFmpeg, composition, sequencing, and local ML workers
+  jobs/                  Job persistence and subprocess lifecycle
+  http/                  Request models, session cookies, and request limits
+  support/               Diagnostics, logging, and runtime metadata
 frontend/                No-build browser editor
   editor/                Editor state, history, timeline, and workspace
   visuals/               Canvas, drawing, annotations, and reframe

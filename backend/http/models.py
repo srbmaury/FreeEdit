@@ -8,8 +8,8 @@ from typing import Annotated, Literal
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from . import pipeline
-from .rate_limit import env_int
+from backend.media import pipeline
+from backend.http.rate_limit import env_int
 
 MAX_OVERLAY_PIXELS = env_int("FREEEDIT_MAX_OVERLAY_PIXELS", 16_000_000)
 

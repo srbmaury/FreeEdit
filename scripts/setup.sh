@@ -37,7 +37,7 @@ if "$background"; then
   .venv/bin/python -m pip --python .venv-background install --group background
   .venv-background/bin/python - <<'PYTHON'
 import mediapipe as mp
-from backend.background import ensure_model
+from backend.media.background import ensure_model
 
 model = ensure_model()
 options = mp.tasks.vision.ImageSegmenterOptions(

@@ -7,8 +7,8 @@ import unittest
 from pathlib import Path
 from pydantic import ValidationError
 from fastapi import HTTPException
-from backend import rendering
-from backend.models import AudioRegion, ProcessRequest
+from backend.media import rendering
+from backend.http.models import AudioRegion, ProcessRequest
 
 
 class AudioRegionTests(unittest.TestCase):

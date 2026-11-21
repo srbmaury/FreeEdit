@@ -8,8 +8,9 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 from fastapi import HTTPException
 from pydantic import ValidationError
-from backend import pipeline, rendering
-from backend.models import ProcessRequest
+from backend.media import pipeline
+from backend.media import rendering
+from backend.http.models import ProcessRequest
 
 
 def mask():

@@ -7,8 +7,8 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from backend import app as api
-from backend.rate_limit import RequestLimiter, category_for, limits, env_int
-from backend.sessions import COOKIE, create_session
+from backend.http.rate_limit import RequestLimiter, category_for, limits, env_int
+from backend.http.sessions import COOKIE, create_session
 
 
 class Clock:

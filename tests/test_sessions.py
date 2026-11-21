@@ -7,7 +7,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from backend import app as api
-from backend.sessions import COOKIE, create_session, verify_session
+from backend.http.sessions import COOKIE, create_session, verify_session
 
 
 class SessionTests(unittest.TestCase):
@@ -81,7 +81,7 @@ if __name__ == "__main__":
 
 class IndependentInstanceTests(unittest.TestCase):
     def test_independent_servers_keep_their_own_cookie_and_recording(self):
-        from backend import sessions
+        from backend.http import sessions
         secret_a, secret_b = b'instance-a', b'instance-b'
         name_a, name_b = sessions.cookie_name(secret_a), sessions.cookie_name(secret_b)
         self.assertNotEqual(name_a, name_b)

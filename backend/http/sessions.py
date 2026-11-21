@@ -42,7 +42,7 @@ def load_secret(root: Path) -> bytes:
     return secret
 
 
-_SECRET = load_secret(Path(os.environ.get("FREEEDIT_JOBS_DIR", Path(__file__).resolve().parent.parent / "jobs")))
+_SECRET = load_secret(Path(os.environ.get("FREEEDIT_JOBS_DIR", Path(__file__).resolve().parents[2] / "jobs")))
 # Cookies are scoped to hosts, not ports. Independent signing keys must use
 # independent names so another local server cannot replace this session.
 def cookie_name(secret: bytes) -> str:

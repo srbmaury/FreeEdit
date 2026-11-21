@@ -6,7 +6,7 @@ import socket
 import subprocess
 import sys
 
-from .runtime_info import source_info
+from backend.support.runtime_info import source_info
 
 ROOT = Path(__file__).resolve().parent.parent
 
