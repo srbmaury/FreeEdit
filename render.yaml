@@ -9,6 +9,8 @@ services:
     domains:
       - freeedit.srbmaury.com
     envVars:
+      - key: INSTALL_TTS
+        value: "true"
       - key: MAX_UPLOAD_MB
         value: "200"
       - key: MAX_DURATION_MIN
