@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy Policy | FreeEdit</title>
+  <link rel="stylesheet" href="/styles/policies.css">
+</head>
+<body>
+  <main>
+    <nav aria-label="FreeEdit"><a href="/">FreeEdit</a> · <a href="/terms.html">Terms of Service</a></nav>
+    <h1>Privacy Policy</h1>
+    <p>This policy covers the hosted FreeEdit editor at freeedit.srbmaury.com and the FreeEdit ChatGPT plugin. If you run FreeEdit on your own infrastructure, your installation determines where its files are processed and stored.</p>
+
+    <h2>Data FreeEdit processes</h2>
+    <ul>
+      <li><strong>Editor uploads and edits.</strong> The hosted editor receives the video, audio, images, and other assets you submit, along with filenames and editing settings. FreeEdit uses these inputs to create previews, process edits, and deliver exports. Media may contain personal information, including voices or faces.</li>
+      <li><strong>Narration.</strong> When you use the editor or ask ChatGPT to run FreeEdit’s narration tool, FreeEdit receives the text to read and the applicable voice and speed settings. Kokoro processes this text on the FreeEdit server. The plugin returns an expiring WAV download link to ChatGPT. OpenAI handles your conversation and the tool result under its own policies.</li>
+      <li><strong>Session and service data.</strong> The editor uses a signed random session cookie to keep temporary jobs associated with the browser session that created them. FreeEdit uses request metadata and connection information for service security, rate limits, error diagnosis, and reliability. Infrastructure providers may also process IP addresses, timestamps, and request information.</li>
+      <li><strong>Browser storage.</strong> The editor can store preferences and project recovery data, including local media or references to media where supported, in your browser. FreeEdit does not require a website account for editing.</li>
+    </ul>
+
+    <h2>Storage and retention</h2>
+    <p>The hosted editor is configured to clean up temporary jobs after about one hour without a job update. Active uploads and processing jobs are excluded until they finish. This cleanup covers the server’s job files, including hosted uploads and rendered outputs. Save your project and download anything you need before leaving.</p>
+    <p>FreeEdit does not save narration scripts as project files. The website returns generated narration directly. For ChatGPT, FreeEdit holds the WAV in server memory. The link expires after ten minutes or when the server restarts, whichever comes first. Expired entries are removed when the narration cache is next accessed. Anyone with the link can download the audio while it is valid.</p>
+    <p>The session cookie lasts up to seven days. Browser recovery data and preferences can remain until cleared. Downloaded files remain wherever you saved them. Operational and infrastructure logs are separate from temporary jobs and are subject to the applicable logging settings and provider retention.</p>
+
+    <h2>Who receives data</h2>
+    <p>FreeEdit uses hosting and network infrastructure to deliver and protect the service. These providers may process requests and hosted content as needed to operate their services. OpenAI is involved when you use the ChatGPT plugin. FreeEdit runs its narration model on its server and does not send scripts to an external text-to-speech API. FreeEdit may disclose data when legally required.</p>
+
+    <h2>Your controls and privacy requests</h2>
+    <p>Use the editor’s storage cleanup controls to remove eligible temporary jobs in your session. Clear site data in your browser to remove local preferences, recovery data, and the session cookie. Manage ChatGPT conversations and plugin access in ChatGPT. Removing a website job or clearing browser data does not delete copies held by ChatGPT or files you already downloaded.</p>
+    <p>For privacy questions or requests, use the contact link on the <a href="https://srbmaury.com/">FreeEdit publisher’s website</a>. Please avoid posting private recordings, scripts, download links, or identifiers in public GitHub issues.</p>
+  </main>
+</body>
+</html>
