@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Query
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.media import pipeline
@@ -1009,6 +1009,14 @@ def delete_job(job_id: str):
             pass
         jobs.pop(job_id, None)
     return {"ok": True}
+
+
+@app.get("/.well-known/openai-apps-challenge", include_in_schema=False)
+def openai_apps_challenge():
+    token = os.environ.get("FREEEDIT_OPENAI_APPS_CHALLENGE")
+    if not token:
+        raise HTTPException(404, "Verification challenge is not configured.")
+    return PlainTextResponse(token, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
