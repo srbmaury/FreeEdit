@@ -3,12 +3,7 @@
   "mcpServers": {
     "freeedit": {
       "type": "streamable-http",
-      "url": "https://freeedit.srbmaury.com/api/mcp/",
-      "extensions": {
-        "com.openai": {
-          "auth": {"type": "none"}
-        }
-      }
+      "url": "https://freeedit.srbmaury.com/api/mcp/"
     }
   }
 }
