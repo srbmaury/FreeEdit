@@ -17,7 +17,7 @@ MODEL_DIR = Path(os.environ.get("FREEEDIT_TTS_MODEL_DIR", Path.home() / ".cache/
 MODEL = MODEL_DIR / "kokoro-v1.0.int8.onnx"
 VOICES = MODEL_DIR / "voices-v1.0.bin"
 MAX_CHARS = 1000
-MAX_CHUNK_CHARS = 100
+MAX_CHUNK_CHARS = 45
 router = APIRouter(prefix="/api/tts")
 _generation_lock = threading.Lock()
 _engine = None
@@ -50,7 +50,6 @@ def synthesize(settings: NarrationRequest) -> bytes:
     if _engine is None:
         options = ort.SessionOptions()
         options.intra_op_num_threads = 1
-        options.enable_cpu_mem_arena = False
         options.inter_op_num_threads = 1
         session = ort.InferenceSession(str(MODEL), sess_options=options, providers=["CPUExecutionProvider"])
         _engine = Kokoro.from_session(session, str(VOICES))
