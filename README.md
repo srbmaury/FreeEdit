@@ -1,8 +1,8 @@
 # FreeEdit
 
-**A free, open-source video editor for tutorials, demos, and social clips.** Shape a video on a visual timeline, add captions and graphics, clean up audio, and export a polished result.
+**FreeEdit is a free, open-source online video editor for tutorials, demos, and social clips.** Trim and join clips on a timeline, import SRT subtitles, add annotations, remove background noise, and export MP4 video or WAV audio. Use the hosted editor in your browser or run it on your own machine.
 
-**Try it:** [freeedit.srbmaury.com](https://freeedit.srbmaury.com) · **Source license:** [MIT](LICENSE)
+**Try it:** [Open the FreeEdit video editor](https://freeedit.srbmaury.com/) · **Source license:** [MIT](LICENSE)
 
 > Hosted processing happens on the server; do not upload confidential media to a deployment you do not trust. The live site may run a different commit from this repository.
 
