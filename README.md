@@ -15,7 +15,7 @@
 - **Adjust range speed**: open Speed, set From/To times, and apply 0.25×–4× speed, with preserved audio pitch, editable Speed blocks, and matching result previews and exports.
 - **Explain what matters**: pick a focus point in the video; choose original, wide, vertical or square aspect ratios.
 - **Build a main-video sequence**: arrange up to eight clips with matching dimensions, frame rate, and audio-track presence; join them with cuts or crossfades, add a movable presenter inset, choose the presenter/mixed audio, and optionally process the presenter background.
-- **Generate narration** with local Kokoro text-to-speech, four English voices, playback, and WAV download.
+- **Generate narration** with local Kokoro text-to-speech, nine English voices, playback, and WAV download.
 - **Replace backgrounds** (optional): person-aware blur, solid color or an image, optionally restricted to a webcam area.
 - **Review accurately**: timeline selection, original/result comparisons, and short processed previews before exporting.
 - **Export** balanced, high-quality or smaller H.264 MP4, or audio-only WAV. Optional speech leveling and fades.
@@ -141,6 +141,10 @@ installs Kokoro ONNX in the FreeEdit Python environment and downloads the voice
 model once. For a different Python environment, set `PYTHON_BIN` to the same
 interpreter that runs FreeEdit. For a shared installation, set
 `FREEEDIT_TTS_MODEL_DIR` to the same model directory at setup and runtime.
+
+`FREEEDIT_TTS_CHUNK_CHARS` defaults to 45 characters per inference on memory-constrained
+servers. Set a higher value on servers with more headroom to preserve longer phrases
+in a single synthesis call. Validate memory use with long scripts before deploying a higher limit.
 
 Open **Generate narration** on the start screen or from the FreeEdit menu.
 Enter up to 1,000 characters of English text, choose a voice and speed, then preview or download the WAV. Inference runs on the FreeEdit server's CPU with
