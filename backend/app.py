@@ -52,6 +52,11 @@ ALLOWED_EXT = {".mov", ".mp4", ".m4v", ".mkv", ".webm", ".avi", ".wav", ".mp3", 
 
 JOBS_DIR.mkdir(parents=True, exist_ok=True)
 
+plugin = None
+if os.environ.get("FREEEDIT_ENABLE_CHATGPT_PLUGIN") == "true":
+    from backend.http import chatgpt_plugin as plugin
+
+
 
 @asynccontextmanager
 async def lifespan(app):
@@ -76,7 +81,11 @@ async def lifespan(app):
 
     task = asyncio.create_task(clean_periodically())
     try:
-        yield
+        if plugin is None:
+            yield
+        else:
+            async with plugin.mcp.session_manager.run():
+                yield
     finally:
         task.cancel()
         try:
@@ -101,6 +110,9 @@ app.add_middleware(ControlBodyLimit,
                    timeout=env_int("FREEEDIT_EDIT_REQUEST_TIMEOUT_SECONDS", 30))
 install_error_handling(app)
 app.include_router(tts_router)
+if plugin is not None:
+    app.include_router(plugin.router)
+    app.mount("/api/mcp", plugin.mcp.streamable_http_app())
 # One job at a time: DeepFilterNet + x264 already saturate the CPU
 executor = ThreadPoolExecutor(max_workers=1)
 jobs: dict[str, dict] = {}

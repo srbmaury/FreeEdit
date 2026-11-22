@@ -39,3 +39,7 @@ background = [
 narration = [
     "kokoro-onnx==0.4.9",
 ]
+
+chatgpt = [
+    "mcp==1.29.0",
+]
