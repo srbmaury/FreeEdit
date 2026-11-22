@@ -46,6 +46,9 @@ RUN if [ "$INSTALL_TTS" = "true" ]; then \
       apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && \
       rm -rf /var/lib/apt/lists/* && \
       PYTHON_BIN=/usr/local/bin/python ./scripts/setup-tts.sh; fi
+ARG INSTALL_CHATGPT_PLUGIN=false
+RUN if [ "$INSTALL_CHATGPT_PLUGIN" = "true" ]; then \
+      pip install --no-cache-dir --group web --group chatgpt; fi
 COPY frontend frontend
 COPY LICENSE LICENSE
 

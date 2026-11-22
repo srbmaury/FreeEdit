@@ -151,3 +151,24 @@ Enter up to 1,000 characters of English text, choose a voice and speed, then pre
 no API key, external speech service, or per-generation fee. The server handles
 one narration request at a time. Run FreeEdit locally if you want the script
 and audio to stay on your own machine.
+
+## ChatGPT plugin
+
+The plugin exposes FreeEdit's narration engine as an MCP tool. It accepts up to
+1,000 characters of English text, a preset voice and a playback speed. Generated
+WAV downloads use a private link that expires after ten minutes. Link holders can
+download the WAV until expiry or a service restart. The video timeline remains
+available in the browser editor.
+
+Install the optional dependency with
+`python -m pip install --group web --group chatgpt` in the FreeEdit environment
+and enable the Kokoro engine using the instructions above. Start FreeEdit with
+`FREEEDIT_ENABLE_CHATGPT_PLUGIN=true`. For Docker, also build with
+`--build-arg INSTALL_CHATGPT_PLUGIN=true` and `--build-arg INSTALL_TTS=true`.
+Set `FREEEDIT_PUBLIC_URL` to the externally reachable origin if it differs from
+`https://freeedit.srbmaury.com`.
+
+Add the deployed HTTPS endpoint ending in `/api/mcp/` as a custom MCP server in
+ChatGPT to test the connection. For directory submission, update the endpoint in
+`integrations/chatgpt/mcp.json` if needed, add the verified publisher's listing
+assets and policy links, and ZIP the contents of that directory at the ZIP root.
