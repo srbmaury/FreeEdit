@@ -5,7 +5,6 @@ import io
 import os
 from pathlib import Path
 import re
-import textwrap
 import threading
 from typing import Literal
 import wave
@@ -17,7 +16,8 @@ MODEL_DIR = Path(os.environ.get("FREEEDIT_TTS_MODEL_DIR", Path.home() / ".cache/
 MODEL = MODEL_DIR / "kokoro-v1.0.int8.onnx"
 VOICES = MODEL_DIR / "voices-v1.0.bin"
 MAX_CHARS = 1000
-MAX_CHUNK_CHARS = 45
+MAX_CHUNK_CHARS = max(45, min(MAX_CHARS, int(os.environ.get("FREEEDIT_TTS_CHUNK_CHARS", "45"))))
+_CLAUSE_BREAK = re.compile(r"(?<=[,;:—])\s+|\s+(?=(?:and|but|or|so|yet|because|although|while|than)\b)", re.I)
 router = APIRouter(prefix="/api/tts")
 _generation_lock = threading.Lock()
 _engine = None
@@ -26,7 +26,10 @@ _engine = None
 class NarrationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, allow_inf_nan=False)
     text: str = Field(min_length=1, max_length=MAX_CHARS)
-    voice: Literal["af_heart", "am_michael", "bf_emma", "bm_george"] = "af_heart"
+    voice: Literal[
+        "af_heart", "af_bella", "af_nicole", "am_michael", "am_fenrir", "am_puck",
+        "bf_emma", "bm_george", "bm_lewis",
+    ] = "af_heart"
     speed: float = Field(default=1, ge=.75, le=1.25)
 
     @field_validator("text")
@@ -39,6 +42,26 @@ class NarrationRequest(BaseModel):
 
 def available():
     return MODEL.is_file() and VOICES.is_file() and importlib.util.find_spec("kokoro_onnx") is not None
+
+
+def sentence_chunks(sentence: str):
+    remaining = sentence.strip()
+    while len(remaining) > MAX_CHUNK_CHARS:
+        window = remaining[:MAX_CHUNK_CHARS + 1]
+        breaks = [
+            match.start() for match in _CLAUSE_BREAK.finditer(remaining)
+            if MAX_CHUNK_CHARS // 2 <= match.start() <= MAX_CHUNK_CHARS
+            and any(character.isalnum() for character in remaining[:match.start()])
+        ]
+        if breaks:
+            end = breaks[-1]
+        else:
+            spaces = list(re.finditer(r"\s+", window))
+            end = spaces[-1].start() if spaces else MAX_CHUNK_CHARS
+        yield remaining[:end].rstrip()
+        remaining = remaining[end:].lstrip()
+    if remaining:
+        yield remaining
 
 
 def synthesize(settings: NarrationRequest) -> bytes:
@@ -58,7 +81,8 @@ def synthesize(settings: NarrationRequest) -> bytes:
     with wave.open(output, "wb") as wav:
         sample_rate = None
         for sentence in re.split(r"\n+|(?<=[.!?])\s+", settings.text):
-            for chunk in textwrap.wrap(sentence, width=MAX_CHUNK_CHARS, break_on_hyphens=False):
+            first_chunk = True
+            for chunk in sentence_chunks(sentence):
                 if not any(character.isalnum() for character in chunk):
                     continue
                 samples, rate = _engine.create(chunk, voice=settings.voice, speed=settings.speed, lang=language)
@@ -67,8 +91,9 @@ def synthesize(settings: NarrationRequest) -> bytes:
                 if sample_rate is None:
                     sample_rate = rate
                     wav.setparams((1, 2, rate, 0, "NONE", "not compressed"))
-                else:
+                elif first_chunk:
                     wav.writeframesraw(bytes(int(sample_rate * .15) * 2))
+                first_chunk = False
                 pcm = (np.clip(samples, -1, 1) * 32767).astype("<i2")
                 wav.writeframesraw(pcm.tobytes())
     return output.getvalue()
