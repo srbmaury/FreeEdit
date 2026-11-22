@@ -4,6 +4,8 @@ import importlib.util
 import io
 import os
 from pathlib import Path
+import re
+import textwrap
 import threading
 from typing import Literal
 import wave
@@ -15,6 +17,7 @@ MODEL_DIR = Path(os.environ.get("FREEEDIT_TTS_MODEL_DIR", Path.home() / ".cache/
 MODEL = MODEL_DIR / "kokoro-v1.0.int8.onnx"
 VOICES = MODEL_DIR / "voices-v1.0.bin"
 MAX_CHARS = 1000
+MAX_CHUNK_CHARS = 100
 router = APIRouter(prefix="/api/tts")
 _generation_lock = threading.Lock()
 _engine = None
@@ -46,19 +49,29 @@ def synthesize(settings: NarrationRequest) -> bytes:
 
     if _engine is None:
         options = ort.SessionOptions()
-        options.intra_op_num_threads = 2
+        options.intra_op_num_threads = 1
+        options.enable_cpu_mem_arena = False
         options.inter_op_num_threads = 1
         session = ort.InferenceSession(str(MODEL), sess_options=options, providers=["CPUExecutionProvider"])
         _engine = Kokoro.from_session(session, str(VOICES))
     language = "en-gb" if settings.voice.startswith("b") else "en-us"
-    samples, sample_rate = _engine.create(settings.text, voice=settings.voice, speed=settings.speed, lang=language)
-    if not samples.size:
-        raise ValueError("No speech was produced.")
-    pcm = (np.clip(samples, -1, 1) * 32767).astype("<i2")
     output = io.BytesIO()
     with wave.open(output, "wb") as wav:
-        wav.setparams((1, 2, sample_rate, 0, "NONE", "not compressed"))
-        wav.writeframes(pcm.tobytes())
+        sample_rate = None
+        for sentence in re.split(r"\n+|(?<=[.!?])\s+", settings.text):
+            for chunk in textwrap.wrap(sentence, width=MAX_CHUNK_CHARS, break_on_hyphens=False):
+                if not any(character.isalnum() for character in chunk):
+                    continue
+                samples, rate = _engine.create(chunk, voice=settings.voice, speed=settings.speed, lang=language)
+                if not samples.size:
+                    raise ValueError("No speech was produced.")
+                if sample_rate is None:
+                    sample_rate = rate
+                    wav.setparams((1, 2, rate, 0, "NONE", "not compressed"))
+                else:
+                    wav.writeframesraw(bytes(int(sample_rate * .15) * 2))
+                pcm = (np.clip(samples, -1, 1) * 32767).astype("<i2")
+                wav.writeframesraw(pcm.tobytes())
     return output.getvalue()
 
 
