@@ -16,7 +16,7 @@ MODEL_DIR = Path(os.environ.get("FREEEDIT_TTS_MODEL_DIR", Path.home() / ".cache/
 MODEL = MODEL_DIR / "kokoro-v1.0.int8.onnx"
 VOICES = MODEL_DIR / "voices-v1.0.bin"
 MAX_CHARS = 1000
-MAX_CHUNK_CHARS = max(45, min(MAX_CHARS, int(os.environ.get("FREEEDIT_TTS_CHUNK_CHARS", "45"))))
+MAX_CHUNK_CHARS = max(45, min(MAX_CHARS, int(os.environ.get("FREEEDIT_TTS_CHUNK_CHARS", "120"))))
 _CLAUSE_BREAK = re.compile(r"(?<=[,;:—])\s+|\s+(?=(?:and|but|or|so|yet|because|although|while|than)\b)", re.I)
 router = APIRouter(prefix="/api/tts")
 _generation_lock = threading.Lock()
@@ -64,13 +64,39 @@ def sentence_chunks(sentence: str):
         yield remaining
 
 
+def _edge_silence(samples, rate):
+    import numpy as np
+
+    # Look only for quiet edges. Keep a short cushion at the join so quiet
+    # consonants next to speech stay intact.
+    frame = max(1, rate // 100)
+    if len(samples) < frame:
+        return 0, 0
+    pad = (-len(samples)) % frame
+    peaks = np.max(np.abs(np.pad(samples, (0, pad)).reshape(-1, frame)), axis=1)
+    active = np.flatnonzero(peaks > 0.004)
+    if not active.size:
+        return 0, 0
+    return active[0] * frame, max(0, len(samples) - (active[-1] + 1) * frame)
+
+
+def _join_pause(ending, leading, rate, seconds):
+    target = round(rate * seconds)
+    if ending + leading <= target:
+        return 0, 0, target - ending - leading
+    keep_ending = min(ending, max(target // 2, target - leading))
+    keep_leading = target - keep_ending
+    return ending - keep_ending, leading - keep_leading, 0
+
+
 def synthesize(settings: NarrationRequest) -> bytes:
     global _engine
     import numpy as np
-    import onnxruntime as ort
-    from kokoro_onnx import Kokoro
 
     if _engine is None:
+        import onnxruntime as ort
+        from kokoro_onnx import Kokoro
+
         options = ort.SessionOptions()
         options.intra_op_num_threads = 1
         options.inter_op_num_threads = 1
@@ -79,7 +105,7 @@ def synthesize(settings: NarrationRequest) -> bytes:
     language = "en-gb" if settings.voice.startswith("b") else "en-us"
     output = io.BytesIO()
     with wave.open(output, "wb") as wav:
-        sample_rate = None
+        previous = None
         for sentence in re.split(r"\n+|(?<=[.!?])\s+", settings.text):
             first_chunk = True
             for chunk in sentence_chunks(sentence):
@@ -88,14 +114,27 @@ def synthesize(settings: NarrationRequest) -> bytes:
                 samples, rate = _engine.create(chunk, voice=settings.voice, speed=settings.speed, lang=language)
                 if not samples.size:
                     raise ValueError("No speech was produced.")
-                if sample_rate is None:
-                    sample_rate = rate
-                    wav.setparams((1, 2, rate, 0, "NONE", "not compressed"))
-                elif first_chunk:
-                    wav.writeframesraw(bytes(int(sample_rate * .15) * 2))
-                first_chunk = False
                 pcm = (np.clip(samples, -1, 1) * 32767).astype("<i2")
-                wav.writeframesraw(pcm.tobytes())
+                leading, trailing = _edge_silence(samples, rate)
+                if previous is None:
+                    wav.setparams((1, 2, rate, 0, "NONE", "not compressed"))
+                else:
+                    if first_chunk:
+                        pause = 0.22
+                    elif last_chunk.endswith((",", ";", ":", "—")):
+                        pause = 0.11
+                    else:
+                        pause = 0.06
+                    cut_end, cut_start, padding = _join_pause(previous_trailing, leading, rate, pause)
+                    wav.writeframesraw(previous[:len(previous) - cut_end].tobytes())
+                    if padding:
+                        wav.writeframesraw(bytes(padding * 2))
+                    pcm = pcm[cut_start:]
+                previous, previous_trailing = pcm, trailing
+                last_chunk = chunk
+                first_chunk = False
+        if previous is not None:
+            wav.writeframesraw(previous.tobytes())
     return output.getvalue()
 
 
