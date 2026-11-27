@@ -11,6 +11,16 @@ services:
     envVars:
       - key: INSTALL_TTS
         value: "true"
+      - key: INSTALL_CHATGPT_PLUGIN
+        value: "true"
+      - key: FREEEDIT_ENABLE_CHATGPT_PLUGIN
+        value: "true"
+      - key: FREEEDIT_TTS_ISOLATED
+        value: "true"
+      - key: FREEEDIT_TTS_LOW_MEMORY
+        value: "true"
+      - key: FREEEDIT_TTS_CHUNK_CHARS
+        value: "30"
       - key: MAX_UPLOAD_MB
         value: "200"
       - key: MAX_DURATION_MIN

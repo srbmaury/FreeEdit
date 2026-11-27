@@ -142,8 +142,7 @@ model once. For a different Python environment, set `PYTHON_BIN` to the same
 interpreter that runs FreeEdit. For a shared installation, set
 `FREEEDIT_TTS_MODEL_DIR` to the same model directory at setup and runtime.
 
-`FREEEDIT_TTS_CHUNK_CHARS` defaults to 45 characters per inference on memory-constrained
-servers. Set a higher value on servers with more headroom to preserve longer phrases
+`FREEEDIT_TTS_CHUNK_CHARS` defaults to 45 characters per inference locally and 30 in the hosted Docker image. The hosted image also enables `FREEEDIT_TTS_LOW_MEMORY=true` (reduced ONNX allocator and optimization settings) and `FREEEDIT_TTS_ISOLATED=true` (single-use subprocess with a 165-second timeout). This releases model memory after each request and reduces the likelihood of losing the web server if inference is killed. It cannot guarantee survival under a cgroup-wide OOM; check `narration_worker_failed` and `oom_events` in logs. Local deployments retain their warm in-process engine by default. Set a higher value on servers with more headroom to preserve longer phrases
 in a single synthesis call. Validate memory use with long scripts before deploying a higher limit.
 
 Open **Generate narration** on the start screen or from the FreeEdit menu.
