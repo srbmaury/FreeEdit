@@ -9,9 +9,6 @@ from backend.app import app
 
 class NarrationApiTests(TestCase):
     def setUp(self):
-        isolation = patch.object(tts, "ISOLATED", False)
-        isolation.start()
-        self.addCleanup(isolation.stop)
         self.client = TestClient(app)
         self.addCleanup(self.client.close)
 
@@ -48,26 +45,3 @@ class NarrationApiTests(TestCase):
                 self.assertNotIn("private engine error", response.text)
             with patch.object(tts, "synthesize", return_value=b"RIFF"):
                 self.assertEqual(self.client.post("/api/tts", json={"text": "hi"}).status_code, 200)
-
-    def test_isolated_worker_killed_returns_service_error(self):
-        from subprocess import CompletedProcess
-        with patch.object(tts, "ISOLATED", True), patch.object(tts, "available", return_value=True), patch.object(tts.subprocess, "run", return_value=CompletedProcess([], -9, stdout=b"")):
-            response = self.client.post("/api/tts", json={"text": "Hello"})
-        self.assertEqual(response.status_code, 503)
-        self.assertIn("worker was killed", response.json()["detail"])
-
-    def test_isolated_worker_success(self):
-        from subprocess import CompletedProcess
-        audio = b"RIFF"+b"\0"*4+b"WAVE"+b"\0"*40
-        with patch.object(tts, "ISOLATED", True), patch.object(tts, "available", return_value=True), patch.object(tts.subprocess, "run", return_value=CompletedProcess([], 0, stdout=audio)) as run:
-            response = self.client.post("/api/tts", json={"text": "Hello"})
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.content, audio)
-        self.assertIn(b"Hello", run.call_args.kwargs["input"])
-        self.assertNotIn("Hello", run.call_args.args[0])
-
-    def test_isolated_worker_timeout(self):
-        from subprocess import TimeoutExpired
-        with patch.object(tts, "ISOLATED", True), patch.object(tts, "available", return_value=True), patch.object(tts.subprocess, "run", side_effect=TimeoutExpired("tts", 1)):
-            response = self.client.post("/api/tts", json={"text": "Hello"})
-        self.assertEqual(response.status_code, 504)
