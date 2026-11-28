@@ -142,9 +142,9 @@ model once. For a different Python environment, set `PYTHON_BIN` to the same
 interpreter that runs FreeEdit. For a shared installation, set
 `FREEEDIT_TTS_MODEL_DIR` to the same model directory at setup and runtime.
 
-`FREEEDIT_TTS_CHUNK_CHARS` defaults to 45 characters per inference on memory-constrained
-servers. Set a higher value on servers with more headroom to preserve longer phrases
-in a single synthesis call. Validate memory use with long scripts before deploying a higher limit.
+`FREEEDIT_TTS_CHUNK_CHARS` defaults to 120 characters per inference so common sentences can be synthesized in one call.
+Lower it on memory-constrained servers. Longer sentences split at clause boundaries where
+possible, and narration joins account for the quiet audio already produced by the model.
 
 Open **Generate narration** on the start screen or from the FreeEdit menu.
 Enter up to 1,000 characters of English text, choose a voice and speed, then preview or download the WAV. Inference runs on the FreeEdit server's CPU with
